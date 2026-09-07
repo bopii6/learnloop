@@ -1,0 +1,14 @@
+node_modules/
+.next/
+.env
+.env.local
+.env*.local
+*.log
+tsconfig.tsbuildinfo
+
+# 业务数据（课程/教材/用户/集市/课堂快照/OCR 缓存）不进库
+data/
+
+# 构建产物
+.open-next/
+.wrangler/
