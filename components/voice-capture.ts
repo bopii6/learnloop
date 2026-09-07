@@ -15,8 +15,9 @@ const TARGET_RATE = 16000;
 const RMS_SPEAK = 0.022; // 说话判定阈值
 const RMS_SILENT = 0.012; // 静音判定阈值
 const SPEECH_START_FRAMES = 3; // 连续 N 帧超阈值 = 开口
-const SPEECH_END_FRAMES = 10; // 连续 N 帧低于阈值 = 说完（≈0.34s/帧@4096/48k）
+const SPEECH_END_FRAMES = 10; // 连续 N 帧低于阈值 = 说完
 const MIN_UTTERANCE_FRAMES = 5; // 最短一句话长度，过滤误触发
+const MAX_UTTERANCE_MS = 30000; // 单句时长上限：噪声环境下 buffer 不至于无限膨胀，超出即按一句提交
 
 function encodeWavB64(samples: Int16Array, rate: number): string {
   const buf = new ArrayBuffer(44 + samples.length * 2);
@@ -69,9 +70,16 @@ export async function startVoiceCapture(opts: VoiceCaptureOptions): Promise<Voic
   let buffer: Int16Array[] = [];
   let bufferLen = 0;
 
+  // 采样率按设备实际情况来（44.1k/48k 都有），不能硬编码 1/3 降采样——
+  // 44.1k 除以 3 得 14.7k 却被声明成 16k，上传的音频整体升调 ~8%，识别率明显下降
+  const ratio = ctx.sampleRate / TARGET_RATE;
+  const outLen = Math.max(1, Math.floor(4096 / ratio));
+  const minUtteranceSamples = Math.round((MIN_UTTERANCE_FRAMES * 4096 * TARGET_RATE) / ctx.sampleRate);
+  const maxUtteranceSamples = Math.round((MAX_UTTERANCE_MS / 1000) * TARGET_RATE);
+
   const finishUtterance = () => {
     const total = bufferLen;
-    if (total >= (TARGET_RATE * MIN_UTTERANCE_FRAMES * 4096) / 48000) {
+    if (total >= minUtteranceSamples) {
       const merged = new Int16Array(total);
       let off = 0;
       for (const chunk of buffer) {
@@ -97,10 +105,10 @@ export async function startVoiceCapture(opts: VoiceCaptureOptions): Promise<Voic
     for (let i = 0; i < input.length; i++) sum += input[i] * input[i];
     const rms = Math.sqrt(sum / input.length);
 
-    // Float32 → Int16 + 降采样到 16k（48k → 1/3）
-    const out = new Int16Array(Math.floor(input.length / 3));
+    // Float32 → Int16 + 线性降采样到 16k（按 ctx.sampleRate 动态算步长）
+    const out = new Int16Array(outLen);
     for (let i = 0; i < out.length; i++) {
-      const s = Math.max(-1, Math.min(1, input[i * 3]));
+      const s = Math.max(-1, Math.min(1, input[Math.min(input.length - 1, Math.floor(i * ratio))]));
       out[i] = Math.round(s * 32767);
     }
 
@@ -119,17 +127,26 @@ export async function startVoiceCapture(opts: VoiceCaptureOptions): Promise<Voic
           buffer.push(out);
           bufferLen += out.length;
           if (buffer.length > 6) {
-            buffer.shift();
-            bufferLen -= out.length;
+            const dropped = buffer.shift();
+            bufferLen -= dropped?.length || 0;
           }
         }
       } else {
         loudFrames = 0;
         buffer = buffer.slice(-2);
+        bufferLen = buffer.reduce((s, c) => s + c.length, 0);
       }
     } else {
       buffer.push(out);
       bufferLen += out.length;
+      // 单句上限：持续背景噪声会让录音永不收尾，到顶强制按一句提交，防内存/上传体积膨胀
+      if (bufferLen >= maxUtteranceSamples) {
+        speaking = false;
+        loudFrames = 0;
+        silentFrames = 0;
+        finishUtterance();
+        return;
+      }
       if (rms < RMS_SILENT) {
         silentFrames += 1;
         if (silentFrames >= SPEECH_END_FRAMES) {

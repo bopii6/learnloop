@@ -18,14 +18,21 @@ export interface LearnerProfile {
   updated_at: string;
 }
 
-const PROFILE_KEY = "profile.json";
+// 画像按登录用户隔离：profiles/{userId}.json；未登录共用 anonymous 空间。
+// 旧版全局单文件会让 A 的画像注入 B 的课程与课堂，属于上线阻断级隐私问题。
+const PROFILE_KEY_PREFIX = "profiles/";
+
+function profileKey(userId?: string): string {
+  const safe = (userId || "anonymous").replace(/[^a-zA-Z0-9_-]/g, "");
+  return `${PROFILE_KEY_PREFIX}${safe}.json`;
+}
 
 function emptyProfile(): LearnerProfile {
   return { name: "", summary: "", facts: [], courses: [], updated_at: "" };
 }
 
-export async function getProfile(): Promise<LearnerProfile> {
-  const p = await readJson<Partial<LearnerProfile>>(PROFILE_KEY, {});
+export async function getProfile(userId?: string): Promise<LearnerProfile> {
+  const p = await readJson<Partial<LearnerProfile>>(profileKey(userId), {});
   return {
     name: typeof p.name === "string" ? p.name.slice(0, 20) : "",
     summary: typeof p.summary === "string" ? p.summary : "",
@@ -35,20 +42,20 @@ export async function getProfile(): Promise<LearnerProfile> {
   };
 }
 
-export async function saveProfileName(name: string): Promise<LearnerProfile> {
-  const profile = await getProfile();
+export async function saveProfileName(name: string, userId?: string): Promise<LearnerProfile> {
+  const profile = await getProfile(userId);
   profile.name = name.trim().slice(0, 20);
-  await saveProfile(profile);
+  await saveProfile(profile, userId);
   return profile;
 }
 
-export async function saveProfile(p: LearnerProfile): Promise<void> {
+export async function saveProfile(p: LearnerProfile, userId?: string): Promise<void> {
   p.updated_at = new Date().toISOString();
-  await writeJson(PROFILE_KEY, p, { pretty: true });
+  await writeJson(profileKey(userId), p, { pretty: true });
 }
 
-export async function resetProfile(): Promise<void> {
-  await saveProfile(emptyProfile());
+export async function resetProfile(userId?: string): Promise<void> {
+  await saveProfile(emptyProfile(), userId);
 }
 
 /** 序列化画像为可注入 prompt 的文本（空画像返回空串） */
@@ -70,8 +77,8 @@ const DISTILL_SYSTEM = `你是学习画像分析师。根据学习者的历史�
 export async function captureCourseProfile(opts: {
   courseTitle: string;
   clarifyAnswers: { question: string; answer: string }[];
-}): Promise<LearnerProfile> {
-  const profile = await getProfile();
+}, userId?: string): Promise<LearnerProfile> {
+  const profile = await getProfile(userId);
   const seen = new Set(profile.facts.map((f) => f.question));
   let added = 0;
   for (const { question, answer } of opts.clarifyAnswers) {
@@ -99,7 +106,7 @@ export async function captureCourseProfile(opts: {
     }
   }
 
-  await saveProfile(profile);
+  await saveProfile(profile, userId);
   return profile;
 }
 

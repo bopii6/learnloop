@@ -105,8 +105,13 @@ function hashCode(email: string, code: string): string {
 /** 发码；返回 false = 触发重发间隔 */
 export async function issueCode(email: string): Promise<{ ok: boolean; code?: string }> {
   const db = await readJson<{ codes: Record<string, CodeRecord> }>(CODES_KEY, { codes: {} });
+  // 顺手清掉过期/陈旧的验证码，防止 auth-codes.json 无限增长
+  const now = Date.now();
+  for (const [k, rec] of Object.entries(db.codes)) {
+    if (now > rec.expiresAt) delete db.codes[k];
+  }
   const prev = db.codes[email];
-  if (prev && Date.now() - prev.lastSentAt < RESEND_INTERVAL_MS) return { ok: false };
+  if (prev && now - prev.lastSentAt < RESEND_INTERVAL_MS) return { ok: false };
   const code = String(randomInt(0, 1000000)).padStart(6, "0");
   db.codes[email] = {
     codeHash: hashCode(email, code),

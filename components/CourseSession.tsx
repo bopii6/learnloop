@@ -1,12 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { CourseOutline, LectureQuizItem, TeachBeat, WhiteboardEvent, WhiteboardMessage } from "@/types";
+import type { CourseOutline, LectureQuizItem, ReplayReel, TeachBeat, WhiteboardEvent, WhiteboardMessage } from "@/types";
 import { Whiteboard } from "./Whiteboard";
 import { createBoardWriter, type BoardWriter } from "./board-writer";
 import { LectureQuizPanel } from "./LectureQuizPanel";
 import { useClassroomSocket, type ClassroomState } from "@/hooks/useClassroomSocket";
 import { startVoiceCapture, type VoiceCapture } from "./voice-capture";
+import { consumeSse } from "@/lib/sse";
+import { exportBoardPoster, downloadBlob, copyImageToClipboard, safeFilename } from "@/lib/board-poster";
+import { VerticalClipModal, type ClipBeat } from "./VerticalClipModal";
 
 interface CourseSessionProps {
   courseId: string;
@@ -15,6 +18,28 @@ interface CourseSessionProps {
   lectureId: string;
   lectureTitle: string;
   onExit?: () => void;
+}
+
+/** 课堂对话轻量排版：加粗与行内代码（讲师输出自带 markdown 标记，纯文本直出会漏星号） */
+function LessonMarkdown({ text }: { text: string }) {
+  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).filter(Boolean);
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (part.startsWith("**") && part.endsWith("**")) {
+          return <strong key={i}>{part.slice(2, -2)}</strong>;
+        }
+        if (part.startsWith("`") && part.endsWith("`")) {
+          return (
+            <code key={i} className="rounded bg-[#00000010] px-1 py-px text-[12px] font-mono">
+              {part.slice(1, -1)}
+            </code>
+          );
+        }
+        return <span key={i}>{part}</span>;
+      })}
+    </>
+  );
 }
 
 /** 播放队列里的一项：某个 segment 的一个 beat（ordinal = 全课唯一序号，用于断点恢复） */
@@ -52,6 +77,10 @@ if (typeof window !== "undefined" && "speechSynthesis" in window) {
     pickZhVoice();
   };
 }
+
+// Chromium 已知问题：SpeechSynthesisUtterance 没有外部强引用时可能被 GC，
+// 表现为朗读中途静音且 onend 永不触发。持有"最近一次"的 utterance 保活即可。
+let keepAliveUtterance: SpeechSynthesisUtterance | null = null;
 
 export function CourseSession({
   courseId,
@@ -96,6 +125,14 @@ export function CourseSession({
   const [quizOpen, setQuizOpen] = useState(false);
   // 讲解语速：嫌慢可以直接提速，不用等讲师"讲快点"
   const [rate, setRate] = useState(1);
+  // ---- 面向传播的三个产物：知识海报 / 回放链接 / 60 秒竖屏速览 ----
+  const [posterBusy, setPosterBusy] = useState(false);
+  const [posterMsg, setPosterMsg] = useState("");
+  const [replayUrl, setReplayUrl] = useState("");
+  const [clipOpen, setClipOpen] = useState(false);
+  const replaySavedRef = useRef(false);
+  const profileNameRef = useRef("");
+  profileNameRef.current = profileName === null ? "" : profileName;
 
   const unit = outline.units.find((u) => u.id === unitId);
 
@@ -143,6 +180,10 @@ export function CourseSession({
   const sendChatRef = useRef<((t: string, cp?: { question: string; options: string[] }) => Promise<void>) | undefined>(undefined);
   const cloudStopRef = useRef<VoiceCapture | null>(null);
   const cloudActiveRef = useRef(false); // Chrome 原生识别不可达时，云端录音链路是否在跑
+  // 退出/卸载守卫：置位后 pump/speak/续播全部短路，防止卸载后 TTS 继续朗读（幽灵朗读）
+  const exitedRef = useRef(false);
+  const lectureGenRef = useRef(0); // 讲课流的代数：旧流被 abort 后其 finally 不得污染新流的状态
+  const sseSegmentsRef = useRef<Set<string>>(new Set()); // 本次讲课已收到的片段（服务端重发时去重）
 
   // 保存的历史状态同步到 ref（beginLecture 判断走恢复还是新开）
   useEffect(() => {
@@ -183,7 +224,7 @@ export function CourseSession({
     if (cloudActiveRef.current) return;
     cloudActiveRef.current = true;
     try {
-      cloudStopRef.current = await startVoiceCapture({
+      const capture = await startVoiceCapture({
         onUtterance: async (wavB64) => {
           try {
             const res = await fetch("/api/asr", {
@@ -212,6 +253,13 @@ export function CourseSession({
           stopCloudCapture();
         },
       });
+      // getUserMedia 授权可能耗时数秒：期间用户已关闭聆听的话，立即释放，
+      // 否则这路录音会变成孤儿——麦克风常开、持续触发打断，再开启还会叠第二路
+      if (!cloudActiveRef.current) {
+        capture.stop();
+        return;
+      }
+      cloudStopRef.current = capture;
     } catch (e) {
       cloudActiveRef.current = false;
       setError("麦克风启动失败：" + (e instanceof Error ? e.message : String(e)));
@@ -310,6 +358,8 @@ export function CourseSession({
     spokenRef.current = text; // 供语音模式的回声过滤比对
     spokenAtRef.current = Date.now();
     const spd = Math.max(0.5, Math.min(3, rateRef.current || 1)); // 语速：所有计时随倍速收敛
+    // 已暂停/已退出时不再发声（暂停可能落在板书阶段——上一句的 stop 已清空，不拦这里喇叭会继续讲）
+    if (pausedRef.current || exitedRef.current) return Promise.resolve();
     return new Promise<void>((resolve) => {
       const minMs = 1800 / spd;
       if (!voiceOnRef.current || !("speechSynthesis" in window)) {
@@ -319,6 +369,7 @@ export function CourseSession({
       }
       const synth = window.speechSynthesis;
       const u = new SpeechSynthesisUtterance(text);
+      keepAliveUtterance = u; // 防止 utterance 被 GC 导致 onend 丢失
       u.lang = "zh-CN";
       u.rate = spd;
       const zh = pickZhVoice();
@@ -364,7 +415,7 @@ export function CourseSession({
 
   // ---- 播放器主循环：从队列取一个 beat，同步驱动 字幕 / 对话 / 白板 / 语音 ----
   const pump = useCallback(async () => {
-    if (pausedRef.current || playingRef.current) return;
+    if (exitedRef.current || pausedRef.current || playingRef.current) return;
     const item = queueRef.current.shift();
     if (!item) {
       if (streamDoneRef.current) setPlayback("done");
@@ -372,6 +423,8 @@ export function CourseSession({
     }
     playingRef.current = true;
     setPlayback("playing");
+    // checkpoint 处会停在原句等作答：游标不跨过这一拍，断线恢复时才能重放并重新出题
+    let cursorAdvance = 1;
     try {
       // 进入新片段：白板另起一行、轨道点亮、对话区重置句计数
       if (currentSegmentRef.current !== item.segmentId) {
@@ -431,6 +484,7 @@ export function CourseSession({
             },
           ]);
           pausePlayback();
+          cursorAdvance = 0;
         }
       }
 
@@ -443,9 +497,9 @@ export function CourseSession({
             (excalidrawApiRef.current?.getSceneElements?.() || []).filter((el: any) => !el.isDeleted);
           wsSend({
             type: "progress",
-            cursor: item.ordinal + 1,
+            cursor: item.ordinal + cursorAdvance,
             elements,
-            messages: messagesRef.current,
+            messages: messagesRef.current.slice(-50), // 裁剪上报量：整课无界增长会撞 WS 8MB 上限被断连
             points: wsPointsRef.current,
             writer: writerRef.current?.snapshot(),
           });
@@ -456,16 +510,22 @@ export function CourseSession({
     } finally {
       playingRef.current = false;
     }
-    if (!pausedRef.current) {
+    if (!pausedRef.current && !exitedRef.current) {
       window.setTimeout(() => void pump(), 400);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [speak, pausePlayback]);
 
   const resumePlayback = useCallback(() => {
+    if (exitedRef.current) return;
     if (playbackRef.current === "done") return;
-    // 队列空且脚本流已结束 = 没有更多内容，不进入假播放态
-    if (queueRef.current.length === 0 && streamDoneRef.current) return;
+    if (queueRef.current.length === 0 && streamDoneRef.current) {
+      // 队列空且脚本流已结束 = 没有更多内容：收尾进入 done，
+      // 而不是永远停在 paused（最后一个片段带 checkpoint 时必现的死锁）
+      pausedRef.current = false;
+      setPlayback("done");
+      return;
+    }
     pausedRef.current = false;
     setPlayback("playing");
     void pump();
@@ -475,6 +535,9 @@ export function CourseSession({
   const enqueueBeats = useCallback(
     (e: Extract<WhiteboardEvent, { type: "beats" }>) => {
       setPreparing(false);
+      // 同一片段重发只更新登记信息，不重复入队（否则同样内容会播两遍）
+      const firstDelivery = !sseSegmentsRef.current.has(e.segmentId);
+      sseSegmentsRef.current.add(e.segmentId);
       setRail((prev) =>
         prev.some((r) => r.id === e.segmentId)
           ? prev
@@ -488,17 +551,19 @@ export function CourseSession({
         // 记录每个片段所属的步骤，播放器真正播到该片段时才点亮（轨跟随播放而非生成进度）
         segPointIndexRef.current.set(e.segmentId, e.pointIndex);
       }
-      e.beats.forEach((beat, bi) => {
-        queueRef.current.push({
-          segmentId: e.segmentId,
-          index: e.index,
-          total: e.total,
-          title: e.title,
-          beat,
-          lastOfSegment: bi === e.beats.length - 1,
-          ordinal: nextOrdinalRef.current++,
+      if (firstDelivery) {
+        e.beats.forEach((beat, bi) => {
+          queueRef.current.push({
+            segmentId: e.segmentId,
+            index: e.index,
+            total: e.total,
+            title: e.title,
+            beat,
+            lastOfSegment: bi === e.beats.length - 1,
+            ordinal: nextOrdinalRef.current++,
+          });
         });
-      });
+      }
       // 剧本上报服务端（WS 持久化，用于断线恢复）
       wsScriptRef.current = [
         ...wsScriptRef.current.filter((s) => s.segmentId !== e.segmentId),
@@ -511,31 +576,11 @@ export function CourseSession({
     [pump, wsSend]
   );
 
-  /** SSE 帧解析（教学与提问共用） */
-  const readSse = useCallback(async (res: Response, onEvent: (e: WhiteboardEvent) => void) => {
-    const reader = res.body!.getReader();
-    const decoder = new TextDecoder();
-    let buf = "";
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
-      const parts = buf.split("\n\n");
-      buf = parts.pop() || "";
-      for (const part of parts) {
-        const line = part.trim();
-        if (!line.startsWith("data:")) continue;
-        try {
-          onEvent(JSON.parse(line.slice(5).trim()));
-        } catch {
-          // 忽略坏帧
-        }
-      }
-    }
-  }, []);
-
   // ---- 开讲：拉取整节课的 beat 脚本，边到边播 ----
   const startLecture = useCallback(async () => {
+    const gen = ++lectureGenRef.current;
+    streamDoneRef.current = false;
+    sseSegmentsRef.current.clear();
     const controller = new AbortController();
     abortLectureRef.current = controller;
     setError(null);
@@ -548,7 +593,8 @@ export function CourseSession({
         signal: controller.signal,
       });
       if (!res.ok || !res.body) throw new Error(`请求失败 (${res.status})`);
-      await readSse(res, (e) => {
+      await consumeSse<WhiteboardEvent>(res, (e) => {
+        if (lectureGenRef.current !== gen) return; // 旧流（已被 abort/替换）的事件全部丢弃
         if (e.type === "beats") {
           enqueueBeats(e);
         } else if (e.type === "lecture_quiz") {
@@ -571,10 +617,13 @@ export function CourseSession({
         setPreparing(false);
       }
     } finally {
-      streamDoneRef.current = true;
-      setPreparing(false);
+      // 只有当前代才收尾：被 abort 的旧流不得把新进行中的流标记为已结束
+      if (lectureGenRef.current === gen) {
+        streamDoneRef.current = true;
+        setPreparing(false);
+      }
     }
-  }, [courseId, unitId, lectureId, readSse, enqueueBeats]);
+  }, [courseId, unitId, lectureId, enqueueBeats]);
 
   // ---- 学员打断/答题：打断播放，问答后自动断点续播 ----
   const sendChat = useCallback(
@@ -583,7 +632,9 @@ export function CourseSession({
       checkpointInfo?: { question: string; options: string[] }
     ) => {
       const content = raw.trim();
-      if (!content || chatStreaming) return;
+      if (!content || chatStreaming || exitedRef.current) return;
+      // 记住提问前的播放状态：学员手动暂停时提问，答完不应被强行续播（答 checkpoint 除外）
+      const wasPlaying = playbackRef.current === "playing";
       pausePlayback();
 
       const userMsg: WhiteboardMessage = {
@@ -623,7 +674,7 @@ export function CourseSession({
           signal: controller.signal,
         });
         if (!res.ok || !res.body) throw new Error(`请求失败 (${res.status})`);
-        await readSse(res, (e) => {
+        await consumeSse<WhiteboardEvent>(res, (e) => {
           if (e.type === "token") {
             acc += e.text;
             setDraft(acc);
@@ -646,11 +697,17 @@ export function CourseSession({
             { id: `assistant-${Date.now()}`, role: "assistant", content: acc, createdAt: Date.now() },
           ]);
         }
-        // 真实课堂行为：讲师答完学员的问题，自动接着讲课
-        window.setTimeout(() => resumePlayback(), 600);
+        // 真实课堂行为：讲师答完学员的问题，自动接着讲课。
+        // 已退出课堂则绝不续播（否则组件卸载后 TTS 会继续朗读，且无 UI 可停）；
+        // 提问前本来就暂停的，保持暂停。
+        // 答案按长度给保留阅读时间：文字答案一闪而过 = 用户以为提问没被理。
+        if (!exitedRef.current && (checkpointInfo || wasPlaying)) {
+          const readingMs = Math.min(6000, 1200 + acc.length * 55);
+          window.setTimeout(() => resumePlayback(), readingMs);
+        }
       }
     },
-    [chatStreaming, courseId, unitId, lectureId, pausePlayback, resumePlayback, readSse]
+    [chatStreaming, courseId, unitId, lectureId, pausePlayback, resumePlayback]
   );
   sendChatRef.current = sendChat;
 
@@ -692,6 +749,8 @@ export function CourseSession({
       try {
         excalidrawApiRef.current?.updateScene({ elements: saved.elements || [] });
         writerRef.current?.restore(saved.writer || {});
+        // 镜头对准恢复出的黑板（否则 Excalidraw 停在默认原点，画面空一块）
+        window.setTimeout(() => writerRef.current?.focusCurrent(), 200);
       } catch {
         // 画面恢复失败也不阻塞续播
       }
@@ -746,8 +805,12 @@ export function CourseSession({
     }
   };
 
-  useEffect(() => () => {
-    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+  useEffect(() => {
+    exitedRef.current = false; // StrictMode 二次挂载时复位，不能只在 cleanup 置位
+    return () => {
+      exitedRef.current = true; // 卸载后 pump/speak/续播全部短路，杜绝幽灵朗读
+      if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+    };
   }, []);
 
   // 聊天自动滚到底
@@ -756,6 +819,7 @@ export function CourseSession({
   }, [messages, draft]);
 
   const handleExit = () => {
+    exitedRef.current = true; // 先置位：进行中的问答流 finally 里的续播会被短路
     abortLectureRef.current?.abort();
     abortChatRef.current?.abort();
     pausedRef.current = true;
@@ -778,6 +842,136 @@ export function CourseSession({
     setCheckpoint(null);
     if (cp) void sendChat(answer, { question: cp.question, options: cp.options });
   };
+
+  // ---- 产物一：知识海报（白板终态 → 竖版分享长图） ----
+  const generatePoster = async () => {
+    if (posterBusy) return;
+    setPosterBusy(true);
+    setPosterMsg("");
+    try {
+      const { blob } = await exportBoardPoster({
+        api: excalidrawApiRef.current,
+        courseTitle: outline.title,
+        lectureTitle,
+        studentName: profileNameRef.current || undefined,
+      });
+      downloadBlob(blob, `learnloop_poster_${safeFilename(lectureTitle)}.png`);
+      const copied = await copyImageToClipboard(blob);
+      setPosterMsg(copied ? "已下载并复制到剪贴板" : "海报已下载");
+      window.setTimeout(() => setPosterMsg(""), 2600);
+    } catch (e) {
+      setPosterMsg(e instanceof Error ? e.message : "海报生成失败");
+      window.setTimeout(() => setPosterMsg(""), 3200);
+    } finally {
+      setPosterBusy(false);
+    }
+  };
+
+  // ---- 产物二：回放链接（讲完自动把剧本存为只读回放页） ----
+  const buildReelFromScript = useCallback((): ReplayReel | null => {
+    const segs = [...wsScriptRef.current].sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+    const beats = segs.flatMap((seg) =>
+      (seg.beats || []).map((b: TeachBeat) => ({
+        say: b.say,
+        section: b.section,
+        items: b.items,
+        segmentTitle: seg.title,
+      }))
+    );
+    if (beats.length === 0) return null;
+    return {
+      courseId,
+      unitId,
+      lectureId,
+      courseTitle: outline.title,
+      lectureTitle,
+      createdAt: Date.now(),
+      beats,
+    };
+  }, [courseId, unitId, lectureId, outline.title, lectureTitle]);
+
+  const saveReplay = useCallback(async (): Promise<string> => {
+    if (replayUrl) return replayUrl;
+    const reel = buildReelFromScript();
+    if (!reel) return "";
+    try {
+      const res = await fetch("/api/replay", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(reel),
+      });
+      if (!res.ok) return "";
+      const d = await res.json();
+      if (d.id) {
+        const url = `${window.location.origin}/replay/${d.id}`;
+        setReplayUrl(url);
+        return url;
+      }
+    } catch {
+      // 保存失败不影响上课
+    }
+    return "";
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [buildReelFromScript, replayUrl]);
+
+  const copyReplayLink = async () => {
+    let url = replayUrl;
+    if (!url) url = await saveReplay();
+    if (!url) {
+      setPosterMsg("回放还没准备好，讲师讲完就有了");
+      window.setTimeout(() => setPosterMsg(""), 2600);
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      setPosterMsg("回放链接已复制，发给朋友就能看");
+    } catch {
+      setPosterMsg(url);
+    }
+    window.setTimeout(() => setPosterMsg(""), 3000);
+  };
+
+  // 讲完自动保存回放（一次）
+  useEffect(() => {
+    if (playback !== "done" || replaySavedRef.current) return;
+    const reel = buildReelFromScript();
+    if (!reel) return;
+    replaySavedRef.current = true;
+    void saveReplay();
+  }, [playback, buildReelFromScript, saveReplay]);
+
+  // ---- 产物三：60 秒竖屏速览的素材（从剧本里均匀取拍） ----
+  const buildClipBeats = useCallback((): ClipBeat[] => {
+    const segs = [...wsScriptRef.current].sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+    const flat = segs.flatMap((seg) =>
+      (seg.beats || []).map((b: TeachBeat) => ({
+        say: b.say,
+        section: b.section,
+        items: b.items || [],
+        segmentTitle: seg.title,
+      }))
+    );
+    if (flat.length === 0) return [];
+    const N = Math.min(7, flat.length);
+    const picked: typeof flat = [];
+    for (let i = 0; i < N; i++) {
+      picked.push(flat[Math.round((i * (flat.length - 1)) / (N - 1))]);
+    }
+    let lastSection = "";
+    return picked.map((b) => {
+      if (b.section) lastSection = b.section;
+      const withText = b.items.find((it: { text?: string; kind: string }) => it.text && it.kind !== "note");
+      const keyText =
+        withText?.text ||
+        (b.items.find((it: { kind: string }) => it.kind === "diagram")?.nodes || []).join("→") ||
+        b.say.slice(0, 12);
+      return {
+        keyText: keyText.slice(0, 20),
+        sectionLabel: lastSection || b.segmentTitle,
+        say: b.say,
+      };
+    });
+  }, []);
 
   // ---- 语音输入（文字模式下的辅助：说完填入输入框；语音模式用顶栏的自动聆听） ----
   const manualRecRef = useRef<any>(null);
@@ -901,6 +1095,32 @@ export function CourseSession({
             title="适应内容"
           >
             ⛶
+          </button>
+          {/* 传播产物：海报 / 竖屏速览 / 回放链接 */}
+          <button
+            onClick={() => void generatePoster()}
+            disabled={posterBusy}
+            className="rounded-lg border border-[#d3d1c7] px-3 py-1.5 text-[12px] text-ink-soft hover:border-accent hover:text-accent transition-colors disabled:opacity-50"
+            title="把白板终态生成竖版知识海报"
+          >
+            {posterBusy ? "生成中…" : "🖼 海报"}
+          </button>
+          <button
+            onClick={() => setClipOpen(true)}
+            disabled={wsScriptRef.current.length === 0}
+            className="rounded-lg border border-[#d3d1c7] px-3 py-1.5 text-[12px] text-ink-soft hover:border-accent hover:text-accent transition-colors disabled:opacity-50"
+            title="录一条 60 秒竖屏速览视频，直接发抖音/小红书"
+          >
+            🎬 竖屏速览
+          </button>
+          <button
+            onClick={() => void copyReplayLink()}
+            className={`rounded-lg border px-3 py-1.5 text-[12px] transition-colors ${
+              replayUrl ? "border-accent text-accent" : "border-[#d3d1c7] text-ink-soft hover:border-accent hover:text-accent"
+            }`}
+            title="生成只读回放链接，发给朋友就能重看这节课"
+          >
+            🔗 回放
           </button>
         </div>
       </div>
@@ -1123,6 +1343,12 @@ export function CourseSession({
                     📝 做课后练习（{lectureQuiz.length} 题）
                   </button>
                 )}
+                <button onClick={() => void generatePoster()} disabled={posterBusy} className="board-resume-btn ml-2">
+                  🖼 生成知识海报
+                </button>
+                <button onClick={() => void copyReplayLink()} className="board-resume-btn ml-2">
+                  🔗 {replayUrl ? "复制回放链接" : "生成回放链接"}
+                </button>
               </span>
             ) : (
               <span className="board-subtitle-idle">{preparing ? "AI 讲师正在备课…" : "白板课堂"}</span>
@@ -1175,13 +1401,13 @@ export function CourseSession({
                     }`}
                   >
                     {m.role === "assistant" && <div className="lesson-message-label">{m.label || (m.kind === "board" ? "白板动作" : m.kind === "highlight" ? "互动提问" : "课程讲解")}</div>}
-                    {m.content}
+                    <LessonMarkdown text={m.content} />
                   </div>
                 ))
               )}
               {draft && (
                 <div className="bg-[#f1efe8] text-ink rounded-xl px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap mr-8">
-                  {draft}
+                  <LessonMarkdown text={draft} />
                 </div>
               )}
               {chatStreaming && !draft && (
@@ -1256,6 +1482,22 @@ export function CourseSession({
           )}
         </div>
       </div>
+
+      {/* 产物操作反馈（海报/回放） */}
+      {posterMsg && (
+        <div className="absolute left-1/2 -translate-x-1/2 bottom-20 z-[75] rounded-xl bg-[#2c2c2a] px-4 py-2.5 text-[12.5px] text-white shadow-xl fade-up max-w-[70%] text-center">
+          {posterMsg}
+        </div>
+      )}
+
+      {/* 60 秒竖屏速览录制器 */}
+      <VerticalClipModal
+        open={clipOpen}
+        onClose={() => setClipOpen(false)}
+        courseTitle={outline.title}
+        lectureTitle={lectureTitle}
+        beats={buildClipBeats()}
+      />
     </div>
   );
 }

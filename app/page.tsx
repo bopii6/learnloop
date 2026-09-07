@@ -18,7 +18,9 @@ import { CourseGenerator } from "@/components/CourseGenerator";
 import { CourseOutlineView } from "@/components/CourseOutlineView";
 import { MarketView } from "@/components/MarketView";
 import { CourseRecordsView } from "@/components/CourseRecordsView";
+import { WrappedView } from "@/components/WrappedView";
 import { AuthModal } from "@/components/AuthModal";
+import { consumeSse } from "@/lib/sse";
 
 const STARTERS = [
   "系统讲解 RAG 的原理：检索、重排、生成各阶段都在做什么",
@@ -27,7 +29,7 @@ const STARTERS = [
   "什么是 MCP 协议？它和 Function Calling 是什么关系",
 ];
 
-type HomeMode = "course" | "chat" | "market" | "records";
+type HomeMode = "course" | "chat" | "market" | "records" | "wrapped";
 
 export default function Home() {
   // 产品只有一个入口：首页即课程生成。问答/闲聊由意图门卫在入口内消化，
@@ -192,10 +194,6 @@ export default function Home() {
         });
         if (!res.ok || !res.body) throw new Error(`请求失败 (${res.status})`);
 
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buf = "";
-
         const handle = (e: AgentEvent) => {
           if (e.type === "stage") {
             if (e.status === "start") {
@@ -244,22 +242,7 @@ export default function Home() {
           }
         };
 
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buf += decoder.decode(value, { stream: true });
-          const parts = buf.split("\n\n");
-          buf = parts.pop() || "";
-          for (const part of parts) {
-            const line = part.trim();
-            if (!line.startsWith("data:")) continue;
-            try {
-              handle(JSON.parse(line.slice(5).trim()));
-            } catch {
-              // 忽略坏帧
-            }
-          }
-        }
+        await consumeSse<AgentEvent>(res, handle);
       } catch (e) {
         if ((e as Error).name !== "AbortError") {
           setError(e instanceof Error ? e.message : String(e));
@@ -348,6 +331,8 @@ export default function Home() {
               }}
               onGoHome={() => setMode("course")}
             />
+          ) : mode === "wrapped" ? (
+            <WrappedView />
           ) : mode === "records" ? (
             <CourseRecordsView
               onOpenCourse={(id) => {

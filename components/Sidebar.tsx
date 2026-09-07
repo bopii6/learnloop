@@ -21,8 +21,8 @@ export function Sidebar({
   onLogin,
   onLogout,
 }: {
-  mode: "course" | "chat" | "market" | "records";
-  onMode: (m: "course" | "chat" | "market" | "records") => void;
+  mode: "course" | "chat" | "market" | "records" | "wrapped";
+  onMode: (m: "course" | "chat" | "market" | "records" | "wrapped") => void;
   courses: SidebarCourse[];
   onOpenCourse: (id: string) => void;
   conversations: ConversationMeta[];
@@ -42,7 +42,6 @@ export function Sidebar({
             L
           </div>
           <span className="font-semibold text-[15px]">LearnLoop</span>
-          <span className="text-[10px] text-ink-faint border border-[#d3d1c7] rounded px-1 py-px">MVP</span>
         </div>
 
         {/* 主导航：只有一个输入入口，首页即课程生成 */}
@@ -73,6 +72,14 @@ export function Sidebar({
             }`}
           >
             <span className="text-[13px]">🛍</span> 课程集市
+          </button>
+          <button
+            onClick={() => onMode("wrapped")}
+            className={`w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] transition-colors ${
+              mode === "wrapped" ? "bg-[#f1efe8] text-ink font-medium" : "text-ink-soft hover:bg-[#fafaf7]"
+            }`}
+          >
+            <span className="text-[13px]">📊</span> 学习战报
           </button>
         </nav>
 

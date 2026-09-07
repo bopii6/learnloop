@@ -13,6 +13,7 @@ import type {
   SourceItem,
 } from "@/types";
 import { BlueprintEditor } from "./BlueprintEditor";
+import { consumeSse } from "@/lib/sse";
 
 interface CourseGeneratorProps {
   onComplete?: (courseId: string, title: string, outline: CourseOutline) => void;
@@ -163,26 +164,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
         });
         if (!res.ok || !res.body) throw new Error(`请求失败 (${res.status})`);
 
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buf = "";
-
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buf += decoder.decode(value, { stream: true });
-          const parts = buf.split("\n\n");
-          buf = parts.pop() || "";
-          for (const part of parts) {
-            const line = part.trim();
-            if (!line.startsWith("data:")) continue;
-            try {
-              handleEvent(JSON.parse(line.slice(5).trim()));
-            } catch {
-              // 忽略坏帧
-            }
-          }
-        }
+        await consumeSse<CourseEvent>(res, handleEvent);
       } catch (e) {
         if ((e as Error).name !== "AbortError") {
           setError(e instanceof Error ? e.message : String(e));
@@ -382,16 +364,14 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
             </button>
           </div>
         )}
-        {profile && (
+        {profile && (profile.summary || profile.facts.length > 0) && (
           <div
             className="mb-4 flex items-center justify-center gap-1.5 text-[12px] text-ink-faint"
             title={profile.summary || profile.facts.map((f) => `${f.question}：${f.answer}`).join("；")}
           >
             <span className="text-accent">🎯</span>
-            <span className="truncate max-w-[520px]">
-              已按你的画像定制课程：
-              {profile.summary ? profile.summary.slice(0, 42) + "…" : (profile.facts[profile.facts.length - 1]?.answer || "").slice(0, 42)}
-            </span>
+            <span>已按你的历史学习偏好定制这门课</span>
+            <span className="underline decoration-dotted underline-offset-2 cursor-help">查看依据</span>
           </div>
         )}
         <div className="rounded-2xl border border-[#d3d1c7] bg-white shadow-sm p-6">
@@ -758,7 +738,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
             </div>
           )}
           <div className="rounded-2xl border border-[#e7e5dc] bg-white p-6 mb-4">
-            {progress && (
+            {progress && progress.total > 0 && (
               <div className="mb-4">
                 <div className="flex justify-between text-[12px] text-ink-soft mb-1.5">
                   <span>{progress.current} / {progress.total} 单元</span>
@@ -810,15 +790,20 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
               共 {outline.units.length} 个单元，{outline.units.reduce((s, u) => s + u.lectures.length, 0)} 个课节
             </div>
             {(() => {
+              // 只统计可学的白板课节：测验/项目环节计入"总时长"是虚假承诺
               const totalMin = outline.units.reduce(
-                (s, u) => s + u.lectures.reduce((t, l) => t + (l.duration_min || 0), 0),
+                (s, u) =>
+                  s +
+                  u.lectures
+                    .filter((l) => (l as any).content_type === "whiteboard" || !(l as any).content_type)
+                    .reduce((t, l) => t + (l.duration_min || 0), 0),
                 0
               );
               if (totalMin <= 0) return null;
               const hours = (totalMin / 60).toFixed(1).replace(/\.0$/, "");
               return (
                 <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-accent-soft px-3 py-1 text-[12px] text-accent font-medium">
-                  ⏱ 总时长约 {hours} 小时 —— 一门系统知识，12 小时量级拿下
+                  ⏱ 总时长约 {hours} 小时 —— 一门系统知识，{hours} 小时量级拿下
                 </div>
               );
             })()}

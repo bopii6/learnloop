@@ -36,6 +36,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ sent: true });
   }
 
-  // 本地开发兜底：没配 SMTP，直接把验证码还给页面，登录流程不被卡死
+  // 本地开发兜底：没配 SMTP，直接把验证码还给页面，登录流程不被卡死。
+  // 生产环境绝不返回验证码——否则部署忘配 SMTP 时，任何人填任意邮箱即可登录。
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json(
+      { error: "邮件服务未配置（.env 缺 SMTP_HOST/SMTP_USER/SMTP_PASS），无法发送验证码" },
+      { status: 500 }
+    );
+  }
   return NextResponse.json({ sent: true, devCode: code, dev: true });
 }

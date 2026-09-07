@@ -11,6 +11,7 @@ interface RecordCourse {
   units: number;
   lectures: number;
   totalMin: number;
+  started?: boolean;
   updatedAt: number;
 }
 
@@ -91,7 +92,9 @@ export function CourseRecordsView({
                 <span className="text-[11.5px] text-ink-faint">
                   {c.units} 单元 · {c.lectures} 课节 · 约 {fmtHours(c.totalMin)}
                 </span>
-                <span className="text-[12px] text-accent font-medium">▶ 继续学习</span>
+                <span className="text-[12px] text-accent font-medium">
+                  {c.started ? "▶ 继续学习" : "▶ 开始学习"}
+                </span>
               </div>
             </button>
           ))}

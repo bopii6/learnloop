@@ -135,8 +135,8 @@ app.prepare().then(() => {
           ws.send(JSON.stringify({ type: "ask_ack", text: String(msg.text || "").slice(0, 200) }));
           break;
         case "end":
-          // 主动结束课堂 → 清空该课堂的恢复状态
-          updateRoom(joinedRoom, { script: [], messages: [], elements: [], cursor: 0 });
+          // 主动结束课堂 → 清空该课堂的恢复状态（writer 快照一并清掉，避免恢复出残局画面）
+          updateRoom(joinedRoom, { script: [], messages: [], elements: [], cursor: 0, writer: undefined });
           await persistRoom(joinedRoom);
           break;
         default:

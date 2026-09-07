@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 import { getCourseState } from "@/lib/agent/course";
 import { runStartTeaching, runTeachChat, buildLectureContext } from "@/lib/agent/teach";
 import { getProfile } from "@/lib/profile";
+import { userFromCookieHeader } from "@/lib/auth";
 import { pagesForLecture } from "@/lib/textbook";
 import type { WhiteboardEvent } from "@/types";
 
@@ -106,8 +107,9 @@ export async function POST(req: NextRequest) {
         const teachUnit = state.outline.units.find((u) => u.id === (body.unitId || ""));
         if (teachUnit?.key_concepts?.length) ctx.keyConcepts = teachUnit.key_concepts;
 
-        // 跨课程学习者画像注入（有摘要用摘要，否则退化为画像全文）
-        const profile = await getProfile();
+        // 跨课程学习者画像注入（按登录用户隔离；有摘要用摘要，否则退化为画像全文）
+        const me = await userFromCookieHeader(req.headers.get("cookie"));
+        const profile = await getProfile(me?.id);
         if (profile.summary) ctx.profileHint = profile.summary;
         if (profile.name) ctx.studentName = profile.name;
 

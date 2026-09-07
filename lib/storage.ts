@@ -35,6 +35,21 @@ function localPath(key: string): string {
   return path.join(LOCAL_ROOT, safeKey(key));
 }
 
+// 同 key 写入串行化：并发"读-改-写"（如连续 appendMessage）不再交错踩踏，
+// 最后一个写者胜，但文件本身不会出现新旧内容交错的中间态。
+const writeLocks = new Map<string, Promise<unknown>>();
+
+async function withKeyLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const prev = writeLocks.get(key) ?? Promise.resolve();
+  const next = prev.catch(() => {}).then(fn);
+  writeLocks.set(key, next);
+  try {
+    return await next;
+  } finally {
+    if (writeLocks.get(key) === next) writeLocks.delete(key);
+  }
+}
+
 // ---- R2 驱动（S3 兼容 API，aws4fetch 签名） ----
 
 interface R2Client {
@@ -132,13 +147,27 @@ export async function readBinary(key: string): Promise<Buffer | null> {
 
 export async function writeBinary(key: string, data: Buffer): Promise<void> {
   const k = safeKey(key);
-  if (storageMode === "local") {
-    const p = localPath(k);
-    await fs.mkdir(path.dirname(p), { recursive: true });
-    await fs.writeFile(p, data);
-    return;
-  }
-  await r2Put(k, data);
+  return withKeyLock(k, async () => {
+    if (storageMode === "local") {
+      const p = localPath(k);
+      await fs.mkdir(path.dirname(p), { recursive: true });
+      // 原子写：先落临时文件再 rename，进程崩溃/断电不会留下截断的半截 JSON
+      const tmp = `${p}.${process.pid}.${Date.now()}.tmp`;
+      try {
+        await fs.writeFile(tmp, data);
+        await fs.rename(tmp, p);
+      } catch (e) {
+        try {
+          await fs.unlink(tmp);
+        } catch {
+          // 临时文件清理失败可忽略
+        }
+        throw e;
+      }
+      return;
+    }
+    await r2Put(k, data);
+  });
 }
 
 export async function removeKey(key: string): Promise<void> {

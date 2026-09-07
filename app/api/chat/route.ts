@@ -4,10 +4,12 @@ import { randomUUID } from "crypto";
 import { runAgent, generateTitle } from "@/lib/agent/pipeline";
 import {
   appendMessage,
+  canAccess,
   createConversation,
   getConversation,
   setTitle,
 } from "@/lib/store";
+import { userFromCookieHeader } from "@/lib/auth";
 import type { AgentEvent } from "@/types";
 
 export const runtime = "nodejs";
@@ -25,11 +27,13 @@ export async function POST(req: NextRequest) {
     return new Response(JSON.stringify({ error: "empty message" }), { status: 400 });
   }
 
-  // 拿会话（没有就建）
+  // 拿会话（没有就建）；有主会话仅本人可写
+  const me = await userFromCookieHeader(req.headers.get("cookie"));
   let conv = body.conversationId
     ? await getConversation(body.conversationId)
     : null;
-  if (!conv) conv = await createConversation();
+  if (conv && !canAccess(conv, me?.id)) conv = null;
+  if (!conv) conv = await createConversation(me?.id);
 
   const isFirstExchange = conv.messages.length === 0;
 

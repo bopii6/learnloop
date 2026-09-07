@@ -14,6 +14,16 @@ export async function GET(req: NextRequest) {
     const me = await userFromCookieHeader(req.headers.get("cookie"));
     const mine = (ownerId: unknown) => !ownerId || (me ? ownerId === me.id : false);
     const items = await listKeys("courses/");
+    // 课堂快照在本地 data/classrooms/（临时缓存，刻意不上存储抽象层），据此判断"是否开始学过"
+    let classroomKeys: string[] = [];
+    try {
+      const { promises: fs } = await import("fs");
+      const path = await import("path");
+      const dir = path.join(process.cwd(), "data", "classrooms");
+      classroomKeys = await fs.readdir(dir);
+    } catch {
+      // 目录不存在 = 一门课都没学过
+    }
     const courses: {
       id: string;
       title: string;
@@ -22,6 +32,7 @@ export async function GET(req: NextRequest) {
       units: number;
       lectures: number;
       totalMin: number;
+      started: boolean;
       updatedAt: number;
     }[] = [];
     for (const item of items) {
@@ -43,8 +54,13 @@ export async function GET(req: NextRequest) {
         if (!mine(j.ownerId)) continue;
         const units = Array.isArray(outline.units) ? outline.units : [];
         const lectures = units.reduce<number>((s, u) => s + (u.lectures?.length || 0), 0);
+        // 时长只统计可学的白板课节（测验/项目环节不算进可学时长）
         const totalMin = units.reduce<number>(
-          (s, u) => s + (u.lectures || []).reduce<number>((t, l) => t + (l.duration_min || 0), 0),
+          (s, u) =>
+            s +
+            (u.lectures || [])
+              .filter((l: any) => l.content_type === "whiteboard" || !l.content_type)
+              .reduce<number>((t, l) => t + (l.duration_min || 0), 0),
           0
         );
         courses.push({
@@ -55,6 +71,7 @@ export async function GET(req: NextRequest) {
           units: units.length,
           lectures,
           totalMin,
+          started: classroomKeys.some((f) => f.startsWith(`${item.key.split("/").pop()!.replace(/\.json$/, "")}unit-`)),
           updatedAt: item.lastModified || 0,
         });
       } catch {

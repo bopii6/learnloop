@@ -26,6 +26,7 @@ export async function generateJson<T>(
       prompt: user,
       temperature: 0.2,
       maxTokens,
+      abortSignal: AbortSignal.timeout(120_000), // LLM 挂起时让管线走 error 分支，而不是无限等
     });
     return extractJson<T>(text);
   } catch (e) {
@@ -64,6 +65,7 @@ export async function streamAnswer(
     prompt: user,
     temperature: 0.5,
     maxTokens: 4000,
+    abortSignal: AbortSignal.timeout(300_000),
   });
   let full = "";
   for await (const chunk of result.textStream) {

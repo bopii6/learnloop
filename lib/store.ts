@@ -13,11 +13,12 @@ function convKey(id: string) {
   return `conversations/${id.replace(/[^a-zA-Z0-9_-]/g, "")}.json`;
 }
 
-export async function createConversation(): Promise<Conversation> {
+export async function createConversation(ownerId?: string): Promise<Conversation> {
   const now = Date.now();
   const conv: Conversation = {
     id: randomUUID(),
     title: "新对话",
+    ownerId: ownerId || undefined,
     createdAt: now,
     updatedAt: now,
     messages: [],
@@ -30,7 +31,14 @@ export async function getConversation(id: string): Promise<Conversation | null> 
   return readJson<Conversation | null>(convKey(id), null);
 }
 
-export async function listConversations(): Promise<ConversationMeta[]> {
+/** 归属校验：有主会话只能被本人读写；无主（历史/未登录）对所有匿名会话开放 */
+export function canAccess(conv: Conversation | null, ownerId?: string): boolean {
+  if (!conv) return false;
+  if (!conv.ownerId) return true;
+  return Boolean(ownerId) && conv.ownerId === ownerId;
+}
+
+export async function listConversations(ownerId?: string): Promise<ConversationMeta[]> {
   const items = await listKeys("conversations/");
   const metas: ConversationMeta[] = [];
   for (const item of items) {
@@ -38,9 +46,13 @@ export async function listConversations(): Promise<ConversationMeta[]> {
     try {
       const c = await readJson<Conversation>(item.key, null as unknown as Conversation);
       if (!c?.id) continue;
+      // 登录：只看自己的；未登录：只看无主的。互相都看不到对方的会话。
+      const visible = ownerId ? c.ownerId === ownerId : !c.ownerId;
+      if (!visible) continue;
       metas.push({
         id: c.id,
         title: c.title,
+        ownerId: c.ownerId,
         createdAt: c.createdAt,
         updatedAt: c.updatedAt || item.lastModified || 0,
         messageCount: c.messages?.length || 0,

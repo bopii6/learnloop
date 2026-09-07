@@ -22,8 +22,17 @@ export function CourseOutlineView({ outline, courseId }: CourseOutlineViewProps)
   const [marketState, setMarketState] = useState<"idle" | "saving" | "done" | "error">("idle");
 
   const totalLectures = outline.units.reduce((sum, u) => sum + u.lectures.length, 0);
+  // 时长只累计当前可学（白板课堂）课节：把测验/项目算进"总时长"是对用户的虚假承诺
+  const learnableLectures = outline.units.reduce(
+    (s, u) => s + u.lectures.filter((l) => (l as any).content_type === "whiteboard" || !(l as any).content_type).length,
+    0
+  );
   const totalMin = outline.units.reduce(
-    (s, u) => s + u.lectures.reduce((t, l) => t + (l.duration_min || 0), 0),
+    (s, u) =>
+      s +
+      u.lectures
+        .filter((l) => (l as any).content_type === "whiteboard" || !(l as any).content_type)
+        .reduce((t, l) => t + (l.duration_min || 0), 0),
     0
   );
   const totalHours = totalMin > 0 ? (totalMin / 60).toFixed(1).replace(/\.0$/, "") : null;
@@ -84,6 +93,9 @@ export function CourseOutlineView({ outline, courseId }: CourseOutlineViewProps)
           </div>
           <div className="text-[11.5px] text-ink-faint mt-3 pt-3 border-t border-[#e7e5dc]">
             共 {outline.units.length} 个单元 · {totalLectures} 个课节
+            {learnableLectures < totalLectures && (
+              <span className="text-ink-faint">（含 {totalLectures - learnableLectures} 个测验/项目环节）</span>
+            )}
             {totalHours && (
               <div className="mt-1.5 text-accent font-medium text-[12px]">
                 ⏱ 总时长约 {totalHours} 小时
@@ -201,7 +213,9 @@ export function CourseOutlineView({ outline, courseId }: CourseOutlineViewProps)
                       ))}
                     </div>
                   </div>
-                  <span className="text-[11px] text-ink-faint shrink-0">{lec.duration_min} 分钟</span>
+                  <span className="text-[11px] text-ink-faint shrink-0">
+                    {lec.content_type === "whiteboard" || !lec.content_type ? `${lec.duration_min} 分钟` : ""}
+                  </span>
                   {lec.content_type === "whiteboard" ? (
                     <button
                       onClick={() => openLecture(unit.id, lec)}
@@ -209,14 +223,20 @@ export function CourseOutlineView({ outline, courseId }: CourseOutlineViewProps)
                     >
                       <span className="text-[10px]">▶</span> 学习
                     </button>
-                  ) : (
-                    <button
-                      disabled
-                      title="测验与项目课节即将上线"
+                  ) : lec.content_type === "quiz" ? (
+                    <span
+                      title="测验环节：随堂小练已内嵌在白板课堂里，本条为课后练习入口（即将开放）"
                       className="shrink-0 rounded-full border border-[#d3d1c7] px-4 py-1.5 text-[12px] text-ink-faint cursor-not-allowed"
                     >
-                      即将上线
-                    </button>
+                      📝 课后练习
+                    </span>
+                  ) : (
+                    <span
+                      title="项目实践环节（即将开放），不影响本课程主线学习"
+                      className="shrink-0 rounded-full border border-[#d3d1c7] px-4 py-1.5 text-[12px] text-ink-faint cursor-not-allowed"
+                    >
+                      🧩 项目实践
+                    </span>
                   )}
                 </div>
               ))}

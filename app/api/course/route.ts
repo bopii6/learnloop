@@ -68,6 +68,9 @@ export async function POST(req: NextRequest) {
       const withSource = (q: string, source?: string) =>
         source === "学校同步" ? `${q}（课程来源：学校同步，需要贴合学校课程进度与考试要求）` : q;
 
+      // 登录用户 = 课程归属者（未登录本地自用，无主数据所有人可见）；所有 action 分支共用
+      const me = await userFromCookieHeader(req.headers.get("cookie"));
+
       try {
         if (action === "start") {
           // 教材模式：上传了课本就对着课本建课；query 可以为空
@@ -86,11 +89,9 @@ export async function POST(req: NextRequest) {
           }
 
           const courseId = `course-${randomUUID().slice(0, 8)}`;
-          // 登录用户 = 课程归属者（未登录本地自用，无主数据所有人可见）
-          const me = await userFromCookieHeader(req.headers.get("cookie"));
 
-          // 学习者画像：注入澄清提问（避免重复问已覆盖的维度）
-          const profile = await getProfile();
+          // 学习者画像：注入澄清提问（避免重复问已覆盖的维度）；按登录用户隔离
+          const profile = await getProfile(me?.id);
 
           let sources: SourceItem[];
           let pageContents: Record<number, string>;
@@ -244,7 +245,7 @@ chat 时用 reply 字段给一句 60 字内的自然回复，友好地把话题�
             const { blueprint } = await runBlueprintStep({
               query: state.query,
               clarifyAnswers: state.clarifyAnswers,
-              profileText: profileText(await getProfile()),
+              profileText: profileText(await getProfile(me?.id)),
               pageExcerpts: buildPageExcerpts(state.sources, state.pageContents || {}),
               textbookHint: state.textbook ? buildTextbookExcerpt(state.textbook) : undefined,
               emit: send,
@@ -253,7 +254,7 @@ chat 时用 reply 字段给一句 60 字内的自然回复，友好地把话题�
             state.blueprint = blueprint;
             await setCourseState(courseId, state);
           } else {
-            // 继续下一轮澄清
+            // 继续下一轮澄清（画像与资料摘要同样注入：不补的话第 2 轮起会重复问已覆盖的维度）
             const { question, done } = await runClarifyStep({
               query: withSource(state.query, state.courseSource),
               history: state.history,
@@ -261,6 +262,8 @@ chat 时用 reply 字段给一句 60 字内的自然回复，友好地把话题�
               clarifyAnswers: state.clarifyAnswers,
               round: state.clarifyRound,
               courseId,
+              profileHint: profileHintForClarify(await getProfile(me?.id)),
+              pageExcerpts: buildPageExcerpts(state.sources, state.pageContents || {}),
               emit: send,
             });
             state.currentQuestion = question?.question;
@@ -269,7 +272,7 @@ chat 时用 reply 字段给一句 60 字内的自然回复，友好地把话题�
               const { blueprint } = await runBlueprintStep({
                 query: state.query,
                 clarifyAnswers: state.clarifyAnswers,
-                profileText: profileText(await getProfile()),
+                profileText: profileText(await getProfile(me?.id)),
                 pageExcerpts: buildPageExcerpts(state.sources, state.pageContents || {}),
                 textbookHint: state.textbook ? buildTextbookExcerpt(state.textbook) : undefined,
                 emit: send,
@@ -296,7 +299,7 @@ chat 时用 reply 字段给一句 60 字内的自然回复，友好地把话题�
             clarifyAnswers: state.clarifyAnswers,
             feedback,
             previousBlueprint: state.blueprint,
-            profileText: profileText(await getProfile()),
+            profileText: profileText(await getProfile(me?.id)),
             pageExcerpts: buildPageExcerpts(state.sources, state.pageContents || {}),
             textbookHint: state.textbook ? buildTextbookExcerpt(state.textbook) : undefined,
             emit: send,
@@ -321,7 +324,7 @@ chat 时用 reply 字段给一句 60 字内的自然回复，友好地把话题�
             query: state.query,
             clarifyAnswers: state.clarifyAnswers,
             blueprint: finalBlueprint,
-            profileText: profileText(await getProfile()),
+            profileText: profileText(await getProfile(me?.id)),
             emit: send,
           });
           state.step = "done";
@@ -331,7 +334,7 @@ chat 时用 reply 字段给一句 60 字内的自然回复，友好地把话题�
 
           // 课程沉淀进学习者画像（澄清问答 + 课程标题），蒸馏失败不阻塞
           try {
-            await captureCourseProfile({ courseTitle: title, clarifyAnswers: state.clarifyAnswers });
+            await captureCourseProfile({ courseTitle: title, clarifyAnswers: state.clarifyAnswers }, me?.id);
           } catch {
             // 画像写入失败不影响课程交付
           }

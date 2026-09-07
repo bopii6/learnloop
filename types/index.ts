@@ -28,6 +28,7 @@ export interface StoredMessage {
 export interface Conversation {
   id: string;
   title: string;
+  ownerId?: string; // 创建者（登录后记录；无主 = 历史数据/未登录创建）
   createdAt: number;
   updatedAt: number;
   messages: StoredMessage[];
@@ -36,6 +37,7 @@ export interface Conversation {
 export interface ConversationMeta {
   id: string;
   title: string;
+  ownerId?: string;
   createdAt: number;
   updatedAt: number;
   messageCount: number;
@@ -171,7 +173,7 @@ export type CourseEvent =
 
 /** 板书的一个条目，随某一句讲解写上白板 */
 export interface BoardItem {
-  kind: "subtitle" | "bullet" | "note" | "table" | "diagram" | "circle";
+  kind: "subtitle" | "bullet" | "note" | "table" | "diagram" | "circle" | "underline" | "burst";
   text?: string;
   headers?: string[]; // table 用
   rows?: string[][]; // table 用
@@ -227,6 +229,27 @@ export interface LectureQuizItem {
   options: string[];
   answerIndexes: number[]; // 正确选项下标
   explain: string; // 为什么：一句话解析
+}
+
+// ---- 课程回放（Manus Replay 式：一个链接回看整节课的板书+讲解） ----
+
+/** 回放里的一拍：只保留播放所需的最小字段 */
+export interface ReplayBeat {
+  say: string;
+  section?: string;
+  items?: BoardItem[];
+  segmentTitle: string; // 片段标题（板书胶囊）
+}
+
+export interface ReplayReel {
+  id?: string;
+  courseId: string;
+  unitId: string;
+  lectureId: string;
+  courseTitle: string;
+  lectureTitle: string;
+  createdAt: number;
+  beats: ReplayBeat[];
 }
 
 // ---- 教材（PDF 上传）----

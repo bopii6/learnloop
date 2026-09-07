@@ -184,9 +184,9 @@ function layoutNodes(
   const edges: Edge[] = [];
   const totalLectures = blueprint.units.reduce((s, u) => s + u.lectures.length, 0);
 
-  const LEC_HEIGHT = 86; // 每个课节卡片高度 + 间距
-  const UNIT_GAP = 32;
-  const DEEPEN_HEIGHT = 50;
+  const LEC_HEIGHT = 76; // 每个课节卡片高度 + 间距
+  const UNIT_GAP = 28;
+  const DEEPEN_HEIGHT = 46;
 
   // 高度只按"展开的单元"计算，折叠单元只占一行 → 初始视野容纳全部单元
   const unitHeights: number[] = [];
@@ -416,9 +416,9 @@ export function BlueprintEditor({ blueprint, onChange, loading }: BlueprintEdito
   const totalLectures = blueprint.units.reduce((s, u) => s + u.lectures.length, 0);
 
   const canvas = (
-    <div className="relative bg-white overflow-hidden" style={{ height: expanded ? "100%" : 560 }}>
+    <div className="relative bg-white overflow-hidden" style={{ height: expanded ? "100%" : "clamp(560px, 68vh, 820px)" }}>
       <ReactFlowProvider>
-        <FlowCanvas nodes={nodes} edges={edges} refitKey={expandedUnits.size + "-" + blueprint.units.length} />
+        <FlowCanvas nodes={nodes} edges={edges} refitKey={`${expandedUnits.size}-${blueprint.units.length}-${nodes.length}-${expanded ? "full" : "card"}`} />
       </ReactFlowProvider>
       {/* 展开全屏按钮（原版同款位置：卡右上角） */}
       <button
@@ -497,10 +497,11 @@ function FlowCanvas({
       edges={edges}
       nodeTypes={nodeTypes}
       fitView
-      fitViewOptions={{ padding: 0.12 }}
-      minZoom={0.2}
-      maxZoom={1.5}
+      fitViewOptions={{ padding: 0.18 }}
+      minZoom={0.45}
+      maxZoom={1.15}
       panOnDrag
+      panOnScroll
       zoomOnScroll
       nodesDraggable={false}
       nodesConnectable={false}
