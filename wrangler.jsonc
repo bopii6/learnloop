@@ -4,6 +4,10 @@
   "main": ".open-next/worker.js",
   "compatibility_date": "2024-09-23",
   "compatibility_flags": ["nodejs_compat"],
+  // 自定义域名：绑定后国内可直连（workers.dev 在国内被墙）
+  "routes": [
+    { "pattern": "agent.hellojoy.top", "custom_domain": true }
+  ],
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
