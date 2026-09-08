@@ -186,6 +186,7 @@ export function WrappedView() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [error, setError] = useState("");
   const [shareState, setShareState] = useState<"idle" | "rendering" | "done" | "copied" | "fail">("idle");
+  const [sharePreview, setSharePreview] = useState("");
   const shareBlobRef = useRef<Blob | null>(null);
 
   useEffect(() => {
@@ -201,6 +202,10 @@ export function WrappedView() {
     try {
       const blob = await renderShareCard(stats);
       shareBlobRef.current = blob;
+      // 所见即所得：把成卡直接预览出来，用户能先看再发
+      const reader = new FileReader();
+      reader.onload = () => setSharePreview(String(reader.result || ""));
+      reader.readAsDataURL(blob);
       setShareState("done");
       // 自动触发下载
       const url = URL.createObjectURL(blob);
@@ -303,6 +308,13 @@ export function WrappedView() {
       {shareState === "done" && (
         <div className="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-[12.5px] text-emerald-700 fade-up">
           ✓ 分享卡已生成并开始下载（1080×1350），也可点「复制」直接粘贴到聊天/笔记里
+        </div>
+      )}
+      {sharePreview && (
+        <div className="mb-6 rounded-2xl border border-[#e7e5dc] bg-white p-4 fade-up">
+          <div className="text-[11px] text-ink-faint uppercase tracking-wider mb-3">分享卡预览</div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={sharePreview} alt="学习战报分享卡" className="w-full max-w-[380px] rounded-xl border border-[#e7e5dc] shadow-sm" />
         </div>
       )}
 

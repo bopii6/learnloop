@@ -8,7 +8,7 @@ import { LectureQuizPanel } from "./LectureQuizPanel";
 import { useClassroomSocket, type ClassroomState } from "@/hooks/useClassroomSocket";
 import { startVoiceCapture, type VoiceCapture } from "./voice-capture";
 import { consumeSse } from "@/lib/sse";
-import { exportBoardPoster, downloadBlob, copyImageToClipboard, safeFilename } from "@/lib/board-poster";
+import { exportBoardPoster, exportScriptPoster, downloadBlob, copyImageToClipboard, safeFilename } from "@/lib/board-poster";
 import { VerticalClipModal, type ClipBeat } from "./VerticalClipModal";
 
 interface CourseSessionProps {
@@ -843,18 +843,38 @@ export function CourseSession({
     if (cp) void sendChat(answer, { question: cp.question, options: cp.options });
   };
 
-  // ---- 产物一：知识海报（白板终态 → 竖版分享长图） ----
+  // ---- 产物一：知识海报（优先讲义式：片段要点+图表+金句；无剧本时退回白板终态） ----
   const generatePoster = async () => {
     if (posterBusy) return;
     setPosterBusy(true);
     setPosterMsg("");
     try {
-      const { blob } = await exportBoardPoster({
-        api: excalidrawApiRef.current,
-        courseTitle: outline.title,
-        lectureTitle,
-        studentName: profileNameRef.current || undefined,
-      });
+      let blob: Blob;
+      const segs = [...wsScriptRef.current].sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+      if (segs.length > 0) {
+        ({ blob } = await exportScriptPoster({
+          segments: segs.map((seg) => ({
+            title: seg.title,
+            beats: (seg.beats || []).map((b: TeachBeat) => ({ say: b.say, items: b.items })),
+          })),
+          courseTitle: outline.title,
+          lectureTitle,
+          studentName: profileNameRef.current || undefined,
+        }));
+      } else {
+        ({ blob } = await exportBoardPoster({
+          api: excalidrawApiRef.current,
+          courseTitle: outline.title,
+          lectureTitle,
+          studentName: profileNameRef.current || undefined,
+        }));
+      }
+      // DEBUG-POSTER: 验证用钩子，上线前移除
+      try {
+        const fr = new FileReader();
+        fr.onload = () => ((window as any).__llPosterUrl = String(fr.result || ""));
+        fr.readAsDataURL(blob);
+      } catch {}
       downloadBlob(blob, `learnloop_poster_${safeFilename(lectureTitle)}.png`);
       const copied = await copyImageToClipboard(blob);
       setPosterMsg(copied ? "已下载并复制到剪贴板" : "海报已下载");
@@ -1016,6 +1036,31 @@ export function CourseSession({
     handleExit();
   };
 
+  // 适应内容：把整块已写板书收进视口（自算 scroll/zoom，scrollToContent 在 viewMode 下会失效）
+  const fitAll = () => {
+    const api = excalidrawApiRef.current;
+    if (!api) return;
+    const els = api.getSceneElements().filter((el: any) => !el.isDeleted && el.id !== "camera-anchor" && el.id !== "pencil-cursor");
+    if (els.length === 0) return;
+    const minX = Math.min(...els.map((e: any) => e.x));
+    const minY = Math.min(...els.map((e: any) => e.y));
+    const maxX = Math.max(...els.map((e: any) => e.x + (e.width || 0)));
+    const maxY = Math.max(...els.map((e: any) => e.y + (e.height || 0)));
+    const st = api.getAppState();
+    const vpW = st.width || 1100;
+    const vpH = st.height || 620;
+    const w = maxX - minX + 120;
+    const h = maxY - minY + 220;
+    const zoom = Math.max(0.3, Math.min(1.4, Math.min(vpW / w, vpH / h)));
+    api.updateScene({
+      appState: {
+        scrollX: -(minX - 60 + w / 2) + vpW / (2 * zoom),
+        scrollY: -(minY - 110 + h / 2) + vpH / (2 * zoom),
+        zoom: { value: zoom },
+      },
+    });
+  };
+
   return (
     <div className="fixed inset-0 bg-white flex flex-col z-50">
       {/* 顶部栏（Hyperknow 风格：标题 + 播放控制 + 缩放 + 操作） */}
@@ -1090,7 +1135,7 @@ export function CourseSession({
           </div>
           {/* 适应内容 */}
           <button
-            onClick={() => excalidrawApiRef.current?.scrollToContent(undefined, { fitToContent: true, animate: true })}
+            onClick={fitAll}
             className="rounded-lg border border-[#d3d1c7] px-3 py-1.5 text-[12px] text-ink-soft hover:border-accent"
             title="适应内容"
           >

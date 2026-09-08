@@ -50,17 +50,24 @@ const BEAT_SCRIPT_SYSTEM = `你是白板课程讲师兼板书设计师。为一�
 板书规则（items 是随这句话写上白板的内容——板书是给眼睛扫的，不是给眼睛读的）：
 - 极度精炼：bullet ≤ 14 个字、subtitle ≤ 10 个字、note ≤ 12 个字、表格单元格 ≤ 6 个字。
 - 每个 beat 的 items 1-3 条，说到什么写什么，写什么说什么。
-- 整段最多 4 个分区、累计 ≤ 12 条 items、最多 1 个表格（2-3 列 × 2-3 行）。
+- 整段最多 4 个分区、累计 ≤ 16 条 items、最多 1 个表格（2-3 列 × 2-3 行）。
 - section 是板书分区名（≤ 6 字，如"原生缺陷"）；连续 beat 沿用同一分区时省略 section；切换分区时必须写新 section；首个 beat 必须带 section。
-- 类型（让白板像老师的手绘，不要只有文字）：
+- 【形式丰富是硬规则】真老师的板书是"图文并茂的手绘"：箭头流程、对比表、趋势线、对勾打叉、圈划重点、大括号归纳……绝不允许一整段全是文字条目。每个片段至少用 3 种不同类型；bullet 在整段 items 里占比不得超过一半。
+- 类型（像老师的手绘，按内容选形式）：
   - {"kind":"subtitle","text":"..."} — 小标题
   - {"kind":"bullet","text":"..."} — 要点（短语，不是句子）
   - {"kind":"note","text":"..."} — 补充注释
-  - {"kind":"table","headers":["列1","列2"],"rows":[["a","b"]]} — 对比表格
-  - {"kind":"diagram","nodes":["输入","处理","输出"]} — 简单流程图：2-4 个节点横向排列，节点 ≤5 字，适合讲流程/数据流/架构；讲流程类内容时优先用它
+  - {"kind":"table","headers":["列1","列2"],"rows":[["a","b"]]} — 对比表格：讲两个事物多维度对比时用
+  - {"kind":"diagram","nodes":["输入","处理","输出"]} — 流程图：2-4 个节点横向排列（节点 ≤5 字），讲流程/数据流/架构/调用链用它
+  - {"kind":"tree","nodes":["父概念","子概念1","子概念2","子概念3"]} — 分支树：父概念在上、2-3 个子概念在下，讲分类/组成/派生用它
+  - {"kind":"chart","values":[3,7,4,9]} — 手绘趋势折线（2-5 个纵值），讲增长/下降/波动/性能对比用它
+  - {"kind":"vs","text":"传统做法|装饰器做法"} — 左右对比栏（用 | 分隔两个标签，各 ≤8 字），讲新旧/优劣对立时用
+  - {"kind":"judge","verdict":"good","text":"..."} — 判断行：verdict="good" 绿勾（推荐做法）、"bad" 红叉（常见错误），讲误区/最佳实践时用
+  - {"kind":"mark","style":"star"} — 在上一条内容旁画星标（"alert"=感叹号、"question"=问号），强调警示/存疑时用
+  - {"kind":"quote","text":"..."} — 金句：手绘椭圆圈住一句话（≤14 字，提炼本段最核心的洞察），每个片段最多 1 次，放收尾 beat
   - {"kind":"circle"} — 把白板上一条内容圈起来强调（无参数），配合 say 里的"注意看/圈重点"
   - {"kind":"underline"} — 在上一条内容下划一条重点线（无参数），配合 say 里的"划重点/记住这句"
-  - {"kind":"burst"} — 在上一条内容上方画放射强调线（无参数），配合 say 里的"最关键的一点来了/划重点"`;
+  - {"kind":"burst"} — 在上一条内容上方画放射强调线（无参数），配合 say 里的"最关键的一点来了"`;
 
 /** 课后练习：整节课讲完后 3-5 道单选/多选，替代独立的测验模块 */
 const LECTURE_QUIZ_SYSTEM = `你是白板课程讲师。一节课刚讲完，出一份课后练习检验学员是否真的听懂了，只输出 JSON：
@@ -109,10 +116,15 @@ function normalizeBeats(raw: unknown): TeachBeat[] {
     const items: BoardItem[] = Array.isArray(beat.items)
       ? beat.items
           .filter((it) => it && typeof it === "object" && it.kind)
-          .slice(0, 3)
+          .slice(0, 4)
           .map((it) => ({
             ...it,
-            text: clamp(it.text, it.kind === "subtitle" ? 14 : it.kind === "note" ? 16 : 20),
+            text: clamp(it.text, it.kind === "subtitle" ? 14 : it.kind === "note" ? 16 : 22),
+            values: Array.isArray(it.values)
+              ? it.values.slice(0, 5).map((v) => Math.max(0, Math.min(100, Number(v) || 0)))
+              : undefined,
+            verdict: it.verdict === "bad" ? "bad" : it.verdict === "good" ? "good" : undefined,
+            style: ["star", "alert", "question"].includes(String(it.style)) ? (it.style as BoardItem["style"]) : undefined,
             headers: it.headers?.map((h) => clamp(h, 6) || ""),
             rows: it.rows?.map((row) => row.map((c) => clamp(c, 6) || "")),
           }))

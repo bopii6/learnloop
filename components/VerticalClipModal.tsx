@@ -73,6 +73,7 @@ export function VerticalClipModal({ open, onClose, courseTitle, lectureTitle, be
   const rafRef = useRef(0);
   const timerRef = useRef(0);
   const urlRef = useRef("");
+  const containerMimeRef = useRef("video/webm");
 
   const slides = beats.slice(0, 8);
   const slideMs = slides.length > 0 ? (DURATION_MS - INTRO_MS - OUTRO_MS) / slides.length : 0;
@@ -222,7 +223,8 @@ export function VerticalClipModal({ open, onClose, courseTitle, lectureTitle, be
   }, [open, phase, draw]);
 
   const stopEverything = useCallback(() => {
-    cancelAnimationFrame(rafRef.current);
+    // setInterval 驱动（rAF 在面板后台时会被节流到停帧，导致录出空视频）
+    window.clearInterval(rafRef.current);
     window.clearTimeout(timerRef.current);
     try {
       window.speechSynthesis?.cancel();
@@ -238,16 +240,24 @@ export function VerticalClipModal({ open, onClose, courseTitle, lectureTitle, be
     if (!canvas) return;
     try {
       const stream = canvas.captureStream(30);
-      const mime = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"].find(
-        (m) => typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(m)
-      );
+      // 优先 MP4（H.264）：Windows/macOS 自带播放器双击可放；WebM 只有 Chrome/部分播放器认
+      const mime = [
+        "video/mp4;codecs=avc1.42E01E",
+        "video/mp4;codecs=avc1",
+        "video/mp4",
+        "video/webm;codecs=vp9",
+        "video/webm;codecs=vp8",
+        "video/webm",
+      ].find((m) => typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(m));
+      const isMp4 = Boolean(mime?.startsWith("video/mp4"));
+      containerMimeRef.current = isMp4 ? "video/mp4" : "video/webm";
       const rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 4_000_000 } : undefined);
       const chunks: BlobPart[] = [];
       rec.ondataavailable = (e) => {
         if (e.data.size > 0) chunks.push(e.data);
       };
       rec.onstop = () => {
-        const blob = new Blob(chunks, { type: "video/webm" });
+        const blob = new Blob(chunks, { type: containerMimeRef.current });
         if (urlRef.current) URL.revokeObjectURL(urlRef.current);
         urlRef.current = URL.createObjectURL(blob);
         setVideoUrl(urlRef.current);
@@ -289,11 +299,11 @@ export function VerticalClipModal({ open, onClose, courseTitle, lectureTitle, be
           }
           return;
         }
-        rafRef.current = requestAnimationFrame(loop);
       };
-      rafRef.current = requestAnimationFrame(loop);
+      // 33ms ≈ 30fps：setInterval 驱动，避免 rAF 后台节流录出空视频
+      rafRef.current = window.setInterval(loop, 33);
       timerRef.current = window.setTimeout(() => {
-        cancelAnimationFrame(rafRef.current);
+        window.clearInterval(rafRef.current);
         draw(DURATION_MS);
         try {
           rec.stop();
@@ -370,21 +380,22 @@ export function VerticalClipModal({ open, onClose, courseTitle, lectureTitle, be
             <>
               <video src={videoUrl} controls className="hidden" />
               <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-[12.5px] text-emerald-700 mb-4">
-                ✓ 录制完成，60 秒竖屏视频已生成
+                ✓ 录制完成，60 秒竖屏视频已生成（{containerMimeRef.current === "video/mp4" ? "MP4" : "WebM"}）
               </div>
               <div className="flex gap-2">
                 <button
                   onClick={() => {
+                    const ext = containerMimeRef.current === "video/mp4" ? "mp4" : "webm";
                     const a = document.createElement("a");
                     a.href = videoUrl;
-                    a.download = `learnloop_60s_${lectureTitle.slice(0, 12)}.webm`;
+                    a.download = `learnloop_60s_${lectureTitle.slice(0, 12)}.${ext}`;
                     document.body.appendChild(a);
                     a.click();
                     a.remove();
                   }}
                   className="rounded-lg bg-accent px-4 py-2.5 text-[13px] text-white font-medium hover:opacity-90"
                 >
-                  ⬇ 下载视频（WebM）
+                  ⬇ 下载视频（{containerMimeRef.current === "video/mp4" ? "MP4" : "WebM"}）
                 </button>
                 <button
                   onClick={() => {

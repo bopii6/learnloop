@@ -99,15 +99,52 @@ export async function POST(req: NextRequest) {
           let textbookState: { id: string; title: string; toc: string[]; pages: TextbookPage[] } | undefined;
 
           if (tb) {
-            // 教材模式：不搜网，直接吃教材。上传了教材意图足够明确，跳过意图门卫。
-            await send({ type: "stage", name: "search", label: "正在读取教材内容", status: "start", detail: `《${tb.title}》· ${tb.pageCount} 页` });
+            // 文档建课模式（1:1 Hyperknow）：第 1 步「正在查看你的文档」显式成阶段，
+            // 之后照常联网搜索补充资料（第 2 步），管线共 5 步。
+            await send({
+              type: "stage",
+              name: "reading_doc",
+              label: "正在查看你的文档",
+              status: "start",
+              detail: `第 1 步，共 5 步`,
+            });
             const conv = textbookToSources(tb);
             sources = conv.sources;
             pageContents = conv.pageContents;
             excerpts = buildTextbookExcerpt(tb);
             await send({ type: "sources", items: sources });
-            await send({ type: "stage", name: "search", label: "正在读取教材内容", status: "end", detail: `${sources.length} 个内容块` });
+            await send({
+              type: "stage",
+              name: "reading_doc",
+              label: "正在查看你的文档",
+              status: "end",
+              detail: `读完《${tb.title}》· ${tb.pageCount} 页`,
+            });
             textbookState = { id: tb.id, title: tb.title, toc: tb.toc, pages: tb.pages };
+
+            // 第 2 步：围绕文档主题联网补充（文档是主料，网络来源限 4 条）
+            const web = await runSearchStep({
+              query,
+              history: [],
+              emit: send,
+              stepNo: 2,
+              stepTotal: 5,
+              docContext: excerpts,
+              existingSources: sources,
+              existingPages: pageContents,
+              readLimit: 3,
+            });
+            sources = web.sources;
+            pageContents = web.pageContents;
+            excerpts = [
+              excerpts,
+              buildPageExcerpts(
+                web.sources.filter((s) => s.domain !== "教材"),
+                web.pageContents
+              ),
+            ]
+              .filter(Boolean)
+              .join("\n\n");
           } else {
             // 意图门卫（三向）：建课 / 真问题（带引用回答，不建课）/ 纯闲聊。
             // 用户只有一个输入框，误触"你好"或随手一个疑问都不该硬造一门课。
@@ -180,7 +217,7 @@ chat 时用 reply 字段给一句 60 字内的自然回复，友好地把话题�
             excerpts = buildPageExcerpts(sources, pageContents);
           }
 
-          // 阶段 2：第一轮澄清
+          // 阶段 3（文档模式）/ 2（纯文字）：第一轮澄清
           const { question, done } = await runClarifyStep({
             query: withSource(query, body.courseSource),
             history: [],
@@ -190,6 +227,8 @@ chat 时用 reply 字段给一句 60 字内的自然回复，友好地把话题�
             courseId,
             profileHint: profileHintForClarify(profile),
             pageExcerpts: excerpts,
+            stepNo: tb ? 3 : 2,
+            stepTotal: tb ? 5 : 4,
             emit: send,
           });
 
@@ -201,6 +240,8 @@ chat 时用 reply 字段给一句 60 字内的自然回复，友好地把话题�
             sources,
             pageContents,
             textbook: textbookState,
+            docMode: Boolean(tb),
+            docName: tb ? `${tb.title}.pdf` : undefined,
             courseSource: body.courseSource,
             clarifyAnswers: [],
             clarifyRound: 1,
@@ -215,6 +256,8 @@ chat 时用 reply 字段给一句 60 字内的自然回复，友好地把话题�
               profileText: profileText(profile),
               pageExcerpts: excerpts,
               textbookHint: tb ? excerpts : undefined,
+              stepNo: tb ? 4 : 3,
+              stepTotal: tb ? 5 : 4,
               emit: send,
             });
             const state = (await getCourseState(courseId))!;
@@ -248,6 +291,8 @@ chat 时用 reply 字段给一句 60 字内的自然回复，友好地把话题�
               profileText: profileText(await getProfile(me?.id)),
               pageExcerpts: buildPageExcerpts(state.sources, state.pageContents || {}),
               textbookHint: state.textbook ? buildTextbookExcerpt(state.textbook) : undefined,
+              stepNo: state.docMode ? 4 : 3,
+              stepTotal: state.docMode ? 5 : 4,
               emit: send,
             });
             state.step = "blueprint";
@@ -264,6 +309,8 @@ chat 时用 reply 字段给一句 60 字内的自然回复，友好地把话题�
               courseId,
               profileHint: profileHintForClarify(await getProfile(me?.id)),
               pageExcerpts: buildPageExcerpts(state.sources, state.pageContents || {}),
+              stepNo: state.docMode ? 3 : 2,
+              stepTotal: state.docMode ? 5 : 4,
               emit: send,
             });
             state.currentQuestion = question?.question;
@@ -275,6 +322,8 @@ chat 时用 reply 字段给一句 60 字内的自然回复，友好地把话题�
                 profileText: profileText(await getProfile(me?.id)),
                 pageExcerpts: buildPageExcerpts(state.sources, state.pageContents || {}),
                 textbookHint: state.textbook ? buildTextbookExcerpt(state.textbook) : undefined,
+                stepNo: state.docMode ? 4 : 3,
+                stepTotal: state.docMode ? 5 : 4,
                 emit: send,
               });
               state.step = "blueprint";
@@ -302,6 +351,8 @@ chat 时用 reply 字段给一句 60 字内的自然回复，友好地把话题�
             profileText: profileText(await getProfile(me?.id)),
             pageExcerpts: buildPageExcerpts(state.sources, state.pageContents || {}),
             textbookHint: state.textbook ? buildTextbookExcerpt(state.textbook) : undefined,
+            stepNo: state.docMode ? 4 : 3,
+            stepTotal: state.docMode ? 5 : 4,
             emit: send,
           });
           state.blueprint = blueprint;
@@ -325,6 +376,9 @@ chat 时用 reply 字段给一句 60 字内的自然回复，友好地把话题�
             clarifyAnswers: state.clarifyAnswers,
             blueprint: finalBlueprint,
             profileText: profileText(await getProfile(me?.id)),
+            refFileName: state.docName,
+            stepNo: state.docMode ? 5 : 4,
+            stepTotal: state.docMode ? 5 : 4,
             emit: send,
           });
           state.step = "done";

@@ -20,10 +20,13 @@ function sanitizeItems(items: unknown): BoardItem[] {
   if (!Array.isArray(items)) return [];
   return items
     .filter((it) => it && typeof it === "object" && typeof it.kind === "string")
-    .slice(0, 4)
+    .slice(0, 5)
     .map((it: any) => ({
       kind: it.kind,
       text: clampStr(it.text, 40) || undefined,
+      values: Array.isArray(it.values) ? it.values.slice(0, 5).map((v: unknown) => Math.max(0, Math.min(100, Number(v) || 0))) : undefined,
+      verdict: it.verdict === "bad" ? "bad" : it.verdict === "good" ? "good" : undefined,
+      style: ["star", "alert", "question"].includes(String(it.style)) ? it.style : undefined,
       headers: Array.isArray(it.headers) ? it.headers.slice(0, 3).map((h: unknown) => clampStr(h, 8)) : undefined,
       rows: Array.isArray(it.rows) ? it.rows.slice(0, 4).map((r: unknown) => (Array.isArray(r) ? r.slice(0, 3).map((c: unknown) => clampStr(c, 8)) : [])) : undefined,
       nodes: Array.isArray(it.nodes) ? it.nodes.slice(0, 4).map((n: unknown) => clampStr(n, 6)) : undefined,

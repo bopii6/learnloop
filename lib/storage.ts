@@ -24,10 +24,13 @@ const R2_CONFIGURED = Boolean(
 
 export const storageMode: StorageMode = R2_CONFIGURED ? "r2" : "local";
 
-/** 键约束：data/ 相对路径风格，防目录穿越 */
-function safeKey(key: string): string {
+/** 键约束：data/ 相对路径风格，防目录穿越；allowEmpty 仅供 R2 桶根列出使用 */
+function safeKey(key: string, allowEmpty = false): string {
   const cleaned = key.replace(/\\/g, "/").replace(/\.\.+/g, "").replace(/^\/+/, "");
-  if (!cleaned) throw new Error("storage: empty key");
+  if (!cleaned) {
+    if (allowEmpty) return "";
+    throw new Error("storage: empty key");
+  }
   return cleaned;
 }
 
@@ -72,9 +75,10 @@ async function getR2(): Promise<R2Client> {
 
 function r2Url(key: string, query?: Record<string, string>): string {
   const base = `https://${process.env.CF_ACCOUNT_ID}.r2.cloudflarestorage.com/${process.env.CF_R2_BUCKET}`;
-  const encoded = safeKey(key).split("/").map(encodeURIComponent).join("/");
+  const k = safeKey(key, true);
+  const encoded = k ? k.split("/").map(encodeURIComponent).join("/") : "";
   const qs = query ? "?" + new URLSearchParams(query).toString() : "";
-  return `${base}/${encoded}${qs}`;
+  return encoded ? `${base}/${encoded}${qs}` : `${base}${qs}`;
 }
 
 async function r2Get(key: string): Promise<Buffer | null> {

@@ -55,7 +55,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
   const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
   const [customAnswer, setCustomAnswer] = useState("");
   const [loading, setLoading] = useState(false);
-  const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
+  const [progress, setProgress] = useState<{ current: number; total: number; optimized?: number } | null>(null);
   const [showFeedback, setShowFeedback] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [designNotes, setDesignNotes] = useState<string[]>([]);
@@ -68,12 +68,16 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
   const [textbookTitle, setTextbookTitle] = useState("");
   const [textbookPages, setTextbookPages] = useState(0);
   const [textbookOcr, setTextbookOcr] = useState(false);
+  const [textbookSize, setTextbookSize] = useState(0);
   const [textbookNotice, setTextbookNotice] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [courseSource, setCourseSource] = useState<"自学" | "学校同步">("自学");
   const [statusLine, setStatusLine] = useState(0);
+  // 文档建课 5 步管线：第 1 步「正在查看你的文档」+ 蓝图确认后的行内回执
+  const [readingDoc, setReadingDoc] = useState<"idle" | "running" | "done">("idle");
+  const [confirmed, setConfirmed] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const outlineRef = useRef<CourseOutline | null>(null);
@@ -99,6 +103,14 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
   const handleEvent = useCallback((e: CourseEvent) => {
     if (e.type === "stage") {
       if (e.name === "search") setStep((s) => (s === "input" ? "search" : s));
+      if (e.name === "reading_doc") {
+        if (e.status === "start") {
+          setReadingDoc("running");
+          setStep("search");
+        } else {
+          setReadingDoc("done");
+        }
+      }
     } else if (e.type === "sources") {
       setSources(e.items);
     } else if (e.type === "clarify_round") {
@@ -135,7 +147,8 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
       setStep("input");
       setLoading(false);
     } else if (e.type === "outline_progress") {
-      setProgress({ current: e.current, total: e.total });
+      // optimized 只在每单元完成时下发，单元进行中保留上次的计数（避免"已优化 N 个课节"闪烁）
+      setProgress((p) => ({ current: e.current, total: e.total, optimized: e.optimized ?? p?.optimized }));
     } else if (e.type === "outline") {
       setOutline(e.outline);
       outlineRef.current = e.outline;
@@ -189,6 +202,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
       setTextbookTitle(d.title);
       setTextbookPages(d.textPages ?? d.pageCount ?? 0);
       setTextbookOcr(Boolean(d.ocr));
+      setTextbookSize(file.size);
       setTextbookNotice(d.notice || null);
     } catch (e) {
       setUploadError(e instanceof Error ? e.message : String(e));
@@ -215,6 +229,8 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
     setChatReply(null);
     setQaPending(null);
     setQaResult(null);
+    setReadingDoc(textbookId ? "running" : "idle");
+    setConfirmed(false);
     await streamRequest({
       action: "start",
       query: query.trim() || `系统学习《${textbookTitle}》教材`,
@@ -245,6 +261,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
     setLoading(true);
     setStep("outline");
     setProgress(null);
+    setConfirmed(true); // 行内回执「✓ 已确认，正在生成完整课程…」
     // 如果用户编辑过蓝图，把编辑后的版本发给后端
     const body: Record<string, unknown> = { action: "generate", courseId };
     if (editedBlueprint && editedBlueprint !== blueprint) {
@@ -266,6 +283,8 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
     setLoading(false);
     setQuestion(null);
     setProgress(null);
+    setReadingDoc("idle");
+    setConfirmed(false);
   }, []);
 
   const toggleOption = (label: string) => {
@@ -279,12 +298,13 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
     }
   };
 
-  // ---- 内联阶段标题（原版同款：蓝粗体 ｜ 第 N 步，共 4 步 ✓/…） ----
+  // ---- 内联阶段标题（原版同款：蓝粗体 ｜ 第 N 步，共 M 步 ✓/…；文档建课为 5 步） ----
+  const stageTotal = textbookId ? 5 : 4;
   const StageHeader = ({ title, n, state }: { title: string; n: number; state: "running" | "done" }) => (
     <div className="flex items-center gap-2.5 mb-3">
       <span className="text-[14.5px] font-bold text-[#1d4ed8]">{title}</span>
       <span className="text-ink-faint text-[12.5px]">｜</span>
-      <span className="text-[12.5px] text-ink-soft">第 {n} 步，共 4 步</span>
+      <span className="text-[12.5px] text-ink-soft">第 {n} 步，共 {stageTotal} 步</span>
       {state === "done" ? (
         <span className="text-accent text-[13px]">✓</span>
       ) : (
@@ -388,8 +408,8 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
             rows={3}
             className="w-full resize-none rounded-xl border border-[#e7e5dc] px-4 py-3 text-[14px] outline-none focus:border-accent"
           />
-          {/* 教材上传：上传后蓝图镜像教材目录，讲解标注页码 */}
-          <div className="mt-3 flex items-center gap-2 flex-wrap">
+          {/* 文档上传：附件卡（原版同款：图标+文件名+大小）+ 实时改价 10 → 13 */}
+          <div className="mt-3">
             <input
               ref={fileRef}
               type="file"
@@ -402,37 +422,50 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
               }}
             />
             {textbookId ? (
-              <>
-                <span className="inline-flex items-center gap-2 rounded-full bg-accent-soft border border-accent/30 px-3 py-1 text-[12px] text-accent">
-                  📖 《{textbookTitle}》· {textbookPages} 页文本{textbookOcr ? " · OCR" : ""}
+              <div className="flex items-start gap-3">
+                <div className="inline-flex items-center gap-3 rounded-xl border border-[#e7e5dc] bg-[#f8f9fa] px-3.5 py-2.5">
+                  <span className="w-9 h-9 shrink-0 rounded-lg bg-red-500 text-white flex items-center justify-center text-[10px] font-bold">
+                    PDF
+                  </span>
+                  <span>
+                    <span className="block text-[13px] font-medium text-ink leading-snug max-w-[260px] truncate">
+                      《{textbookTitle}》
+                    </span>
+                    <span className="block text-[11px] text-ink-faint mt-0.5">
+                      PDF{textbookSize ? ` • ${(textbookSize / 1024).toFixed(1)} KB` : ""}
+                      {" · "}
+                      {textbookPages} 页文本{textbookOcr ? " · 已 OCR" : ""}
+                    </span>
+                  </span>
                   <button
                     onClick={() => {
                       setTextbookId("");
                       setTextbookTitle("");
                       setTextbookPages(0);
                       setTextbookOcr(false);
+                      setTextbookSize(0);
                       setTextbookNotice(null);
                     }}
-                    className="hover:text-red-500"
-                    title="移除教材"
+                    className="self-start text-ink-faint hover:text-red-500 leading-none"
+                    title="移除文档"
                   >
                     ×
                   </button>
-                </span>
+                </div>
                 {textbookNotice && (
-                  <span className="text-[11px] text-ink-faint leading-snug">{textbookNotice}</span>
+                  <span className="text-[11px] text-ink-faint leading-snug mt-1">{textbookNotice}</span>
                 )}
-              </>
+              </div>
             ) : (
               <button
                 onClick={() => fileRef.current?.click()}
                 disabled={uploading}
                 className="rounded-full border border-[#e7e5dc] px-3 py-1 text-[12px] text-ink-soft hover:border-accent hover:text-accent transition-colors disabled:opacity-50"
               >
-                {uploading ? "📖 教材解析中…（扫描版会自动 OCR，较慢）" : "📎 上传教材 PDF，对着课本讲"}
+                {uploading ? "📄 文档解析中…（扫描版会自动 OCR，较慢）" : "＋ 上传文档，围绕它生成课程"}
               </button>
             )}
-            {uploadError && <span className="text-[11.5px] text-red-600">{uploadError}</span>}
+            {uploadError && <span className="text-[11.5px] text-red-600 ml-2">{uploadError}</span>}
           </div>
           <div className="mt-4 flex items-center justify-between">
             {/* 课程来源（原版同款 radio）：随任务传给澄清环节 */}
@@ -454,13 +487,22 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
                 </button>
               ))}
             </div>
-            <button
-              onClick={() => void startGeneration()}
-              disabled={(!query.trim() && !textbookId) || loading}
-              className="rounded-full bg-accent px-6 py-2.5 text-[13.5px] text-white font-medium hover:opacity-90 disabled:opacity-40"
-            >
-              {loading ? "生成中..." : "开始打造课程 →"}
-            </button>
+            <div className="flex items-center gap-3">
+              {/* 实时定价（原版同款徽章）：文档处理费 +3 */}
+              <span
+                className="inline-flex items-center gap-1 rounded-full bg-[#f1efe8] px-2.5 py-1 text-[12px] text-ink-soft"
+                title={`生成本课程需消耗 ${textbookId ? 13 : 10} 个积分${textbookId ? "（含文档处理 3 积分）" : ""}`}
+              >
+                ✦ {textbookId ? 13 : 10}
+              </span>
+              <button
+                onClick={() => void startGeneration()}
+                disabled={(!query.trim() && !textbookId) || loading}
+                className="rounded-full bg-accent px-6 py-2.5 text-[13.5px] text-white font-medium hover:opacity-90 disabled:opacity-40"
+              >
+                {loading ? "生成中..." : "开始打造课程 →"}
+              </button>
+            </div>
           </div>
         </div>
         {/* 示例主题 chip（点击直接填入） */}
@@ -500,9 +542,29 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
         </div>
       </div>
 
-      {/* 阶段 1：搜索 / 读教材 */}
+      {/* 阶段 1（文档建课）：正在查看你的文档 */}
+      {textbookId && (
+        <section className="mb-8">
+          <StageHeader title="正在查看你的文档" n={1} state={readingDoc === "done" ? "done" : "running"} />
+          <div className="inline-flex items-center gap-3 rounded-xl border border-[#e7e5dc] bg-[#f8f9fa] px-3.5 py-2.5 max-w-full fade-up">
+            <span className="w-8 h-8 shrink-0 rounded-lg bg-red-500 text-white flex items-center justify-center text-[9px] font-bold">
+              PDF
+            </span>
+            <span className="min-w-0">
+              <span className="block text-[12.5px] font-medium text-ink truncate max-w-[260px]">
+                《{textbookTitle}》
+              </span>
+              <span className="block text-[10.5px] text-ink-faint">
+                {textbookPages} 页文本{textbookOcr ? " · 已 OCR" : ""}
+              </span>
+            </span>
+          </div>
+        </section>
+      )}
+
+      {/* 阶段 2（文档建课）/ 1（纯文字）：搜索网络资料 */}
       <section className="mb-8">
-        <StageHeader title={textbookId ? "正在读取教材内容" : "正在搜索网络资料"} n={1} state={searchDone ? "done" : "running"} />
+        <StageHeader title="正在搜索网络资料" n={textbookId ? 2 : 1} state={searchDone ? "done" : "running"} />
         {step === "search" && sources.length === 0 && <LiveStatus pool={SEARCH_STATUS} />}
         {searchQueries.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-3">
@@ -541,10 +603,10 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
         )}
       </section>
 
-      {/* 阶段 2：澄清（进行中或已完成，整轮堆叠回显） */}
+      {/* 阶段 3（文档建课）/ 2（纯文字）：澄清（进行中或已完成，整轮堆叠回显） */}
       {step !== "search" && (
         <section className="mb-8">
-          <StageHeader title="构思初步思路" n={2} state={clarifyDone ? "done" : "running"} />
+          <StageHeader title="构思初步思路" n={textbookId ? 3 : 2} state={clarifyDone ? "done" : "running"} />
           {step === "clarify" && !question && loading && <LiveStatus pool={CLARIFY_STATUS} />}
 
           {/* 已回答轮次：完整卡片回显（选项高亮所选） */}
@@ -655,10 +717,10 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
         </section>
       )}
 
-      {/* 阶段 3：蓝图 */}
+      {/* 阶段 4（文档建课）/ 3（纯文字）：蓝图 */}
       {(step === "blueprint" || step === "outline" || step === "done") && blueprint && (
         <section className="mb-8">
-          <StageHeader title="打造课程" n={3} state={step === "blueprint" ? (loading ? "running" : "done") : "done"} />
+          <StageHeader title="打造课程" n={textbookId ? 4 : 3} state={step === "blueprint" ? (loading ? "running" : "done") : "done"} />
           {step === "blueprint" && (
             <>
               {designNotes.length > 0 && (
@@ -723,10 +785,15 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
         </section>
       )}
 
-      {/* 阶段 4：生成课程细节 */}
+      {/* 阶段 5（文档建课）/ 4（纯文字）：生成课程细节 */}
       {step === "outline" && (
         <section className="mb-8">
-          <StageHeader title="完善课程细节" n={4} state="running" />
+          <StageHeader title="完善课程" n={stageTotal} state="running" />
+          {confirmed && (
+            <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-[#f8f9fa] border border-[#e7e5dc] px-3.5 py-1.5 text-[12.5px] text-ink-soft fade-up">
+              <span className="text-accent">✓</span> 已确认，正在生成完整课程…
+            </div>
+          )}
           {designNotes.length > 0 && (
             <div className="rounded-2xl border border-accent/25 bg-accent/5 p-5 mb-4 fade-up">
               <div className="text-[12px] text-accent font-semibold tracking-wide mb-2">按这个思路逐单元展开</div>
@@ -741,7 +808,12 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
             {progress && progress.total > 0 && (
               <div className="mb-4">
                 <div className="flex justify-between text-[12px] text-ink-soft mb-1.5">
-                  <span>{progress.current} / {progress.total} 单元</span>
+                  <span>
+                    {progress.current} / {progress.total} 单元
+                    {typeof progress.optimized === "number" && (
+                      <span className="text-ink-faint"> · 已优化 {progress.optimized} 个课节</span>
+                    )}
+                  </span>
                   <span>{Math.round((progress.current / progress.total) * 100)}%</span>
                 </div>
                 <div className="h-1.5 rounded-full bg-[#f1efe8] overflow-hidden">
@@ -771,7 +843,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
       {/* 完成：课程就绪卡 */}
       {step === "done" && outline && (
         <section className="mb-8">
-          <StageHeader title="完善课程细节" n={4} state="done" />
+          <StageHeader title="完善课程" n={stageTotal} state="done" />
           <div className="rounded-2xl border border-[#e7e5dc] bg-white p-6 relative overflow-hidden fade-up">
             <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-accent via-accent-border to-accent-soft" />
             <div className="inline-flex items-center gap-1.5 rounded-full bg-accent-soft px-3 py-1 text-[11.5px] text-accent font-medium mb-3">

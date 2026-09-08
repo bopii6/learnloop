@@ -1,7 +1,7 @@
 "use client";
 
 import type { CourseOutline } from "@/types";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { CourseSession } from "./CourseSession";
 
 interface CourseOutlineViewProps {
@@ -20,6 +20,23 @@ export function CourseOutlineView({ outline, courseId }: CourseOutlineViewProps)
   const [marketPrice, setMarketPrice] = useState("");
   const [marketNote, setMarketNote] = useState("");
   const [marketState, setMarketState] = useState<"idle" | "saving" | "done" | "error">("idle");
+  // 课程内追加材料（原版同款「上传材料，扩展这门课程」）：先收文件，融入课程的后端在下一迭代
+  const [materialName, setMaterialName] = useState<string | null>(null);
+  const [materialState, setMaterialState] = useState<"idle" | "uploading" | "done" | "error">("idle");
+  const materialRef = useRef<HTMLInputElement | null>(null);
+
+  const uploadMaterial = async (file: File) => {
+    setMaterialState("uploading");
+    setMaterialName(file.name);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/textbook", { method: "POST", body: fd });
+      setMaterialState(res.ok ? "done" : "error");
+    } catch {
+      setMaterialState("error");
+    }
+  };
 
   const totalLectures = outline.units.reduce((sum, u) => sum + u.lectures.length, 0);
   // 时长只累计当前可学（白板课堂）课节：把测验/项目算进"总时长"是对用户的虚假承诺
@@ -174,8 +191,52 @@ export function CourseOutlineView({ outline, courseId }: CourseOutlineViewProps)
         </div>
       </aside>
 
-      {/* 右栏：单元 → 课节列表（原版的单元卡片流） */}
+      {/* 右栏：追加材料入口 + 单元 → 课节列表（原版的单元卡片流） */}
       <main className="flex-1 min-w-0 space-y-5">
+        {/* 上传材料，扩展这门课程（原版同款） */}
+        <div className="rounded-2xl border border-[#e7e5dc] bg-white px-5 py-4 flex items-center gap-4">
+          <div className="flex -space-x-2 shrink-0">
+            <span className="w-8 h-8 rounded-lg bg-[#e8f0fe] border border-white flex items-center justify-center text-[13px]">📄</span>
+            <span className="w-8 h-8 rounded-lg bg-[#e6f4ea] border border-white flex items-center justify-center text-[13px]">🧾</span>
+            <span className="w-8 h-8 rounded-lg bg-[#fde8e8] border border-white flex items-center justify-center text-[13px]">📝</span>
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[13.5px] font-medium text-ink">上传材料，扩展这门课程</div>
+            <div className="text-[12px] text-ink-soft mt-0.5">
+              上传新的 PDF，或直接描述你想添加的内容——新材料会融入接下来的课节讲解
+            </div>
+            {materialState === "done" && (
+              <div className="text-[11.5px] text-emerald-700 mt-1">
+                ✓ 已收到《{materialName}》，讲师会在接下来的课节中引用它
+              </div>
+            )}
+            {materialState === "uploading" && (
+              <div className="text-[11.5px] text-ink-faint mt-1">正在解析《{materialName}》…</div>
+            )}
+            {materialState === "error" && (
+              <div className="text-[11.5px] text-red-600 mt-1">《{materialName}》解析失败，换个文件试试</div>
+            )}
+          </div>
+          <input
+            ref={materialRef}
+            type="file"
+            accept="application/pdf,.pdf"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void uploadMaterial(f);
+              e.target.value = "";
+            }}
+          />
+          <button
+            onClick={() => materialRef.current?.click()}
+            disabled={materialState === "uploading"}
+            className="shrink-0 rounded-full border border-accent/40 text-accent px-4 py-1.5 text-[12px] font-medium hover:bg-accent/5 transition-colors disabled:opacity-50"
+          >
+            ＋ 上传
+          </button>
+        </div>
+
         {outline.units.map((unit, ui) => (
           <section
             key={unit.id}
@@ -205,12 +266,21 @@ export function CourseOutlineView({ outline, courseId }: CourseOutlineViewProps)
                   <span className="text-[11px] text-ink-faint w-12 shrink-0">讲次 {String(li + 1).padStart(2, "0")}</span>
                   <div className="flex-1 min-w-0">
                     <div className="text-[13.5px] text-ink truncate">{lec.title}</div>
-                    <div className="flex gap-1.5 mt-1">
+                    <div className="flex gap-1.5 mt-1 flex-wrap items-center">
                       {lec.depth_tags.map((tag) => (
                         <span key={tag} className="rounded bg-[#f1efe8] px-1.5 py-0.5 text-[10px] text-ink-soft">
                           {tag}
                         </span>
                       ))}
+                      {/* 文档建课：讲次引用的上传文档（原版同款「参考文件」行） */}
+                      {(lec.ref_files ?? []).length > 0 && (
+                        <span className="inline-flex items-center gap-1 rounded-md border border-[#e7e5dc] bg-white px-1.5 py-0.5 text-[10px] text-ink-soft">
+                          <span className="w-3.5 h-3.5 rounded-sm bg-red-500 text-white flex items-center justify-center text-[7px] font-bold">
+                            PDF
+                          </span>
+                          参考文件：{(lec.ref_files ?? []).join("、")}
+                        </span>
+                      )}
                     </div>
                   </div>
                   <span className="text-[11px] text-ink-faint shrink-0">

@@ -48,6 +48,7 @@ export interface ConversationMeta {
 export type StageName =
   | "classify"
   | "plan"
+  | "reading_doc"
   | "search"
   | "read"
   | "verify"
@@ -95,6 +96,7 @@ export interface CourseLecture {
   duration_min: number;
   depth_tags: string[]; // 建立直觉 / 正式定义 / 公式推导 / 进阶理论 / 应用实操
   content_type: "whiteboard" | "project" | "quiz";
+  ref_files?: string[]; // 文档建课模式：本讲次引用的上传文档（如《xxx.pdf》），讲次卡回链展示
 }
 
 export interface CourseOutline {
@@ -164,7 +166,7 @@ export type CourseEvent =
   | { type: "clarify_round"; round: number; total_rounds: number; question: ClarifyQuestion; courseId: string }
   | { type: "sources"; items: SourceItem[] }
   | { type: "blueprint"; data: CourseBlueprint }
-  | { type: "outline_progress"; current: number; total: number; unitTitle: string }
+  | { type: "outline_progress"; current: number; total: number; unitTitle: string; optimized?: number } // optimized = 已填充完细节的课节累计数（"已优化 N 个课节"）
   | { type: "outline"; outline: CourseOutline }
   | { type: "done"; courseId: string; title: string }
   | { type: "error"; message: string };
@@ -173,11 +175,28 @@ export type CourseEvent =
 
 /** 板书的一个条目，随某一句讲解写上白板 */
 export interface BoardItem {
-  kind: "subtitle" | "bullet" | "note" | "table" | "diagram" | "circle" | "underline" | "burst";
+  kind:
+    | "subtitle"
+    | "bullet"
+    | "note"
+    | "table"
+    | "diagram"
+    | "circle"
+    | "underline"
+    | "burst"
+    | "chart" // 手绘趋势折线
+    | "vs" // 左右对比栏
+    | "judge" // ✓/✗ 判断行
+    | "mark" // 星标/感叹号/问号简笔标记（标在上一条旁）
+    | "tree" // 一层分支树
+    | "quote"; // 金句：椭圆手绘圈住一句话
   text?: string;
+  values?: number[]; // chart 用：2-5 个纵值
+  verdict?: "good" | "bad"; // judge 用
+  style?: "star" | "alert" | "question"; // mark 用
   headers?: string[]; // table 用
   rows?: string[][]; // table 用
-  nodes?: string[]; // diagram 用：2-4 个流程节点（横向方框+箭头）
+  nodes?: string[]; // diagram/tree 用
 }
 
 /** 一个教学拍：say 是本句讲解词（逐句朗读），items 是随这句话写上白板的内容 */

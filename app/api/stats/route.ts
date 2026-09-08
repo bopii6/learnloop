@@ -26,6 +26,8 @@ export async function GET() {
   let lecturesTouched = 0;
 
   // ---- 课程 ----
+  // courses/ 下是课程生成的中间状态文件（无 tags/createdAt 字段）：
+  // 标签用大纲的 key_concepts 聚合，日期退回文件的修改时间。
   const courseKeys = await listKeys("courses/");
   const courses: { title: string; tags: string[]; createdAt: number; lectures: number; minutes: number }[] = [];
   for (const k of courseKeys) {
@@ -38,10 +40,11 @@ export async function GET() {
       (s: number, u) => s + (Array.isArray(u?.lectures) ? u.lectures.reduce((t: number, l: any) => t + (Number(l?.duration_min) || 0), 0) : 0),
       0
     );
+    const concepts = units.flatMap((u) => (Array.isArray(u?.key_concepts) ? u.key_concepts : [])).map((x) => String(x).slice(0, 12));
     courses.push({
       title: String(c.title || "未命名课程").slice(0, 40),
-      tags: Array.isArray(c.tags) ? c.tags.map((t: unknown) => String(t)).slice(0, 8) : [],
-      createdAt: parseMs(c.createdAt),
+      tags: (Array.isArray(outline.tags) && outline.tags.length ? outline.tags : concepts).map((t: unknown) => String(t)).slice(0, 8),
+      createdAt: parseMs(c.createdAt) || (k.lastModified ?? 0),
       lectures,
       minutes,
     });
@@ -81,8 +84,17 @@ export async function GET() {
   // ---- 课程创建日也计入活跃日 ----
   for (const c of courses) if (c.createdAt > 0) daySet.add(dayOf(c.createdAt));
 
-  // ---- 画像 ----
-  const profile = await readJson<any>("profile.json", null);
+  // ---- 画像（profiles/{userId}.json，取事实最多的一份；无则是新 learner） ----
+  let name = "";
+  let facts = 0;
+  const profileKeys = await listKeys("profiles/");
+  for (const k of profileKeys) {
+    const p = await readJson<any>(k.key, null);
+    if (!p) continue;
+    const pFacts = Array.isArray(p.facts) ? p.facts.length : 0;
+    if (!name && typeof p.name === "string" && p.name) name = p.name;
+    if (pFacts > facts) facts = pFacts;
+  }
 
   // ---- 连续学习天数（今天或昨天为终点向回数） ----
   const today = new Date();
@@ -119,8 +131,8 @@ export async function GET() {
   const topCourses = [...courses].sort((a, b) => b.createdAt - a.createdAt).slice(0, 3).map((c) => ({ title: c.title, lectures: c.lectures }));
 
   return NextResponse.json({
-    name: typeof profile?.name === "string" ? profile.name : "",
-    facts: Array.isArray(profile?.facts) ? profile.facts.length : 0,
+    name,
+    facts,
     coursesCount: courses.length,
     lecturesCount: totalLectures,
     lecturesTouched,

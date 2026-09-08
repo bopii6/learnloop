@@ -149,10 +149,11 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
   }
 
   /**
-   * 导演镜头：把画布上的一个矩形区域推进视口中央（仅模块切换/恢复时调用）。
-   * 做法：放一个透明锚点矩形 → 延迟一拍 scrollToContent（紧贴 updateScene 会静默失效）。
-   * 锚点留在场景里（透明、不碍事），下一次取景会把它挪到新位置。
+   * 导演镜头：把画布上的一个矩形区域平滑推进视口中央（仅模块切换/恢复时调用）。
+   * 自己按视口尺寸计算 scroll/zoom 并用 rAF 补间——Excalidraw 的 scrollToContent
+   * 在 viewMode + 高频 updateScene 下会静默失效，不能依赖。
    */
+  let camAnim = 0;
   async function focusRegion(
     x: number,
     y: number,
@@ -162,40 +163,40 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
   ) {
     const api = await waitForApi();
     if (!api) return;
-    await ensureConvert();
-    const existing = api.getSceneElements().filter((el: any) => !el.isDeleted && el.id !== ANCHOR_ID);
-    const els = convert!([
-      {
-        type: "rectangle",
-        id: ANCHOR_ID,
-        x,
-        y,
-        width: w,
-        height: h,
-        backgroundColor: "transparent",
-        strokeColor: "transparent",
-        strokeWidth: 0,
-        opacity: 0,
-      },
-    ]);
-    els.forEach((el: any) => (el.id = ANCHOR_ID));
-    const anchor = els[0];
-    api.updateScene({ elements: [...existing, anchor] });
+    const st = api.getAppState();
+    const vpW = st.width || 1100;
+    const vpH = st.height || 620;
+    const zoom = Math.max(0.35, Math.min(2.2, Math.min(vpW / w, vpH / h) * zoomFactor));
+    const scrollX = -(x + w / 2) + vpW / (2 * zoom);
+    const scrollY = -(y + h / 2) + vpH / (2 * zoom);
+
     if (turbo) {
-      try {
-        api.scrollToContent([anchor], { fitToContent: true, animate: false, viewportZoomFactor: zoomFactor });
-      } catch {
-        // 忽略
-      }
+      api.updateScene({ appState: { scrollX, scrollY, zoom: { value: zoom } } });
       return;
     }
-    window.setTimeout(() => {
+    const from = { sx: st.scrollX, sy: st.scrollY, z: st.zoom?.value || 1 };
+    cancelAnimationFrame(camAnim);
+    const t0 = performance.now();
+    const dur = 620;
+    const ease = (p: number) => 1 - Math.pow(1 - p, 3);
+    const step = () => {
+      const p = Math.min(1, (performance.now() - t0) / dur);
+      const e = ease(p);
       try {
-        api.scrollToContent([anchor], { fitToContent: true, animate: true, duration: 620, viewportZoomFactor: zoomFactor });
+        api.updateScene({
+          appState: {
+            scrollX: from.sx + (scrollX - from.sx) * e,
+            scrollY: from.sy + (scrollY - from.sy) * e,
+            zoom: { value: from.z + (zoom - from.z) * e },
+          },
+        });
       } catch {
-        // 忽略
+        // 场景卸载时停止
+        return;
       }
-    }, 110);
+      if (p < 1) camAnim = requestAnimationFrame(step);
+    };
+    camAnim = requestAnimationFrame(step);
   }
 
   /** 当前分区的取景框（含上方标题空间） */
@@ -273,6 +274,25 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
       },
     ]);
     writeY += 54;
+  }
+
+  /** 分区粉笔底色：像老师用彩粉笔先抹一片区域，让每个模块有自己的"地盘" */
+  async function drawQuadWash() {
+    const color = PALETTE[colorIndex % PALETTE.length];
+    await append([
+      {
+        type: "rectangle",
+        x: qx - 10,
+        y: qy - 46,
+        width: QUAD_W + 20,
+        height: QUAD_H + 66,
+        backgroundColor: color + "0b",
+        strokeColor: "transparent",
+        strokeWidth: 0,
+        roughness: 0,
+        roundness: { type: 3 },
+      },
+    ]);
   }
 
   /** 推进到下一分区；本块黑板写满则翻新黑板。镜头随分区切换平滑推近。 */
@@ -365,7 +385,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
     },
 
     async write(section, items) {
-      const list = (items || []).filter((it) => it && it.kind).slice(0, 3);
+      const list = (items || []).filter((it) => it && it.kind).slice(0, 4);
       const newSection = (section || "").trim() || (currentSection === null && list.length > 0 ? "板书" : null);
 
       // 分区变化 → 推进分区写新模块（当前分区已占用才推进；新片段标题胶囊随行）
@@ -375,6 +395,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
         }
         currentSection = newSection;
         sections.push(newSection);
+        await drawQuadWash();
         if (pendingTitle) {
           await drawSegmentChip(pendingTitle);
           pendingTitle = null;
@@ -530,13 +551,168 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
           }
           advance = cellH * (item.rows.slice(0, 4).length + 1) + 12;
           box = { x: itemX, y: writeY, w: maxW, h: advance - 12 };
+        } else if (item.kind === "chart" && item.values && item.values.length >= 2) {
+          // 手绘趋势折线：坐标轴 + 折线 + 数据点（讲增长/下降/波动）
+          const vals = item.values.slice(0, 5).map((v) => Math.max(0, Number(v) || 0));
+          const cw = Math.min(maxW - 30, 290);
+          const chh = 92;
+          const maxV = Math.max(...vals) || 1;
+          const minV = Math.min(...vals, 0);
+          skeleton.push({ type: "line", x: itemX, y: writeY, points: [[0, 0], [0, -chh]], strokeColor: "#8a8880", strokeWidth: 1.2 });
+          skeleton.push({ type: "line", x: itemX, y: writeY, points: [[0, 0], [cw + 8, 0]], strokeColor: "#8a8880", strokeWidth: 1.2 });
+          const pts: number[][] = vals.map((v, i) => [
+            Math.round((cw / (vals.length - 1)) * i),
+            -Math.round(10 + ((v - minV) / (maxV - minV || 1)) * (chh - 20)),
+          ]);
+          skeleton.push({ type: "line", x: itemX, y: writeY, points: pts, strokeColor: "#2563eb", strokeWidth: 2.2, roughness: 1 });
+          for (const p of pts) {
+            skeleton.push({
+              type: "ellipse",
+              x: itemX + p[0] - 3,
+              y: writeY + p[1] - 3,
+              width: 6,
+              height: 6,
+              backgroundColor: "#2563eb",
+              strokeColor: "#2563eb",
+              strokeWidth: 1,
+            });
+          }
+          advance = chh + 6;
+          box = { x: itemX, y: writeY - chh, w: cw + 12, h: chh };
+        } else if (item.kind === "vs" && (item.text || "").includes("|")) {
+          // 左右对比栏：中缝手绘分隔线 + 两侧标签
+          const [l, r] = (item.text || "").split("|").map((s) => s.trim().slice(0, 10));
+          const halfW = Math.floor((maxW - 40) / 2);
+          skeleton.push({ type: "line", x: itemX + halfW + 20, y: writeY + 2, points: [[0, 0], [0, 34]], strokeColor: "#b4b2a9", strokeWidth: 1.5, roughness: 1 });
+          skeleton.push({ type: "text", x: itemX, y: writeY + 8, text: l || "A", fontSize: 17, fontFamily: 2, strokeColor: "#846358", textAlign: "center" });
+          skeleton.push({ type: "text", x: itemX + halfW + 40, y: writeY + 8, text: r || "B", fontSize: 17, fontFamily: 2, strokeColor: "#2563eb", textAlign: "center" });
+          skeleton.push({
+            type: "text",
+            x: itemX + halfW + 8,
+            y: writeY + 10,
+            text: "vs",
+            fontSize: 12,
+            fontFamily: 2,
+            strokeColor: "#a3a19a",
+          });
+          advance = 46;
+          box = { x: itemX, y: writeY, w: maxW, h: 40 };
+        } else if (item.kind === "judge" && item.text) {
+          // ✓/✗ 判断行：推荐做法绿勾、常见错误红叉
+          const good = item.verdict !== "bad";
+          skeleton.push({
+            type: "text",
+            x: itemX + 2,
+            y: writeY,
+            text: `${good ? "✓" : "✗"} ${(item.text || "").slice(0, 20)}`,
+            fontSize: 16,
+            fontFamily: 2,
+            strokeColor: good ? "#059669" : "#dc2626",
+          });
+          advance = 34;
+          box = { x: itemX, y: writeY, w: Math.min((item.text || "").length * 16 + 30, maxW), h: 28 };
+        } else if (item.kind === "tree" && item.nodes && item.nodes.length >= 2) {
+          // 一层分支树：父概念在上，2-3 个子概念在下
+          const nodes = item.nodes.slice(0, 3).map((n) => (n || "").slice(0, 6));
+          const parentW = Math.max(72, nodes[0].length * 15 + 22);
+          const parentX = itemX + Math.floor((maxW - parentW) / 2);
+          skeleton.push({
+            type: "rectangle",
+            x: parentX,
+            y: writeY,
+            width: parentW,
+            height: 34,
+            backgroundColor: "#7c3aed14",
+            strokeColor: "#7c3aed",
+            strokeWidth: 1.2,
+            roughness: 0,
+            roundness: { type: 3 },
+          });
+          skeleton.push({ type: "text", x: parentX + Math.max(4, Math.floor((parentW - nodes[0].length * 15) / 2)), y: writeY + 7, text: nodes[0], fontSize: 14, fontFamily: 2, strokeColor: "#1e1e1e" });
+          const childY = writeY + 62;
+          const n = nodes.length - 1;
+          const gap = 16;
+          const childW = Math.floor((maxW - (n - 1) * gap) / n);
+          for (let ci = 1; ci < nodes.length; ci++) {
+            const cx = itemX + (ci - 1) * (childW + gap);
+            // 分支连线：父底 → 子顶
+            skeleton.push({
+              type: "line",
+              x: parentX + parentW / 2,
+              y: writeY + 34,
+              points: [[0, 0], [cx + childW / 2 - (parentX + parentW / 2), 28]],
+              strokeColor: "#b4b2a9",
+              strokeWidth: 1.2,
+              roughness: 1,
+            });
+            skeleton.push({
+              type: "rectangle",
+              x: cx,
+              y: childY,
+              width: childW,
+              height: 32,
+              backgroundColor: "#7c3aed08",
+              strokeColor: "#a78bfa",
+              strokeWidth: 1,
+              roughness: 0,
+              roundness: { type: 3 },
+            });
+            skeleton.push({ type: "text", x: cx + Math.max(3, Math.floor((childW - nodes[ci].length * 13) / 2)), y: childY + 7, text: nodes[ci], fontSize: 13, fontFamily: 2, strokeColor: "#1e1e1e" });
+          }
+          advance = 104;
+          box = { x: itemX, y: writeY, w: maxW, h: 96 };
+        } else if (item.kind === "mark") {
+          // 简笔标记：星标/感叹号/问号，画在上一条板书右上角（不占行）
+          if (lastItemBox) {
+            const mx = lastItemBox.x + Math.min(lastItemBox.w, 420) + 8;
+            const my = lastItemBox.y - 4;
+            if (item.style === "alert") {
+              skeleton.push({ type: "line", x: mx, y: my - 22, points: [[0, 0], [0, 14]], strokeColor: "#dc2626", strokeWidth: 2.4, roughness: 1 });
+              skeleton.push({ type: "line", x: mx, y: my - 2, points: [[0, 0], [0, 2.5]], strokeColor: "#dc2626", strokeWidth: 2.8, roughness: 1 });
+            } else if (item.style === "question") {
+              skeleton.push({ type: "text", x: mx, y: my - 30, text: "?", fontSize: 24, fontFamily: 2, strokeColor: "#7c3aed" });
+            } else {
+              // star：四芒星（两长两短交叉线）
+              skeleton.push({ type: "line", x: mx + 8, y: my - 26, points: [[-8, 8], [8, -8]], strokeColor: "#d97706", strokeWidth: 1.8, roughness: 1 });
+              skeleton.push({ type: "line", x: mx + 8, y: my - 26, points: [[-8, -8], [8, 8]], strokeColor: "#d97706", strokeWidth: 1.8, roughness: 1 });
+              skeleton.push({ type: "line", x: mx + 8, y: my - 26, points: [[-13, 0], [13, 0]], strokeColor: "#d97706", strokeWidth: 1.4, roughness: 1 });
+              skeleton.push({ type: "line", x: mx + 8, y: my - 26, points: [[0, -13], [0, 13]], strokeColor: "#d97706", strokeWidth: 1.4, roughness: 1 });
+            }
+          }
+          advance = 8;
+        } else if (item.kind === "quote" && item.text) {
+          // 金句：手绘椭圆圈住一句话，字略大
+          const q = (item.text || "").slice(0, 16);
+          const qw = Math.min(maxW, q.length * 19 + 56);
+          skeleton.push({
+            type: "ellipse",
+            x: itemX,
+            y: writeY - 2,
+            width: qw,
+            height: 50,
+            backgroundColor: "#fbbf2416",
+            strokeColor: "#d97706",
+            strokeWidth: 1.6,
+            roughness: 1,
+          });
+          skeleton.push({
+            type: "text",
+            x: itemX + Math.floor((qw - q.length * 19) / 2),
+            y: writeY + 12,
+            text: q,
+            fontSize: 17,
+            fontFamily: 1,
+            strokeColor: "#92400e",
+          });
+          advance = 62;
+          box = { x: itemX, y: writeY, w: qw, h: 50 };
         }
 
         if (skeleton.length > 0) {
           await append(skeleton);
           if (box) lastItemBox = box;
-          else if (item.kind === "circle" || item.kind === "underline" || item.kind === "burst") {
-            // 强调动作不推进板书游标
+          else if (item.kind === "circle" || item.kind === "underline" || item.kind === "burst" || item.kind === "mark") {
+            // 强调/标记动作不推进板书游标
           } else {
             lastItemBox = null;
           }

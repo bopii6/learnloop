@@ -59,6 +59,9 @@ JSON 格式（必须严格遵守）：
 - 课程标题格式为「主标题：副标题」，体现主题、深度和受众。禁止把用户输入拼上"系统课程"。
   正面示例："LLM Agent 深度工程：从 ReAct 理论到生产级 Tool Use 实现"
 - tags 是领域标签（如 "AI Engineering"、"ReAct Pattern"），禁止把用户原话当标签。
+- audience 必须回应用户在澄清中的具体选择：把用户选的起点/方向/目标水平浓缩成一句受众画像，
+  如用户选了"能用 Redis 键值读写"+"了解分布式基本概念"，就写
+  "具备 Redis 基础（KV 读写）及分布式系统基本概念，希望掌握生产级并发控制方案的开发者"。
 - 4-8 个单元，每个单元 3-5 个课节。
 - 单元标题要具体，体现该单元覆盖的知识范围，禁止"基础概念与入门"这种万能套话。
 - 课节标题必须具体到知识点，格式推荐「具体概念：要解决的问题或角度」。
@@ -139,6 +142,8 @@ interface CourseGenState {
     toc: string[];
     pages: TextbookPage[];
   };
+  docMode?: boolean; // 文档建课：管线为 5 步（查看文档→搜索补充→构思澄清→蓝图→大纲），步骤编号与纯文字不同
+  docName?: string; // 上传文档的展示名（讲次参考文件回链用）
   courseSource?: string; // 自学 / 学校同步（原版同款）
   clarifyAnswers: { question: string; answer: string }[];
   clarifyRound: number;
@@ -188,7 +193,7 @@ function normalizeLearningTopic(input: string): string {
   const hit = known.find((term) => input.toLowerCase().includes(term.toLowerCase()));
   if (hit) return hit;
   const cleaned = input
-    .replace(/我的目标是|我想|我要|怎么|如何|系统地?|系统讲解|学习|掌握|了解|课程|教程/g, " ")
+    .replace(/我的目标是|我想|我要|怎么|如何|系统地?|系统讲解|学习|掌握|了解|课程|教程|教材|《|》|围绕|生成|一份|文档/g, " ")
     .replace(/[，。！？：:、]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -218,18 +223,28 @@ export async function runSearchStep(opts: {
   query: string;
   history: HistoryMsg[];
   emit: Emit;
+  stepNo?: number; // 文档建课模式：搜索是第 2 步（共 5 步）；纯文字模式是第 1 步（共 4 步）
+  stepTotal?: number;
+  docContext?: string; // 文档建课模式：已读文档要点，搜索词围绕文档主题补充
+  existingSources?: SourceItem[]; // 文档内容块（已占用的编号），网络来源接着编号
+  existingPages?: Record<number, string>;
+  readLimit?: number; // 要读全文的网页数（文档模式读少一点，文档本身才是主料）
 }): Promise<{ sources: SourceItem[]; pageContents: Record<number, string> }> {
   const { query, emit } = opts;
-  const sources: SourceItem[] = [];
+  const stepNo = opts.stepNo ?? 1;
+  const stepTotal = opts.stepTotal ?? 4;
+  const docContext = opts.docContext;
+  const sources: SourceItem[] = [...(opts.existingSources ?? [])];
+  const pageContents: Record<number, string> = { ...(opts.existingPages ?? {}) };
   const topic = normalizeLearningTopic(query);
 
-  await emit({ type: "stage", name: "search", label: "正在搜索网络资料", status: "start", detail: "第 1 步，共 4 步" });
+  await emit({ type: "stage", name: "search", label: "正在搜索网络资料", status: "start", detail: `第 ${stepNo} 步，共 ${stepTotal} 步` });
 
   // 先用 LLM 把口语化输入提炼成高质量搜索词（Hyperknow 的 query 标签就是这步的产物）
   let searchQueries: string[] = [];
   const plan = await generateJson<{ queries: string[] }>(
     SEARCH_PLAN_SYSTEM,
-    `用户原始目标：${query}\n已提炼主题（必须围绕它搜索）：${topic}`,
+    `${docContext ? `用户已上传一份文档，主题如下（查询词必须围绕文档主题做补充，不要偏航）：\n${docContext.slice(0, 800)}\n\n` : ""}用户原始目标：${query}\n已提炼主题（必须围绕它搜索）：${topic}`,
     400
   );
   if (plan?.queries && Array.isArray(plan.queries) && plan.queries.length > 0) {
@@ -255,6 +270,8 @@ export async function runSearchStep(opts: {
   await emit({ type: "search_queries", queries: searchQueries });
   await emit({ type: "stage", name: "search", label: "正在搜索网络资料", status: "start", detail: searchQueries.join(" · ") });
 
+  const existingCount = opts.existingSources?.length ?? 0;
+  const webCap = opts.docContext ? 4 : 12; // 文档模式：网络只是补充资料，主料是文档本身
   const settled = await Promise.allSettled(searchQueries.map((q) => webSearch(q, 6)));
   const seen = new Set<string>();
   for (const s of settled) {
@@ -263,16 +280,16 @@ export async function runSearchStep(opts: {
       if (seen.has(item.url) || isLikelyOffTopic(item, topic)) continue;
       seen.add(item.url);
       sources.push({ ...item, index: sources.length + 1 });
-      if (sources.length >= 12) break;
+      if (sources.length - existingCount >= webCap) break;
     }
-    if (sources.length >= 12) break;
+    if (sources.length - existingCount >= webCap) break;
   }
   await emit({ type: "sources", items: sources });
   await emit({ type: "stage", name: "search", label: "正在搜索网络资料", status: "end", detail: `找到 ${sources.length} 个来源` });
 
   // 阅读权威度最高的前几页：蓝图/澄清的选项质量直接来自这些正文（Hyperknow 同款打法）
-  const pageContents: Record<number, string> = {};
-  const toRead = sources.slice(0, 6);
+  // 文档模式下跳过已有正文的内容块（文档本身就是已读资料），只补读网络来源
+  const toRead = sources.filter((s) => !pageContents[s.index]).slice(0, opts.readLimit ?? 6);
   if (toRead.length > 0) {
     await emit({ type: "stage", name: "read", label: "正在阅读网页内容", status: "start", detail: `0/${toRead.length}` });
     let done = 0;
@@ -299,11 +316,15 @@ export async function runClarifyStep(opts: {
   courseId: string;
   profileHint?: string; // 已有画像，避免重复提问已覆盖的维度
   pageExcerpts?: string; // 搜索到的资料摘要，让澄清选项更贴近真实语境
+  stepNo?: number; // 文档建课模式：澄清在第 3 步（共 5 步）
+  stepTotal?: number;
   emit: Emit;
 }): Promise<{ question?: ClarifyQuestion; done: boolean }> {
   const { query, history, sources, clarifyAnswers, round, courseId, profileHint, pageExcerpts, emit } = opts;
+  const stepNo = opts.stepNo ?? 2;
+  const stepTotal = opts.stepTotal ?? 4;
 
-  await emit({ type: "stage", name: "clarify_round", label: "构思初步思路", status: "start", detail: `第 2 步，共 4 步（第 ${round}/4 轮）` });
+  await emit({ type: "stage", name: "clarify_round", label: "构思初步思路", status: "start", detail: `第 ${stepNo} 步，共 ${stepTotal} 步（第 ${round}/4 轮）` });
 
   const histText = history
     .slice(-4)
@@ -364,11 +385,15 @@ export async function runBlueprintStep(opts: {
   profileText?: string; // 学习者画像（跨课程持久化）
   pageExcerpts?: string; // 已读网页要点：让蓝图 grounded 在真实资料上
   textbookHint?: string; // 教材模式：目录+要点，蓝图必须镜像教材结构
+  stepNo?: number; // 文档建课模式：蓝图在第 4 步（共 5 步）
+  stepTotal?: number;
   emit: Emit;
 }): Promise<{ blueprint: CourseBlueprint }> {
   const { query, clarifyAnswers, feedback, previousBlueprint, profileText, pageExcerpts, textbookHint, emit } = opts;
+  const stepNo = opts.stepNo ?? 3;
+  const stepTotal = opts.stepTotal ?? 4;
 
-  await emit({ type: "stage", name: "blueprint", label: "打造课程", status: "start", detail: "第 3 步，共 4 步" });
+  await emit({ type: "stage", name: "blueprint", label: "打造课程", status: "start", detail: `第 ${stepNo} 步，共 ${stepTotal} 步` });
 
   const answerContext = clarifyAnswers.length > 0
     ? `用户背景：\n${clarifyAnswers.map((a) => `${a.question}：${a.answer}`).join("\n")}\n\n`
@@ -442,11 +467,16 @@ export async function runOutlineStep(opts: {
   clarifyAnswers: { question: string; answer: string }[];
   blueprint: CourseBlueprint;
   profileText?: string;
+  refFileName?: string; // 文档建课模式：讲次卡回链的上传文档名
+  stepNo?: number; // 文档建课模式：大纲在第 5 步（共 5 步）
+  stepTotal?: number;
   emit: Emit;
 }): Promise<{ outline: CourseOutline; title: string }> {
-  const { query, clarifyAnswers, blueprint, profileText, emit } = opts;
+  const { query, clarifyAnswers, blueprint, profileText, refFileName, emit } = opts;
+  const stepNo = opts.stepNo ?? 4;
+  const stepTotal = opts.stepTotal ?? 4;
 
-  await emit({ type: "stage", name: "outline", label: "打造课程", status: "start", detail: "第 4 步，共 4 步" });
+  await emit({ type: "stage", name: "outline", label: "完善课程", status: "start", detail: `第 ${stepNo} 步，共 ${stepTotal} 步` });
 
   const answerContext = clarifyAnswers.length > 0
     ? `用户背景：\n${clarifyAnswers.map((a) => `${a.question}：${a.answer}`).join("\n")}\n\n`
@@ -457,6 +487,7 @@ export async function runOutlineStep(opts: {
 
   // 蓝图已经包含完整的课程结构（单元+课节标题+深度标签），
   // 大纲步骤只需逐单元填充课节细节（简介、时长、内容类型）
+  let optimizedLectures = 0;
   const fullUnits = [];
   for (let i = 0; i < blueprint.units.length; i++) {
     const unit = blueprint.units[i];
@@ -488,6 +519,7 @@ export async function runOutlineStep(opts: {
 
     const lectures = unit.lectures.map((l) => {
       const detail = detailMap.get(l.id);
+      optimizedLectures += 1;
       return {
         id: l.id,
         title: l.title,
@@ -497,10 +529,19 @@ export async function runOutlineStep(opts: {
         content_type: (["whiteboard", "project", "quiz"] as const).includes(detail?.content_type as any)
           ? (detail!.content_type as "whiteboard" | "project" | "quiz")
           : ("whiteboard" as const),
+        ...(refFileName ? { ref_files: [refFileName] } : {}),
       };
     });
 
     fullUnits.push({ ...unit, lectures });
+
+    await emit({
+      type: "outline_progress",
+      current: i + 1,
+      total: blueprint.units.length,
+      unitTitle: unit.title,
+      optimized: optimizedLectures,
+    });
   }
 
   const outline: CourseOutline = {
@@ -511,7 +552,7 @@ export async function runOutlineStep(opts: {
   };
 
   await emit({ type: "outline", outline });
-  await emit({ type: "stage", name: "outline", label: "打造课程", status: "end", detail: `生成 ${outline.units.length} 个单元` });
+  await emit({ type: "stage", name: "outline", label: "完善课程", status: "end", detail: `生成 ${outline.units.length} 个单元` });
 
   return { outline, title: outline.title };
 }
