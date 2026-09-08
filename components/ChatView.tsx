@@ -46,10 +46,6 @@ export function ChatView({
   const scrollRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<StoredMessage[]>([]);
   messagesRef.current = messages;
-  // done 事件里 setCurrentId 后，finally 闭包里的 currentId 仍是旧值，
-  // 用 ref 拿最新值判断「这是不是新对话」并决定是否替换 URL。
-  const currentIdRef = useRef<string | null>(currentId);
-  currentIdRef.current = currentId;
 
   // 离开页面对话流还在跑时，中止请求避免对已卸载组件 setState
   useEffect(() => () => abortRef.current?.abort(), []);
@@ -92,6 +88,9 @@ export function ChatView({
       let sources: SourceItem[] = [];
       let answer = "";
       let clarified = false;
+      // done 事件带回的新对话 id：必须在闭包内传递。
+      // setState 后要等下一次渲染 ref 才可见，而 finally 紧跟着执行，读 ref 会拿到旧值。
+      let createdConvId: string | null = null;
 
       try {
         const res = await fetch("/api/chat", {
@@ -138,7 +137,10 @@ export function ChatView({
             setStreaming(false);
             scrollBottom();
           } else if (e.type === "done") {
-            if (!currentId && e.conversationId) setCurrentId(e.conversationId);
+            if (!currentId && e.conversationId) {
+              createdConvId = e.conversationId;
+              setCurrentId(e.conversationId);
+            }
             window.dispatchEvent(new Event("ll:conversations-changed"));
           } else if (e.type === "error") {
             setError(e.message);
@@ -169,9 +171,9 @@ export function ChatView({
           setLiveSources([]);
           scrollBottom();
           // 新对话落地：写缓存再替换 URL，目标页首帧从缓存还原，无闪空
-          if (!currentId && currentIdRef.current) {
-            chatCache.set(currentIdRef.current, finalMessages);
-            router.replace(`/chat/${currentIdRef.current}`);
+          if (!currentId && createdConvId) {
+            chatCache.set(createdConvId, finalMessages);
+            router.replace(`/chat/${createdConvId}`);
           }
         }
       }
