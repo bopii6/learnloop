@@ -216,10 +216,11 @@ export function CourseSession({
   const recTimerRef = useRef<number | null>(null);
   const lastVoiceRef = useRef(""); // 上一条已处理的语音（去重）
   const spokenAtRef = useRef(0); // 老师最近一句话的播报时间（回声窗口）
-  const [voiceHeard, setVoiceHeard] = useState<{ text: string; status: "interim" | "ok" | "echo" | "short" | "dup" | "error" } | null>(null);
+  const [voiceHeard, setVoiceHeard] = useState<{ text: string; status: "interim" | "ok" | "echo" | "short" | "dup" | "hint" | "error" } | null>(null);
   const sendChatRef = useRef<((t: string, cp?: { question: string; options: string[] }) => Promise<void>) | undefined>(undefined);
   const cloudStopRef = useRef<VoiceCapture | null>(null);
   const cloudActiveRef = useRef(false); // Chrome 原生识别不可达时，云端录音链路是否在跑
+  const cloudAsrHintedRef = useRef(false); // 云端识别未配置只提示一次，不反复打扰
   // 退出/卸载守卫：置位后 pump/speak/续播全部短路，防止卸载后 TTS 继续朗读（幽灵朗读）
   const exitedRef = useRef(false);
   const lectureGenRef = useRef(0); // 讲课流的代数：旧流被 abort 后其 finally 不得污染新流的状态
@@ -278,9 +279,14 @@ export function CourseSession({
               setVoiceHeard({ text: d.text, status: status === "ok" ? "ok" : status });
               window.setTimeout(() => setVoiceHeard((v) => (v?.text === d.text ? null : v)), 1500);
             } else if (d.error === "ASR_NOT_CONFIGURED") {
-              setVoiceHeard({ text: "云端语音识别未配置", status: "error" });
-              setError(d.hint || "云端语音识别未配置");
+              // 自部署没配云端识别是常态而非事故：浏览器识别链路仍在自动重试，
+              // 不要弹红卡报错（学员不需要看到百度注册教程），安静提示一次即可
               stopCloudCapture();
+              if (!cloudAsrHintedRef.current) {
+                cloudAsrHintedRef.current = true;
+                setVoiceHeard({ text: "云端识别未配置，正在用浏览器识别", status: "hint" });
+                window.setTimeout(() => setVoiceHeard((v) => (v?.status === "hint" ? null : v)), 4000);
+              }
             } else {
               setVoiceHeard({ text: `识别失败：${d.detail || d.error || ""}`, status: "error" });
             }
@@ -351,8 +357,8 @@ export function CourseSession({
             setError("麦克风权限被拒绝：请在浏览器地址栏重新授权，语音模式已停用");
           } else if (code === "network") {
             // 浏览器自带识别服务不可达（国内网络常见）→ 自动切换"本地录音 + 云端识别"链路
-            setVoiceHeard({ text: "识别服务不可达，已自动切换云端识别，不影响使用", status: "error" });
-            window.setTimeout(() => setVoiceHeard((v) => (v?.text?.includes("不可达") ? null : v)), 4000);
+            setVoiceHeard({ text: "浏览器识别不稳，已自动切换识别链路", status: "error" });
+            window.setTimeout(() => setVoiceHeard((v) => (v?.text?.includes("识别链路") ? null : v)), 4000);
             void startCloudCapture();
           } else if (code === "audio-capture") {
             micArmedRef.current = false;
@@ -1407,13 +1413,13 @@ export function CourseSession({
             {voiceHeard ? (
               <div className="board-voice-heard">
                 <span className="board-voice-heard-label">
-                  {voiceHeard.status === "interim" ? "🎙 正在听" : "🎙 听到"}
+                  {voiceHeard.status === "interim" ? "🎙 正在听" : voiceHeard.status === "hint" ? "🎙 提示" : "🎙 听到"}
                 </span>
                 <span className="board-voice-heard-text">{voiceHeard.text}</span>
                 {voiceHeard.status === "echo" && <span className="board-voice-heard-note">（与老师声音重叠，已忽略）</span>}
                 {voiceHeard.status === "dup" && <span className="board-voice-heard-note">（重复，已忽略）</span>}
                 {voiceHeard.status === "short" && <span className="board-voice-heard-note">（太短）</span>}
-                {voiceHeard.status === "error" && <span className="board-voice-heard-note">（服务不可达，改用 Edge 试试）</span>}
+                {voiceHeard.status === "error" && <span className="board-voice-heard-note">（服务不稳，改用 Edge 或打字）</span>}
               </div>
             ) : checkpoint ? (
               <div className="board-quiz">
