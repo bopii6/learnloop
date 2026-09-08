@@ -291,4 +291,9 @@ export interface MarketEntry {
   price: number; // 0 = 免费（支付链路未接，先做标价展示）
   note?: string; // 上架时的一句话推荐语
   addedAt: number;
+  // 公开发布：所有访客（含匿名）可见。旧数据无此字段时的兼容规则：
+  // 无主条目 = 公开（历史行为），有主未标记 = 仅主人可见（维持原状，不被突然公开）
+  isPublic?: boolean;
+  // GET 响应附带的计算字段：当前登录用户能否下架此条目
+  canDelete?: boolean;
 }

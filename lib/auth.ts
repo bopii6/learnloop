@@ -155,5 +155,16 @@ export async function userFromCookieHeader(cookieHeader: string | null): Promise
   return findUserById(userId);
 }
 
+// ---- 管理员 ----
+// 平台运营者：管理官方/无主集市条目、标记「官方精选」。在 .env / Worker vars 配
+// ADMIN_EMAIL（多个用逗号分隔）；不配则公网环境无人能动无主条目，属预期（保守默认）。
+export function isAdminUser(email?: string | null): boolean {
+  const list = (process.env.ADMIN_EMAIL || "")
+    .split(/[,;，；]/)
+    .map((s) => normalizeEmail(s))
+    .filter(Boolean);
+  return Boolean(email) && list.includes(normalizeEmail(email || ""));
+}
+
 export const SESSION_COOKIE = "ll_session";
 export const SESSION_MAX_AGE_S = Math.floor(SESSION_TTL_MS / 1000);

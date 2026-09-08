@@ -32,9 +32,10 @@ export function MarketView({
   const removeFromMarket = useCallback(
     async (courseId: string) => {
       setEntries((prev) => (prev ? prev.filter((e) => e.courseId !== courseId) : prev));
-      await fetch(`/api/market?courseId=${encodeURIComponent(courseId)}`, { method: "DELETE" });
+      const res = await fetch(`/api/market?courseId=${encodeURIComponent(courseId)}`, { method: "DELETE" });
+      if (!res.ok) void refresh(); // 服务端拒绝（权限变化等）：回读真实列表，别让本地假删
     },
-    []
+    [refresh]
   );
 
   return (
@@ -52,7 +53,7 @@ export function MarketView({
         <div className="rounded-2xl border border-dashed border-[#d3d1c7] bg-white px-6 py-12 text-center">
           <div className="text-[14px] font-medium mb-1.5">集市还空着</div>
           <div className="text-[12.5px] text-ink-soft mb-5 leading-relaxed">
-            去「课程记录」打开一门好课，在课程页右上角点「上架到课程集市」，它就会出现在这里。
+            去「课程记录」打开一门好课，在课程页左侧的课程卡里点「上架到课程集市」，它就会公开出现在这里。
           </div>
           <button
             onClick={onGoHome}
@@ -90,13 +91,15 @@ export function MarketView({
                 >
                   ▶ 去学习
                 </button>
-                <button
-                  onClick={() => void removeFromMarket(e.courseId)}
-                  className="text-[11.5px] text-ink-faint hover:text-red-500 transition-colors"
-                  title="从集市下架（课程本身不受影响）"
-                >
-                  下架
-                </button>
+                {e.canDelete && (
+                  <button
+                    onClick={() => void removeFromMarket(e.courseId)}
+                    className="text-[11.5px] text-ink-faint hover:text-red-500 transition-colors"
+                    title="从集市下架（课程本身不受影响）"
+                  >
+                    下架
+                  </button>
+                )}
               </div>
             </div>
           ))}
