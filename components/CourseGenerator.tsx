@@ -166,7 +166,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
       setSaveFailed(false);
     } else if (e.type === "credits_block") {
       setError(
-        `积分不足：${e.reason}需要 ${e.need} 积分，当前余额 ${e.balance}。注册赠送 20 积分（生成一门课 10 分 + 听两节课 10 分），用完后联系我们补充。`
+        `积分不足：${e.reason}需要 ${e.need} 积分，当前余额 ${e.balance}。注册赠送 20 积分（生成一门课 10 分，首次听一节课 1 分、复习免费），用完后联系我们补充。`
       );
       setLoading(false);
     } else if (e.type === "error") {

@@ -1,9 +1,11 @@
 // 积分系统：防刷的第一道闸门。
 // 模型：新用户注册即得 20 积分（老用户首次被读取时自动补发，见 getOrCreateAccount 的惰性发放）；
-// 生成一门课程扣 10 分，开启一节白板课堂扣 5 分 —— 20 分正好体验完整闭环：1 门课 + 2 节课。
+// 生成一门课程扣 10 分，首次听一节课扣 1 分（讲稿脚本缓存后复习免费，见 lib/teach-cache.ts）。
 // 设计取舍：
+// - 按资产生成计费而不是按 token 实时扣：用户看得懂、可预期；追问等边际交互不收费，
+//   靠每节课 30 条的追问上限防滥用（滥用防在护栏，不在计费）
 // - 积分跟账号走（credits.json，经存储抽象层，本地/R2 双驱动一致）
-// - 扣分在资产产生之前（大纲生成/开讲），管线失败自动退回：用户只为成功交付的东西付费
+// - 扣分在资产产生之前，管线失败自动退回：用户只为成功交付的东西付费
 // - 流水只留最近 100 条：够成本核算用，不无限膨胀
 import { readJson, writeJson } from "@/lib/storage";
 
@@ -11,7 +13,9 @@ const CREDITS_KEY = "credits.json";
 
 export const NEW_USER_GRANT = 20;
 export const COST_COURSE_GENERATE = 10;
-export const COST_TEACHING_SESSION = 5;
+export const COST_TEACHING_SESSION = 1;
+/** 每用户每节课的追问上限（课堂 chat 不扣积分，用护栏防滥用） */
+export const CHAT_LIMIT_PER_LECTURE = 30;
 
 export interface CreditLogEntry {
   at: number;

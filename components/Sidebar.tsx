@@ -158,7 +158,7 @@ export function Sidebar({
                   {typeof credits === "number" && (
                     <span
                       className="text-[10.5px] text-accent font-medium"
-                      title="生成一门课 10 积分，听一节课 5 积分；注册赠送 20 积分"
+                      title="生成一门课 10 积分；首次听一节课 1 积分，复习免费；注册赠送 20 积分"
                     >
                       ⚡ {credits} 积分
                     </span>

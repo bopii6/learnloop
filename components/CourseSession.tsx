@@ -641,7 +641,7 @@ export function CourseSession({
           setPreparing(false);
         } else if (e.type === "credits_block") {
           setError(
-            `积分不足：${e.reason}需要 ${e.need} 积分，当前余额 ${e.balance}。注册赠送 20 积分（生成一门课 10 分 + 听两节课 10 分）。`
+            `积分不足：${e.reason}需要 ${e.need} 积分，当前余额 ${e.balance}。注册赠送 20 积分（生成一门课 10 分，首次听一节课 1 分、复习免费）。`
           );
           setPreparing(false);
         } else if (e.type === "done") {

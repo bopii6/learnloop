@@ -5,8 +5,9 @@ import { getCourseState } from "@/lib/agent/course";
 import { runStartTeaching, runTeachChat, buildLectureContext } from "@/lib/agent/teach";
 import { getProfile } from "@/lib/profile";
 import { userFromCookieHeader } from "@/lib/auth";
-import { COST_TEACHING_SESSION, refundCredits, trySpend } from "@/lib/credits";
+import { CHAT_LIMIT_PER_LECTURE, COST_TEACHING_SESSION, refundCredits, trySpend } from "@/lib/credits";
 import { storageMode } from "@/lib/storage";
+import { bumpChatCount, loadTeachScript, saveTeachScript } from "@/lib/teach-cache";
 import { pagesForLecture } from "@/lib/textbook";
 import type { WhiteboardEvent } from "@/types";
 
@@ -122,7 +123,17 @@ export async function POST(req: NextRequest) {
         if (profile.name) ctx.studentName = profile.name;
 
         if (body.action === "start_teaching") {
-          // 积分门卫：开讲 = 整节课的 beat 脚本生成，是课堂里最贵的一次调用。
+          // 讲稿缓存命中 = 复习：直接回放缓存事件，不生成、不扣积分。
+          // （缓存按用户隔离：开场 beat 会点名学员名字，不能全局共享）
+          const cached = await loadTeachScript(body.courseId || "", body.unitId || "", body.lectureId || "", me?.id);
+          if (cached) {
+            for (const e of cached.events) await send(e);
+            await send({ type: "done", sessionId: `${body.courseId}:${body.lectureId}` });
+            controller.close();
+            return;
+          }
+
+          // 积分门卫：首次开讲 = 整节课讲稿生成（10+ 次 LLM 调用），课堂里最贵的一步。
           // 未登录：本地自用放行；公网部署（R2 模式）必须登录。
           if (!me && storageMode === "r2") {
             await send({ type: "error", message: "请先登录后再进入课堂（课堂消耗积分，与账号绑定）" });
@@ -140,7 +151,18 @@ export async function POST(req: NextRequest) {
             creditsSpent = true;
           }
           try {
-            await runStartTeaching({ ctx, emit: send });
+            // 捕获事件流：讲稿生成一次就存档，复习时回放（见上方缓存命中分支）
+            const captured: WhiteboardEvent[] = [];
+            const capturingSend = async (e: WhiteboardEvent) => {
+              captured.push(e);
+              await send(e);
+            };
+            await runStartTeaching({ ctx, emit: capturingSend });
+            try {
+              await saveTeachScript(body.courseId || "", body.unitId || "", body.lectureId || "", me?.id, captured);
+            } catch {
+              // 缓存写入失败不影响本次课堂（下次复习会重新生成并再扣 1 分，可接受）
+            }
             await send({ type: "done", sessionId: `${body.courseId}:${body.lectureId}` });
           } catch (e) {
             // 开讲失败退回积分（课没讲成不收费）
@@ -151,6 +173,13 @@ export async function POST(req: NextRequest) {
           const message = (body.message || "").trim();
           if (!message) {
             await send({ type: "error", message: "empty message" });
+            controller.close();
+            return;
+          }
+          // 追问不扣积分（单条成本极低），但有每节课上限防滥用
+          const chatGuard = await bumpChatCount(me?.id, body.courseId || "", body.unitId || "", body.lectureId || "", CHAT_LIMIT_PER_LECTURE);
+          if (!chatGuard.ok) {
+            await send({ type: "error", message: `本节课的提问已达上限（${CHAT_LIMIT_PER_LECTURE} 条）。换个课节继续，或明天再来复习巩固。` });
             controller.close();
             return;
           }
