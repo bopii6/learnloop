@@ -192,7 +192,7 @@ export async function runStartTeaching(opts: {
   });
 
   const plan = await generateJson<{
-    segments: { id?: string; title?: string; focus?: string; checkpoint?: string }[];
+    segments: { id?: string; title?: string; focus?: string; checkpoint?: string; anchor?: string }[];
     points?: string[];
   }>(
     `你是课程导演。把一节课拆成 5 到 6 个连续的微型教学片段，并给出整节课的课堂步骤（points），只输出 JSON。
@@ -201,7 +201,8 @@ points 是整节课的 3-4 个大步骤名（如["提出问题","核心机制","
 片段总字数预算约 300 字/个，整节课 7-10 分钟讲完——总时长是硬约束，宁少勿多；片段顺序覆盖：开场动机 → 核心机制 → 分步拆解 → 例子 → 误区与小结检验。
 拆片段时优先吃透参考资料里的具体内容：资料里反复出现的概念、对比、案例要各占一个片段，不要空泛的"通用模板"片段。
 每个片段只解决一个小问题，title 不超过 12 字，focus 不超过 35 字。
-格式：{"points":["...","..."],"segments":[{"id":"intro","title":"课程开场","focus":"..."},{"id":"mechanism","title":"核心机制","focus":"...","checkpoint":"..."}]}`,
+每个片段再给一个 anchor（2-4 字锚点词）：取本片段最核心的那个概念术语（如「反馈循环」「工具调用」「上下文窗口」），不要重复 title，也不要"核心机制"这类泛词——它会被大字写在白板正中圈出来。
+格式：{"points":["...","..."],"segments":[{"id":"intro","title":"课程开场","focus":"...","anchor":"工具调用"},{"id":"mechanism","title":"核心机制","focus":"...","anchor":"反馈循环","checkpoint":"..."}]}`,
     `课程：${ctx.courseTitle}\n单元：${ctx.unitTitle}\n课节：${ctx.lectureTitle}\n摘要：${ctx.lectureSummary}${
       ctx.keyConcepts?.length ? `\n本单元关键概念：${ctx.keyConcepts.join("、")}` : ""
     }${ctx.referenceMaterial ? `\n参考资料（片段划分要覆盖其中的关键内容）：\n${ctx.referenceMaterial.slice(0, 5000)}` : ""}`,
@@ -220,6 +221,7 @@ points 是整节课的 3-4 个大步骤名（如["提出问题","核心机制","
     title: ["课程开场", "核心机制", "分步拆解", "最小例子", "常见误区", "本节小结"][i],
     focus,
     checkpoint: [2, 4].includes(i) ? "用一句话复述刚才这个小片段的关键点。" : undefined,
+    anchor: undefined as string | undefined,
   }));
 
   const profileLine = ctx.profileHint ? `\n学员画像（讲解时贴合其水平与目标）：${ctx.profileHint}` : "";
@@ -277,6 +279,7 @@ points 是整节课的 3-4 个大步骤名（如["提出问题","核心机制","
       index: i,
       total: lessonSegments.length,
       title: String(segment.title),
+      anchor: segment.anchor ? String(segment.anchor).slice(0, 6) : undefined,
       beats,
       checkpoint,
       // 课堂步骤轨：片段映射到最近的步骤（points 均摊到片段序列上）

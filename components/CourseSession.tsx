@@ -49,6 +49,7 @@ interface PlayItem {
   index: number;
   total: number;
   title: string;
+  anchor?: string;
   beat: TeachBeat;
   lastOfSegment: boolean;
   ordinal: number;
@@ -180,7 +181,10 @@ export function CourseSession({
   const abortLectureRef = useRef<AbortController | null>(null);
   const abortChatRef = useRef<AbortController | null>(null);
   const excalidrawApiRef = useRef<any>(null);
+  // writer 提前建好（append 内部会等画布 API，最长 15s）：不能等 onReady 才建，
+  // 否则白板加载慢/失败时，前面几拍的板书会被静默丢弃、讲解与板书从此对不上
   const writerRef = useRef<BoardWriter | null>(null);
+  if (!writerRef.current) writerRef.current = createBoardWriter(() => excalidrawApiRef.current);
   const startedRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<WhiteboardMessage[]>([]);
@@ -211,6 +215,7 @@ export function CourseSession({
   const lastSaveRef = useRef(0); // 进度上报节流
   const spokenRef = useRef(""); // 老师最近朗读的句子（回声过滤用）
   const restoredRef = useRef(false); // 本次播放是否为断线恢复（恢复时不重画片段胶囊）
+  const resumeSegmentRef = useRef<string | null>(null); // 恢复快照里模块页归属的片段（只跳过它的胶囊）
   const micArmedRef = useRef(false); // 语音模式：自动聆听开关
   const recRef = useRef<any>(null);
   const recTimerRef = useRef<number | null>(null);
@@ -476,9 +481,13 @@ export function CourseSession({
         const pi = segPointIndexRef.current.get(item.segmentId);
         if (typeof pi === "number") setActivePoint(pi);
         setRail((prev) => prev.map((r) => (r.id === item.segmentId ? { ...r, status: "active" } : r)));
-        // 断线恢复的续播：画面快照已含片段胶囊，不重画
-        if (!restoredRef.current) {
-          await writerRef.current?.beginSegment(item.title, { index: item.index + 1, total: item.total });
+        // 断线恢复只跳过落点片段的胶囊（画面快照已含）；之后的片段照常另起模块起纸，
+        // restoredRef 必须在此消费掉——不清会导致恢复后整节课都不再画纸和页眉
+        const skipCapsule = restoredRef.current && resumeSegmentRef.current === item.segmentId;
+        restoredRef.current = false;
+        resumeSegmentRef.current = null;
+        if (!skipCapsule) {
+          await writerRef.current?.beginSegment(item.title, { index: item.index + 1, total: item.total }, item.anchor, item.segmentId);
         }
       }
 
@@ -602,6 +611,7 @@ export function CourseSession({
             index: e.index,
             total: e.total,
             title: e.title,
+            anchor: e.anchor,
             beat,
             lastOfSegment: bi === e.beats.length - 1,
             ordinal: nextOrdinalRef.current++,
@@ -611,7 +621,7 @@ export function CourseSession({
       // 剧本上报服务端（WS 持久化，用于断线恢复）
       wsScriptRef.current = [
         ...wsScriptRef.current.filter((s) => s.segmentId !== e.segmentId),
-        { segmentId: e.segmentId, index: e.index, total: e.total, title: e.title, beats: e.beats, checkpoint: e.checkpoint || null },
+        { segmentId: e.segmentId, index: e.index, total: e.total, title: e.title, anchor: e.anchor, beats: e.beats, checkpoint: e.checkpoint || null },
       ];
       if (Array.isArray(e.points) && e.points.length > 0) wsPointsRef.current = e.points;
       wsSend({ type: "script", segments: wsScriptRef.current, points: wsPointsRef.current });
@@ -796,10 +806,12 @@ export function CourseSession({
     }
     setIntroCard(false);
 
-    // 有已保存的课堂状态（播放过）→ 走恢复：还原白板画面 + 断点续播
+    // 有已保存的课堂状态（播放过）→ 走恢复：还原白板画面 + 断点续播。
+    // 画面元素可能为空（如断线前白板还没就绪）：只要剧本在，就恢复游标继续，别从头重播
     const saved = savedStateRef.current;
-    if (saved && (saved.cursor || 0) > 0 && (saved.elements?.length || 0) > 0) {
+    if (saved && (saved.cursor || 0) > 0 && (saved.script?.length || 0) > 0) {
       restoredRef.current = true;
+      resumeSegmentRef.current = typeof saved.writer?.lastSegmentKey === "string" ? saved.writer.lastSegmentKey : null;
       try {
         excalidrawApiRef.current?.updateScene({ elements: saved.elements || [] });
         writerRef.current?.restore(saved.writer || {});
@@ -829,6 +841,7 @@ export function CourseSession({
             index: seg.index,
             total: seg.total,
             title: seg.title,
+            anchor: seg.anchor,
             beat,
             lastOfSegment: bi === (seg.beats?.length || 0) - 1,
             ordinal: ord,
@@ -1404,10 +1417,7 @@ export function CourseSession({
           <Whiteboard
             onReady={(api) => {
               excalidrawApiRef.current = api;
-              writerRef.current = createBoardWriter(() => excalidrawApiRef.current);
             }}
-            
-            
           />
           <div className="board-subtitle" aria-live="polite">
             {voiceHeard ? (

@@ -103,7 +103,47 @@ export function MarketView({
         </div>
       </div>
 
-      {entries === null && <div className="text-[13px] text-ink-faint text-center py-10">加载中…</div>}
+      {entries === null && (
+        <div className="max-w-5xl mx-auto px-6">
+          <div className="flex gap-1.5 flex-wrap mb-5">
+            {["w-12", "w-16", "w-20", "w-14", "w-16"].map((w, i) => (
+              <div key={i} className={`skeleton rounded-full h-[30px] ${w}`} />
+            ))}
+          </div>
+          <div className="rounded-3xl border border-[#e7e5dc] bg-white overflow-hidden flex mb-5">
+            <div className="skeleton w-[280px] shrink-0 min-h-[190px]" />
+            <div className="flex-1 p-6 py-5">
+              <div className="flex gap-2 mb-3">
+                <div className="skeleton h-4 w-16 rounded-full" />
+                <div className="skeleton h-4 w-10 rounded-full" />
+              </div>
+              <div className="skeleton h-6 w-2/3 rounded mb-3" />
+              <div className="skeleton h-3.5 w-full rounded mb-2" />
+              <div className="skeleton h-3.5 w-4/5 rounded mb-4" />
+              <div className="flex gap-2">
+                <div className="skeleton h-4 w-14 rounded-full" />
+                <div className="skeleton h-4 w-16 rounded-full" />
+              </div>
+            </div>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="rounded-2xl border border-[#e7e5dc] bg-white overflow-hidden">
+                <div className="skeleton w-full h-[104px]" />
+                <div className="p-4">
+                  <div className="skeleton h-3 w-24 rounded mb-2" />
+                  <div className="skeleton h-4 w-3/4 rounded mb-2.5" />
+                  <div className="skeleton h-3 w-1/2 rounded mb-3" />
+                  <div className="flex gap-1.5">
+                    <div className="skeleton h-4 w-14 rounded-full" />
+                    <div className="skeleton h-4 w-16 rounded-full" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {entries && entries.length === 0 && (
         <div className="max-w-2xl mx-auto px-6">

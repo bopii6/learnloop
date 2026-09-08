@@ -4,6 +4,12 @@ import { useEffect, useRef, useState } from "react";
 // Excalidraw 的样式是独立 CSS 文件（非 CSS-in-JS），不导入会渲染成无样式裸文本
 import "@excalidraw/excalidraw/index.css";
 
+// 白板字体（含中文手写体 Xiaolai）自托管：默认从 esm.sh CDN 拉，国内不稳定且会导致
+// CJK 手写体静默回退成系统印刷体。字体文件拷贝在 public/excalidraw-assets/fonts/。
+if (typeof window !== "undefined") {
+  (window as any).EXCALIDRAW_ASSET_PATH = "/excalidraw-assets/";
+}
+
 interface WhiteboardProps {
   initialElements?: any[];
   onElementsChange?: (elements: any[]) => void;
@@ -74,7 +80,8 @@ export function Whiteboard({
           elements: initialElements,
           appState: {
             viewBackgroundColor: "transparent",
-            currentItemFontFamily: boardFont === "handwriting" ? 1 : 2,
+            // Excalidraw 0.18：CJK 手写回退链（Xiaolai）只挂在 family 5（Excalifont）上，1 是无中文的 Virgil
+            currentItemFontFamily: boardFont === "handwriting" ? 5 : 2,
           },
         }}
         onChange={(elements: any[]) => {

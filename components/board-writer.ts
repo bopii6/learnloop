@@ -1,21 +1,27 @@
 // BoardWriter：白板增量书写器 —— 播放器的"手"。
+// 视觉纪律：Excalidraw 原生手绘语系 —— 手绘线（roughness 1）+ 排线填充（hachure）+ 手写字体，
+//   白纸面板 + 墨色正文 + 单一强调色（墨绿）；每页正中大字锚点词圈出本片段核心概念（RSA 式视觉锚点）。
 // 布局逻辑（模块板 + 导演式镜头）：
-//   一个教学片段 = 一块"模块板"：指数徽章（第几块/共几块）+ 大标题 + 主题色底卡与下划线；
-//   板内走双列流式排版——短条目（要点卡/注释/判断行）成对并排铺满一行，
-//   结构图元（小节标题/流程图/表格/趋势图/对比栏/分支树/金句）独占整行；
-//   片段讲完 → 板间画衔接箭头，镜头右移到下一块模块板。整节课的板书连成一条学习路径。
-//   镜头跟随书写进度：模块开始先推近标题区，随内容增多平滑后拉——手写在哪、镜头看哪。
+//   一个教学片段 = 一页"模块板"：小字页码 + 墨色标题 + 强调色短线页眉；
+//   板内单列流式排版——要点带编号直排纸面，注释缩进为灰色副行，判断行贴内容细墨框，
+//   结构图元（小节标题/流程图/表格/趋势图/对比/分支树/金句）独占整行；
+//   片段讲完 → 板间画衔接箭头，镜头右移到下一页。整节课的板书连成一条学习路径。
+//   镜头跟随书写进度：页首先推近标题区，随内容增多平滑后拉——手写在哪、镜头看哪。
 //   turbo 模式（回放重建用）：跳过动画与延时，瞬间把板书写到位。
 import type { BoardItem } from "@/types";
 
-const PALETTE = ["#7c3aed", "#2563eb", "#059669", "#d97706", "#dc2626"];
+const INK = "#1e1e1e"; // 板书正文与标题
+const ACCENT = "#0f6e56"; // 唯一强调色：页眉线/小节引线/重点圈画/图表主线/金句
+const MUTE = "#8a8880"; // 次要文字：页码/编号/注释/坐标轴
+const FAINT = "#b4b2a9"; // 发丝线：板间箭头/树杈/中性边框
+const SEM_GOOD = "#047857"; // 语义色：判断行「推荐做法」
+const SEM_BAD = "#b91c1c"; // 语义色：判断行「常见错误」与警示标记
+const FILL_NEUTRAL = "#e6e2d4"; // 结构图元的排线填充（hachure 暖灰，白纸上的手绘阴影）
 const START_X = 60;
 const START_Y = 60;
-const MODULE_W = 780; // 模块板总宽
-const CONTENT_W = 756; // 板内内容宽
-const COL_W = 366; // 半行宽（短条目成对并排）
-const COL_GAP = 24;
-const HEADER_H = 92; // 标题区高（徽章 + 大标题 + 主题色下划线）
+const MODULE_W = 660; // 模块板总宽（收窄让内容占满版面，密度优先）
+const CONTENT_W = 636; // 板内内容宽
+const HEADER_H = 92; // 标题区高（页码 + 标题 + 强调线）
 const ROW_GAP = 14;
 const MODULE_X_GAP = 230; // 两块模块板的间距
 const ITEM_DELAY_MS = 280; // 每条板书出现间隔，模拟手写节奏
@@ -31,8 +37,13 @@ interface Box {
 }
 
 export interface BoardWriter {
-  /** 新片段：把镜头带到新模块板，画指数徽章 + 大标题（progress 可选，缺失则只显示序号） */
-  beginSegment(title: string, progress?: { index: number; total: number }): Promise<void>;
+  /** 新片段：把镜头带到新模块板，画指数徽章 + 大标题（progress 可选；anchor 为本片段锚点词，画在正中圈出） */
+  beginSegment(
+    title: string,
+    progress?: { index: number; total: number },
+    anchor?: string,
+    segmentKey?: string
+  ): Promise<void>;
   /** 写一条 beat 的板书（section 是模块内的小节标题，可选），逐条出现 */
   write(section: string | undefined, items: BoardItem[]): Promise<void>;
   /** 已写下的模块名/小节名（注入学员提问上下文） */
@@ -56,13 +67,13 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
   let my = START_Y;
   let rowY = my + HEADER_H; // 当前书写行顶部
   let contentBottom = my + HEADER_H; // 已写内容的最低点（镜头取景/底卡撑高用）
-  let moduleIndex = 0; // 已开始的模块数（徽章从 1 起）
+  let moduleIndex = 0; // 已开始的模块数（页码从 1 起）
   let moduleUsed = false; // 当前模块是否写过内容
-  let pairPending: Box | null = null; // 半行卡已占左列、等右侧配对
+  let bulletNo = 0; // 当前模块内的要点编号（换模块归零）
   let currentSection: string | null = null;
-  let colorIndex = 0;
   let lastItemBox: Box | null = null;
   let backdropId: string | null = null; // 当前模块底卡元素 id（finalize 时按内容撑高）
+  let lastSegmentKey: string | null = null; // 当前模块页归属的片段 id（断线恢复时判断快照是否已含该片段的页）
   const sections: string[] = [];
   let turbo = false;
 
@@ -205,9 +216,9 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
     camAnim = requestAnimationFrame(step);
   }
 
-  /** 当前书写内容的最低点（含未配对的半行卡） */
+  /** 当前书写内容的最低点 */
   function writingBottom(): number {
-    return Math.max(contentBottom, pairPending ? pairPending.y + pairPending.h : 0);
+    return contentBottom;
   }
 
   /** 书写镜头：框住本模块从标题到当前书写行，随内容增多自然后拉 */
@@ -217,8 +228,8 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
     await focusRegion(mx - CAM_PAD.x, my - CAM_PAD.top, w, h, 0.97, WRITE_MAX_ZOOM);
   }
 
-  /** 模块收尾：把底卡撑到实际内容高度（底卡元素在 beginSegment 时以固定 id 画入） */
-  function finalizeModule() {
+  /** 纸随写随撑：每写一行就把底卡撑到当前内容高度（不等翻页收尾，避免内容溢出纸外） */
+  function growBackdrop() {
     if (!backdropId) return;
     const api = getApi();
     if (!api) return;
@@ -226,21 +237,33 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
     try {
       const els = api
         .getSceneElements()
-        .map((el: any) => (el.id === backdropId ? { ...el, height: h } : el));
+        .map((el: any) =>
+          el.id === backdropId && Math.abs((el.height || 0) - h) > 1 ? { ...el, height: h } : el
+        );
       api.updateScene({ elements: els });
     } catch {
       // 场景未就绪时忽略
     }
   }
 
-  /** 板间衔接箭头：整节课的板书串成一条路径 */
+  /** 模块收尾：把底卡撑到实际内容高度（底卡真实 id 在 beginSegment 时从 append 返回值记下） */
+  function finalizeModule() {
+    growBackdrop();
+  }
+
+  /** 板间衔接箭头：整节课的板书串成一条路径（中点微微上挑，手绘弧线） */
   async function drawConnector() {
+    const g = MODULE_X_GAP - 92;
     await append([
       {
         type: "arrow",
         x: mx + MODULE_W + 46,
         y: my + 140,
-        points: [[0, 0], [MODULE_X_GAP - 92, 0]],
+        points: [
+          [0, 0],
+          [Math.round(g * 0.5), -12],
+          [g, 0],
+        ],
         strokeColor: "#b4b2a9",
         strokeWidth: 2,
         roughness: 1,
@@ -248,41 +271,28 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
     ]);
   }
 
-  /** 模块板头部：指数徽章 + 大标题 + 主题色手绘下划线 */
+  /** 模块板头部：小字页码（右侧）+ 墨色标题 + 单强调色手绘短线（讲义页眉） */
   async function drawModuleHeader(title: string, progress?: { index: number; total: number }) {
-    const color = PALETTE[(colorIndex - 1) % PALETTE.length];
     const shown = title.slice(0, 14);
     const badgeText = progress?.total ? `${moduleIndex}/${progress.total}` : `${moduleIndex}`;
     await append([
       {
-        type: "rectangle",
-        x: mx + 8,
-        y: my + 6,
-        width: 62,
-        height: 30,
-        backgroundColor: color + "1f",
-        strokeColor: color,
-        strokeWidth: 1,
-        roughness: 0,
-        roundness: { type: 3 },
-      },
-      {
         type: "text",
-        x: mx + 8 + Math.max(10, (62 - badgeText.length * 9) / 2),
-        y: my + 12,
+        x: mx + MODULE_W - 64,
+        y: my + 8,
         text: badgeText,
-        fontSize: 14,
-        fontFamily: 2,
-        strokeColor: color,
+        fontSize: 15,
+        fontFamily: 5,
+        strokeColor: MUTE,
       },
       {
         type: "text",
-        x: mx + 86,
+        x: mx + 12,
         y: my + 3,
         text: shown,
         fontSize: 25,
-        fontFamily: 2,
-        strokeColor: "#1e1e1e",
+        fontFamily: 5,
+        strokeColor: INK,
       },
       {
         type: "line",
@@ -292,88 +302,58 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
           [0, 0],
           [Math.min(shown.length * 27 + 34, MODULE_W - 24), 0],
         ],
-        strokeColor: color,
-        strokeWidth: 4,
+        strokeColor: ACCENT,
+        strokeWidth: 2,
         roughness: 1,
       },
     ]);
   }
 
-  /** 在当前行画一个小节标题（模块内换主题时）：色条 + 加粗文字，独占整行 */
+  /** 在当前行画一个小节标题（模块内换主题时）：短强调引线 + 墨色文字，独占整行 */
   async function drawSectionHeading(name: string) {
-    const color = PALETTE[(colorIndex - 1) % PALETTE.length];
-    const text = name.slice(0, 12);
+    const text = name.slice(0, 14);
     await append([
       {
-        type: "rectangle",
-        x: mx + 4,
-        y: rowY + 5,
-        width: 5,
-        height: 26,
-        backgroundColor: color,
-        strokeColor: "transparent",
-        strokeWidth: 0,
-        roughness: 0,
+        type: "line",
+        x: mx + 10,
+        y: rowY + 18,
+        points: [
+          [0, 0],
+          [18, 0],
+        ],
+        strokeColor: ACCENT,
+        strokeWidth: 2.5,
+        roughness: 1,
       },
       {
         type: "text",
-        x: mx + 22,
+        x: mx + 40,
         y: rowY + 6,
         text,
         fontSize: 20,
-        fontFamily: 2,
-        strokeColor: "#1e1e1e",
+        fontFamily: 5,
+        strokeColor: INK,
       },
     ]);
     lastItemBox = { x: mx, y: rowY, w: CONTENT_W, h: 40 };
     rowY += 40 + ROW_GAP;
     contentBottom = Math.max(contentBottom, rowY - ROW_GAP);
+    growBackdrop();
   }
 
-  /** 结掉未配对的半行卡：把书写游标推过它（独占整行的图元画之前必须调用） */
-  function flushPendingPair() {
-    if (!pairPending) return;
-    rowY = pairPending.y + pairPending.h + ROW_GAP;
-    contentBottom = Math.max(contentBottom, pairPending.y + pairPending.h);
-    pairPending = null;
-  }
-
-  /** 左列占位（等右侧配对）：要点卡/注释/判断行走这里 */
-  async function placeShort(render: (ox: number) => { skeleton: any[]; h: number }) {
-    if (!pairPending) {
-      const { skeleton, h } = render(mx);
-      if (skeleton.length === 0) return;
-      await append(skeleton);
-      const box: Box = { x: mx, y: rowY, w: COL_W, h };
-      pairPending = box;
-      lastItemBox = box;
-    } else {
-      const first = pairPending;
-      const ox2 = mx + COL_W + COL_GAP;
-      const { skeleton, h } = render(ox2);
-      if (skeleton.length === 0) return;
-      await append(skeleton);
-      lastItemBox = { x: ox2, y: rowY, w: COL_W, h };
-      rowY += Math.max(first.h, h) + ROW_GAP;
-      contentBottom = Math.max(contentBottom, Math.max(first.y + first.h, rowY - ROW_GAP));
-      pairPending = null;
-      await focusWriting();
-    }
-  }
-
-  /** 独占整行的图元：先结掉未配对的半行，再画整行并推进书写游标 */
-  async function placeFull(render: () => { skeleton: any[]; h: number }) {
-    flushPendingPair();
-    const { skeleton, h } = render();
+  /** 独占整行的图元：画整行并推进书写游标（emBox 可指定强调圈画的贴合范围） */
+  async function placeFull(render: () => { skeleton: any[]; h: number; emBox?: Box }) {
+    const { skeleton, h, emBox } = render();
     if (skeleton.length === 0) return;
     await append(skeleton);
-    lastItemBox = { x: mx, y: rowY, w: CONTENT_W, h };
+    lastItemBox = emBox || { x: mx, y: rowY, w: CONTENT_W, h };
     rowY += h + ROW_GAP;
     contentBottom = Math.max(contentBottom, rowY - ROW_GAP);
+    growBackdrop();
     await focusWriting();
   }
 
-  /** 在上一条板书上做强调（圈重点 / 划重点线 / 爆星强调） */
+  /** 在上一条板书上做强调（圈重点 / 划重点线 / 爆星强调）：一律墨绿单色 */
   function emphasizeSkeleton(kind: "circle" | "underline" | "burst"): any[] {
     if (!lastItemBox) return [];
     const b = lastItemBox;
@@ -385,8 +365,8 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
           y: b.y - 8,
           width: Math.min(b.w + 28, CONTENT_W + 20),
           height: b.h + 14,
-          backgroundColor: "#dc262610",
-          strokeColor: "#dc2626",
+          backgroundColor: "transparent",
+          strokeColor: ACCENT,
           strokeWidth: 1.5,
           roughness: 1,
         },
@@ -399,7 +379,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
           x: b.x + 2,
           y: b.y + b.h + 5,
           points: [[0, 0], [Math.min(b.w - 4, CONTENT_W - 8), 0]],
-          strokeColor: "#d97706",
+          strokeColor: ACCENT,
           strokeWidth: 2,
           roughness: 1,
         },
@@ -419,7 +399,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
         x: cx + Math.cos(rad) * r1,
         y: cy + Math.sin(rad) * r1,
         points: [[0, 0], [Math.cos(rad) * (r2 - r1), Math.sin(rad) * (r2 - r1)]],
-        strokeColor: "#dc2626",
+        strokeColor: ACCENT,
         strokeWidth: 1.5,
         roughness: 1,
       });
@@ -428,7 +408,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
   }
 
   return {
-    async beginSegment(title: string, progress?: { index: number; total: number }) {
+    async beginSegment(title: string, progress?: { index: number; total: number }, anchor?: string, segmentKey?: string) {
       // 上一块模块收尾：底卡撑高 → 板间箭头 → 右移开新板
       if (moduleUsed) {
         finalizeModule();
@@ -436,33 +416,60 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
         mx += MODULE_W + MODULE_X_GAP;
       }
       moduleIndex += 1;
-      colorIndex += 1;
+      bulletNo = 0;
       currentSection = null;
-      pairPending = null;
       lastItemBox = null;
-      rowY = my + HEADER_H;
-      contentBottom = my + HEADER_H;
+      lastSegmentKey = segmentKey || null;
+      const anchorWord = (anchor || "").trim().slice(0, 6);
+      const anchorBand = anchorWord ? 66 : 0; // 标题线下方为锚点带让出的高度
+      rowY = my + HEADER_H + anchorBand;
+      contentBottom = rowY;
       moduleUsed = true;
 
-      // 模块底卡：先画（z 序在最底），收尾时按内容撑高
-      const color = PALETTE[(colorIndex - 1) % PALETTE.length];
-      backdropId = `mod-backdrop-${moduleIndex}`;
-      await append([
+      // 模块底卡 = 一页纸：白底 + 手绘淡墨线框，先画（z 序在最底），收尾时按内容撑高。
+      // id 不能自己指定——convertToExcalidrawElements 不保留自定义 id，真实 id 以 append 返回为准
+      const created = await append([
         {
-          id: backdropId,
           type: "rectangle",
           x: mx - 18,
           y: my - 24,
           width: MODULE_W + 36,
           height: 220,
-          backgroundColor: color + "08",
-          strokeColor: color + "30",
+          backgroundColor: "#ffffff",
+          strokeColor: "#1e1e1e1f",
           strokeWidth: 1,
-          roughness: 0,
+          roughness: 1,
           roundness: { type: 3 },
         },
       ]);
+      backdropId = created[0]?.id || null;
       await drawModuleHeader(title, progress);
+      // 锚点词：本片段最核心的概念，大字写在正中、墨绿手绘椭圆圈出（视觉锚点）
+      if (anchorWord) {
+        const w = anchorWord.length * 40 + 58;
+        await append([
+          {
+            type: "ellipse",
+            x: mx + Math.floor((MODULE_W - w) / 2),
+            y: my + 64,
+            width: w,
+            height: 66,
+            backgroundColor: "transparent",
+            strokeColor: ACCENT,
+            strokeWidth: 2,
+            roughness: 1,
+          },
+          {
+            type: "text",
+            x: mx + Math.floor((MODULE_W - anchorWord.length * 40) / 2),
+            y: my + 76,
+            text: anchorWord,
+            fontSize: 40,
+            fontFamily: 5,
+            strokeColor: INK,
+          },
+        ]);
+      }
       // 镜头先行：推近新模块标题区，板书随后写进画面
       await focusWriting();
     },
@@ -475,7 +482,6 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
       if (newSection && newSection !== currentSection && list.length > 0) {
         currentSection = newSection;
         sections.push(newSection);
-        flushPendingPair();
         await drawSectionHeading(newSection);
       }
 
@@ -487,115 +493,110 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
           continue;
         }
 
-        const color = PALETTE[(colorIndex - 1) % PALETTE.length];
-
         if (item.kind === "bullet" && item.text) {
-          const text = item.text.replace(/\s+/g, " ").trim().slice(0, 20);
+          const text = item.text.replace(/\s+/g, " ").trim().slice(0, 30);
           if (!text) continue;
-          await placeShort((ox) => ({
+          bulletNo += 1;
+          const no = bulletNo;
+          await placeFull(() => ({
             skeleton: [
               {
-                type: "rectangle",
-                x: ox,
-                y: rowY,
-                width: COL_W,
-                height: 46,
-                backgroundColor: color + "0d",
-                strokeColor: color + "55",
-                strokeWidth: 1,
-                roughness: 0,
-                roundness: { type: 3 },
+                type: "text",
+                x: mx + 10,
+                y: rowY + 2,
+                text: `${no}.`,
+                fontSize: 15,
+                fontFamily: 5,
+                strokeColor: MUTE,
               },
               {
                 type: "text",
-                x: ox + 18,
-                y: rowY + 13,
+                x: mx + 42,
+                y: rowY,
                 text,
-                fontSize: 16,
-                fontFamily: 1,
-                strokeColor: "#1e1e1e",
+                fontSize: 17,
+                fontFamily: 5,
+                strokeColor: INK,
               },
             ],
-            h: 46,
+            h: 34,
+            emBox: {
+              x: mx + 36,
+              y: rowY - 2,
+              w: Math.min(text.length * 18 + 24, CONTENT_W - 44),
+              h: 36,
+            },
           }));
         } else if (item.kind === "note" && item.text) {
-          const text = item.text.replace(/\s+/g, " ").trim().slice(0, 14);
-          if (!text) continue;
-          await placeShort((ox) => ({
-            skeleton: [
-              {
-                type: "text",
-                x: ox + 8,
-                y: rowY + 5,
-                text: `— ${text}`,
-                fontSize: 14,
-                fontFamily: 1,
-                strokeColor: "#846358",
-              },
-            ],
-            h: 36,
-          }));
-        } else if (item.kind === "judge" && item.text) {
-          // ✓/✗ 判断行：推荐做法绿勾、常见错误红叉
-          const good = item.verdict !== "bad";
-          const jc = good ? "#059669" : "#dc2626";
-          const text = item.text.replace(/\s+/g, " ").trim().slice(0, 19);
-          if (!text) continue;
-          await placeShort((ox) => ({
-            skeleton: [
-              {
-                type: "rectangle",
-                x: ox,
-                y: rowY,
-                width: COL_W,
-                height: 46,
-                backgroundColor: jc + "0f",
-                strokeColor: jc + "44",
-                strokeWidth: 1,
-                roughness: 0,
-                roundness: { type: 3 },
-              },
-              {
-                type: "text",
-                x: ox + 18,
-                y: rowY + 13,
-                text: `${good ? "✓" : "✗"} ${text}`,
-                fontSize: 16,
-                fontFamily: 2,
-                strokeColor: good ? "#047857" : "#b91c1c",
-              },
-            ],
-            h: 46,
-          }));
-        } else if (item.kind === "subtitle" && item.text) {
-          const text = item.text.replace(/\s+/g, " ").trim().slice(0, 12);
+          const text = item.text.replace(/\s+/g, " ").trim().slice(0, 24);
           if (!text) continue;
           await placeFull(() => ({
             skeleton: [
               {
                 type: "text",
-                x: mx + 22,
-                y: rowY + 2,
-                text,
-                fontSize: 22,
-                fontFamily: 2,
-                strokeColor: "#1e1e1e",
-              },
-              {
-                type: "line",
-                x: mx + 4,
-                y: rowY + 18,
-                points: [
-                  [0, 0],
-                  [Math.min(text.length * 24 + 40, CONTENT_W - 12), 0],
-                ],
-                strokeColor: color + "88",
-                strokeWidth: 2,
-                roughness: 1,
+                x: mx + 42,
+                y: rowY + 3,
+                text: `— ${text}`,
+                fontSize: 14,
+                fontFamily: 5,
+                strokeColor: MUTE,
               },
             ],
-            h: 46,
+            h: 28,
+            emBox: {
+              x: mx + 42,
+              y: rowY,
+              w: Math.min(text.length * 15 + 30, CONTENT_W - 50),
+              h: 28,
+            },
           }));
+        } else if (item.kind === "judge" && item.text) {
+          // ✓/✗ 判断行：语义色只出现在勾/叉上，正文墨色，细墨框贴着内容宽
+          const good = item.verdict !== "bad";
+          const text = item.text.replace(/\s+/g, " ").trim().slice(0, 24);
+          if (!text) continue;
+          await placeFull(() => {
+            const boxW = Math.min(CONTENT_W, 66 + Math.round(text.length * 15.5));
+            return {
+              skeleton: [
+                {
+                  type: "rectangle",
+                  x: mx,
+                  y: rowY,
+                  width: boxW,
+                  height: 42,
+                  backgroundColor: "transparent",
+                  strokeColor: "#1e1e1e2b",
+                  strokeWidth: 1,
+                  roughness: 1,
+                },
+                {
+                  type: "text",
+                  x: mx + 16,
+                  y: rowY + 11,
+                  text: good ? "✓" : "✗",
+                  fontSize: 16,
+                  fontFamily: 2,
+                  strokeColor: good ? SEM_GOOD : SEM_BAD,
+                },
+                {
+                  type: "text",
+                  x: mx + 46,
+                  y: rowY + 11,
+                  text,
+                  fontSize: 15,
+                  fontFamily: 5,
+                  strokeColor: INK,
+                },
+              ],
+              h: 42,
+              emBox: { x: mx, y: rowY, w: boxW, h: 42 },
+            };
+          });
+        } else if (item.kind === "subtitle" && item.text) {
+          const text = item.text.replace(/\s+/g, " ").trim().slice(0, 14);
+          if (!text) continue;
+          await drawSectionHeading(text);
         } else if (item.kind === "diagram" && item.nodes && item.nodes.length >= 2) {
           // 横向流程图：2-4 个节点盒子 + 衔接箭头（讲流程/数据流/架构）
           const nodes = item.nodes.slice(0, 4).map((n) => (n || "").trim().slice(0, 6)).filter(Boolean);
@@ -614,11 +615,11 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 y: rowY + 6,
                 width: boxW,
                 height: boxH,
-                backgroundColor: color + "12",
-                strokeColor: color,
+                backgroundColor: FILL_NEUTRAL,
+                fillStyle: "hachure",
+                strokeColor: "#57534e",
                 strokeWidth: 1.2,
-                roughness: 0,
-                roundness: { type: 3 },
+                roughness: 1,
               });
               sk.push({
                 type: "text",
@@ -626,17 +627,22 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 y: rowY + 6 + 20,
                 text: nodes[ni],
                 fontSize: 15,
-                fontFamily: 2,
-                strokeColor: "#1e1e1e",
+                fontFamily: 5,
+                strokeColor: INK,
               });
               if (ni < n - 1) {
                 sk.push({
                   type: "arrow",
                   x: nx + boxW + 5,
                   y: rowY + 6 + boxH / 2,
-                  points: [[0, 0], [gap - 10, 0]],
-                  strokeColor: "#5f5e5a",
-                  strokeWidth: 2,
+                  points: [
+                    [0, 0],
+                    [Math.round((gap - 10) / 2), -6],
+                    [gap - 10, 0],
+                  ],
+                  strokeColor: MUTE,
+                  strokeWidth: 1.5,
+                  roughness: 1,
                 });
               }
             }
@@ -657,10 +663,10 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 y: rowY,
                 width: cellW,
                 height: headH,
-                backgroundColor: color + "14",
+                backgroundColor: "#f1efe8",
                 strokeColor: "#d3d1c7",
                 strokeWidth: 1,
-                roughness: 0,
+                roughness: 1,
               });
               sk.push({
                 type: "text",
@@ -668,7 +674,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 y: rowY + 11,
                 text: (item.headers?.[ci] || "").slice(0, 8),
                 fontSize: 15,
-                fontFamily: 2,
+                fontFamily: 5,
                 strokeColor: "#1e1e1e",
               });
             }
@@ -684,7 +690,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                   backgroundColor: "transparent",
                   strokeColor: "#e7e5dc",
                   strokeWidth: 1,
-                  roughness: 0,
+                  roughness: 1,
                 });
                 sk.push({
                   type: "text",
@@ -692,7 +698,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                   y: ty + 10,
                   text: (row?.[ci] || "").slice(0, 8),
                   fontSize: 13,
-                  fontFamily: 1,
+                  fontFamily: 5,
                   strokeColor: "#1e1e1e",
                 });
               }
@@ -717,7 +723,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
               Math.round((cw / (vals.length - 1)) * i),
               Math.round(-10 - ((v - minV) / (maxV - minV || 1)) * (chh - 26)),
             ]);
-            sk.push({ type: "line", x: mx, y: baseY, points: pts, strokeColor: color, strokeWidth: 2.4, roughness: 1 });
+            sk.push({ type: "line", x: mx, y: baseY, points: pts, strokeColor: ACCENT, strokeWidth: 2, roughness: 1 });
             for (let pi = 0; pi < pts.length; pi++) {
               sk.push({
                 type: "ellipse",
@@ -725,8 +731,8 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 y: baseY + pts[pi][1] - 4,
                 width: 8,
                 height: 8,
-                backgroundColor: color,
-                strokeColor: color,
+                backgroundColor: ACCENT,
+                strokeColor: ACCENT,
                 strokeWidth: 1,
               });
               sk.push({
@@ -735,7 +741,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 y: baseY + pts[pi][1] - 26,
                 text: String(vals[pi]),
                 fontSize: 12,
-                fontFamily: 2,
+                fontFamily: 5,
                 strokeColor: "#57534e",
               });
             }
@@ -755,11 +761,10 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 y: rowY,
                 width: halfW,
                 height: boxH,
-                backgroundColor: "#84635810",
-                strokeColor: "#84635844",
+                backgroundColor: "transparent",
+                strokeColor: FAINT,
                 strokeWidth: 1,
-                roughness: 0,
-                roundness: { type: 3 },
+                roughness: 1,
               },
               {
                 type: "text",
@@ -767,8 +772,8 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 y: rowY + 16,
                 text: l || "A",
                 fontSize: 17,
-                fontFamily: 2,
-                strokeColor: "#846358",
+                fontFamily: 5,
+                strokeColor: INK,
               },
               {
                 type: "rectangle",
@@ -776,11 +781,10 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 y: rowY,
                 width: halfW,
                 height: boxH,
-                backgroundColor: color + "12",
-                strokeColor: color + "55",
+                backgroundColor: "transparent",
+                strokeColor: FAINT,
                 strokeWidth: 1,
-                roughness: 0,
-                roundness: { type: 3 },
+                roughness: 1,
               },
               {
                 type: "text",
@@ -788,8 +792,8 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 y: rowY + 16,
                 text: r || "B",
                 fontSize: 17,
-                fontFamily: 2,
-                strokeColor: "#1e1e1e",
+                fontFamily: 5,
+                strokeColor: INK,
               },
               {
                 type: "ellipse",
@@ -800,6 +804,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 backgroundColor: "#1e1e1e08",
                 strokeColor: "#a3a19a",
                 strokeWidth: 1,
+                roughness: 1,
               },
               {
                 type: "text",
@@ -807,7 +812,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 y: rowY + 21,
                 text: "vs",
                 fontSize: 13,
-                fontFamily: 2,
+                fontFamily: 5,
                 strokeColor: "#a3a19a",
               },
             ];
@@ -832,11 +837,11 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 y: rowY,
                 width: parentW,
                 height: parentH,
-                backgroundColor: color + "16",
-                strokeColor: color,
+                backgroundColor: FILL_NEUTRAL,
+                fillStyle: "hachure",
+                strokeColor: "#57534e",
                 strokeWidth: 1.2,
-                roughness: 0,
-                roundness: { type: 3 },
+                roughness: 1,
               },
               {
                 type: "text",
@@ -844,8 +849,8 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 y: rowY + 9,
                 text: nodes[0],
                 fontSize: 16,
-                fontFamily: 2,
-                strokeColor: "#1e1e1e",
+                fontFamily: 5,
+                strokeColor: INK,
               },
             ];
             for (let ci = 1; ci < nodes.length; ci++) {
@@ -865,11 +870,10 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 y: childY,
                 width: childW,
                 height: 42,
-                backgroundColor: color + "09",
-                strokeColor: color + "77",
-                strokeWidth: 1,
-                roughness: 0,
-                roundness: { type: 3 },
+                backgroundColor: "transparent",
+                strokeColor: MUTE,
+                strokeWidth: 1.2,
+                roughness: 1,
               });
               sk.push({
                 type: "text",
@@ -877,38 +881,48 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 y: childY + 11,
                 text: nodes[ci],
                 fontSize: 15,
-                fontFamily: 2,
-                strokeColor: "#1e1e1e",
+                fontFamily: 5,
+                strokeColor: INK,
               });
             }
             return { skeleton: sk, h: parentH + 26 + 42 + 6 };
           });
         } else if (item.kind === "mark") {
-          // 简笔标记：星标/感叹号/问号，画在上一条板书右上角（不占行）
+          // 简笔标记：星标/感叹号/问号。上一行是窄行 → 贴行尾作页边批注；
+          // 上一行是整行宽内容（表格/流程/对比）或行尾放不下 → 在内容下方另起小行写，不压在内容上
           if (lastItemBox) {
             const b = lastItemBox;
-            const mxp = b.x + Math.min(b.w, CONTENT_W - 40) + 8;
-            const myp = b.y - 4;
+            const fitsInRow = b.x + b.w + 14 <= mx + CONTENT_W - 24;
+            const wide = b.w > CONTENT_W * 0.7 || !fitsInRow;
+            const mxp = wide ? mx + 42 : Math.min(b.x + b.w + 14, mx + CONTENT_W - 24);
+            const myp = wide ? b.y + b.h + 12 : b.y + Math.max(4, (b.h - 26) / 2);
             if (item.style === "alert") {
               await append([
-                { type: "line", x: mxp, y: myp - 22, points: [[0, 0], [0, 14]], strokeColor: "#dc2626", strokeWidth: 2.4, roughness: 1 },
-                { type: "line", x: mxp, y: myp - 2, points: [[0, 0], [0, 2.5]], strokeColor: "#dc2626", strokeWidth: 2.8, roughness: 1 },
+                { type: "line", x: mxp, y: myp, points: [[0, 0], [0, 15]], strokeColor: SEM_BAD, strokeWidth: 2.4, roughness: 1 },
+                { type: "line", x: mxp, y: myp + 21, points: [[0, 0], [0, 2.5]], strokeColor: SEM_BAD, strokeWidth: 2.8, roughness: 1 },
               ]);
             } else if (item.style === "question") {
-              await append([{ type: "text", x: mxp, y: myp - 30, text: "?", fontSize: 24, fontFamily: 2, strokeColor: "#7c3aed" }]);
+              await append([{ type: "text", x: mxp, y: myp - 5, text: "?", fontSize: 22, fontFamily: 5, strokeColor: ACCENT }]);
             } else {
               // star：四芒星（两长两短交叉线）
+              const cx = mxp + 9;
+              const cy = myp + 13;
               await append([
-                { type: "line", x: mxp + 8, y: myp - 26, points: [[-8, 8], [8, -8]], strokeColor: "#d97706", strokeWidth: 1.8, roughness: 1 },
-                { type: "line", x: mxp + 8, y: myp - 26, points: [[-8, -8], [8, 8]], strokeColor: "#d97706", strokeWidth: 1.8, roughness: 1 },
-                { type: "line", x: mxp + 8, y: myp - 26, points: [[-13, 0], [13, 0]], strokeColor: "#d97706", strokeWidth: 1.4, roughness: 1 },
-                { type: "line", x: mxp + 8, y: myp - 26, points: [[0, -13], [0, 13]], strokeColor: "#d97706", strokeWidth: 1.4, roughness: 1 },
+                { type: "line", x: cx, y: cy, points: [[-8, 8], [8, -8]], strokeColor: ACCENT, strokeWidth: 1.8, roughness: 1 },
+                { type: "line", x: cx, y: cy, points: [[-8, -8], [8, 8]], strokeColor: ACCENT, strokeWidth: 1.8, roughness: 1 },
+                { type: "line", x: cx, y: cy, points: [[-13, 0], [13, 0]], strokeColor: ACCENT, strokeWidth: 1.4, roughness: 1 },
+                { type: "line", x: cx, y: cy, points: [[0, -13], [0, 13]], strokeColor: ACCENT, strokeWidth: 1.4, roughness: 1 },
               ]);
+            }
+            if (wide) {
+              rowY = Math.max(rowY, myp + 34 + ROW_GAP);
+              contentBottom = Math.max(contentBottom, myp + 34);
+              growBackdrop();
             }
             await delay(ITEM_DELAY_MS * 0.5);
           }
         } else if (item.kind === "quote" && item.text) {
-          // 金句：手绘椭圆圈住一句话，字略大（片段收尾用）
+          // 金句：强调色手绘椭圆圈住一句话（片段收尾用）
           const q = item.text.replace(/\s+/g, " ").trim().slice(0, 18);
           if (!q) continue;
           await placeFull(() => {
@@ -921,8 +935,8 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                   y: rowY - 2,
                   width: qw,
                   height: 60,
-                  backgroundColor: "#fbbf2416",
-                  strokeColor: "#d97706",
+                  backgroundColor: "#0f6e560f",
+                  strokeColor: ACCENT,
                   strokeWidth: 1.6,
                   roughness: 1,
                 },
@@ -932,11 +946,12 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                   y: rowY + 17,
                   text: q,
                   fontSize: 19,
-                  fontFamily: 1,
-                  strokeColor: "#92400e",
+                  fontFamily: 5,
+                  strokeColor: INK,
                 },
               ],
               h: 66,
+              emBox: { x: mx + Math.floor((CONTENT_W - qw) / 2), y: rowY - 2, w: qw, h: 64 },
             };
           });
         }
@@ -974,12 +989,12 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
         contentBottom,
         moduleIndex,
         moduleUsed,
-        pairPending,
+        bulletNo,
         currentSection,
-        colorIndex,
         sections: [...sections],
         lastItemBox,
         backdropId,
+        lastSegmentKey,
       };
     },
 
@@ -990,14 +1005,16 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
       rowY = typeof s.rowY === "number" ? s.rowY : my + HEADER_H;
       contentBottom = typeof s.contentBottom === "number" ? s.contentBottom : my + HEADER_H;
       moduleIndex = typeof s.moduleIndex === "number" ? s.moduleIndex : 0;
-      moduleUsed = s.moduleUsed ?? true;
-      pairPending = s.pairPending || null;
+      // 快照缺字段 = 布局未知（如空恢复）：按"没有起过页"处理，首个 beginSegment 从头画第一页，
+      // 不能默认 true——否则会对着不存在的上一页做收尾并右移出一块空白页
+      moduleUsed = typeof s.moduleUsed === "boolean" ? s.moduleUsed : false;
+      bulletNo = typeof s.bulletNo === "number" ? s.bulletNo : 0;
       currentSection = s.currentSection ?? null;
-      colorIndex = typeof s.colorIndex === "number" ? s.colorIndex : 0;
       sections.length = 0;
       if (Array.isArray(s.sections)) sections.push(...s.sections);
       lastItemBox = s.lastItemBox || null;
       backdropId = typeof s.backdropId === "string" ? s.backdropId : null;
+      lastSegmentKey = typeof s.lastSegmentKey === "string" ? s.lastSegmentKey : null;
     },
   };
 }

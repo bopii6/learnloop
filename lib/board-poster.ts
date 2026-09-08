@@ -8,7 +8,6 @@ const INK_SOFT = "#5f5e5a";
 const INK_FAINT = "#a3a19a";
 const ACCENT = "#0f6e56";
 const FONT_STACK = '"PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Segoe UI", sans-serif';
-const PALETTE = ["#7c3aed", "#2563eb", "#059669", "#d97706", "#dc2626"];
 
 export interface PosterOptions {
   api: any; // Excalidraw API（getSceneElements）
@@ -260,7 +259,7 @@ function extractCards(segments: PosterSegment[]): SegmentCard[] {
     const quote = lastSay ? lastSay.slice(0, 46) + (lastSay.length > 46 ? "…" : "") : null;
     return {
       title: seg.title.slice(0, 14),
-      color: PALETTE[i % PALETTE.length],
+      color: ACCENT,
       points,
       diagram,
       table,

@@ -124,7 +124,30 @@ export function CourseRecordsView({
         </div>
       )}
 
-      {courses === null && <div className="text-[13px] text-ink-faint">加载中…</div>}
+      {courses === null && (
+        <div className="grid gap-4">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="rounded-2xl border border-[#e7e5dc] bg-white overflow-hidden flex flex-col">
+              <div className="flex min-h-[128px]">
+                <div className="flex-1 p-5 pb-3">
+                  <div className="skeleton h-3 w-14 rounded mb-2.5" />
+                  <div className="skeleton h-5 w-3/4 rounded mb-2" />
+                  <div className="skeleton h-3.5 w-1/2 rounded mb-3.5" />
+                  <div className="flex gap-2">
+                    <div className="skeleton h-4 w-16 rounded-full" />
+                    <div className="skeleton h-4 w-12 rounded-full" />
+                  </div>
+                </div>
+                <div className="skeleton rounded-xl w-[168px] shrink-0 my-4 mr-4" />
+              </div>
+              <div className="border-t border-[#f5f4ee] px-5 py-2.5 flex items-center justify-between">
+                <div className="skeleton h-3 w-44 rounded" />
+                <div className="skeleton h-3 w-16 rounded" />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {courses && courses.length === 0 && (
         <div className="rounded-2xl border border-dashed border-[#d3d1c7] bg-white px-6 py-12 text-center">

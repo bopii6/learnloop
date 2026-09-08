@@ -227,6 +227,7 @@ export type WhiteboardEvent =
       index: number;
       total: number;
       title: string;
+      anchor?: string; // 本片段锚点词（白板正中大字圈画；旧缓存脚本无此字段则跳过）
       beats: TeachBeat[];
       checkpoint?: SegmentCheckpoint;
       points?: string[]; // 课堂步骤（右侧轨），随首个 beats 事件下发
