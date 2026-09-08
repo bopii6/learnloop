@@ -1,8 +1,14 @@
 "use client";
 
 // 课程集市：官方精选 + 用户上架的课程。点开直接学；本机自用阶段，上架/下架即管理动作。
-import { useCallback, useEffect, useState } from "react";
+// 版式对标 Hyperknow 集市：居中大标题 + 搜索、首条 hero 大卡、徽标（课节/时长/价格）、
+// 标签分类筛选条。评分/报名人数没有真实数据，不虚构。
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { MarketEntry } from "@/types";
+import { CourseCover } from "./CourseCover";
+
+const fmtHours = (min?: number) =>
+  min && min > 0 ? (min / 60).toFixed(1).replace(/\.0$/, "") + " 小时" : "";
 
 export function MarketView({
   onOpenCourse,
@@ -13,6 +19,8 @@ export function MarketView({
 }) {
   const [entries, setEntries] = useState<MarketEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [q, setQ] = useState("");
+  const [cat, setCat] = useState<string>("全部");
 
   const refresh = useCallback(async () => {
     try {
@@ -38,76 +46,194 @@ export function MarketView({
     [refresh]
   );
 
+  const cats = useMemo(() => {
+    const seen: string[] = [];
+    for (const e of entries || []) for (const t of e.tags || []) if (!seen.includes(t)) seen.push(t);
+    return seen.slice(0, 9);
+  }, [entries]);
+
+  const shown = useMemo(() => {
+    let list = entries || [];
+    if (cat !== "全部") list = list.filter((e) => (e.tags || []).includes(cat));
+    const kw = q.trim().toLowerCase();
+    if (kw) {
+      list = list.filter(
+        (e) =>
+          e.title.toLowerCase().includes(kw) ||
+          (e.note || "").toLowerCase().includes(kw) ||
+          (e.audience || "").toLowerCase().includes(kw)
+      );
+    }
+    return list;
+  }, [entries, q, cat]);
+
+  const hero = shown[0];
+  const rest = shown.slice(1);
+
+  const MetaChips = ({ e }: { e: MarketEntry }) => (
+    <div className="flex gap-1.5 flex-wrap">
+      {(e.lectures ? [`${e.lectures} 课节`, fmtHours(e.totalMin)].filter(Boolean) : []).map((t) => (
+        <span key={t} className="rounded-full bg-[#f1efe8] px-2 py-0.5 text-[10.5px] text-ink-soft">
+          {t}
+        </span>
+      ))}
+    </div>
+  );
+
   return (
-    <div className="max-w-4xl mx-auto pt-10 px-6 pb-16">
-      <div className="mb-8">
-        <div className="text-[24px] font-bold mb-1.5">课程集市</div>
-        <div className="text-[13.5px] text-ink-soft leading-relaxed">
-          官方精选和大家上架的好课，看中了直接学。付费与分成在支付链路接入后开放，现在全部免费。
+    <div className="pb-16">
+      {/* 头部 hero：居中大标题 + 搜索 */}
+      <div className="text-center pt-12 pb-8 px-6">
+        <h1 className="text-[30px] font-bold leading-tight mb-1.5">
+          发现最适合你的课程
+          <br />
+          <span className="text-ink-soft text-[22px] font-semibold">专为你的学习方式打造。</span>
+        </h1>
+        <div className="max-w-md mx-auto mt-6 relative">
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="在课程集市中搜索课程"
+            className="w-full rounded-full border border-[#e7e5dc] bg-white pl-10 pr-4 py-2.5 text-[13px] outline-none focus:border-accent/60 shadow-sm"
+          />
+          <svg viewBox="0 0 24 24" className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-faint" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3.5-3.5" />
+          </svg>
         </div>
       </div>
 
-      {entries === null && <div className="text-[13px] text-ink-faint">加载中…</div>}
+      {entries === null && <div className="text-[13px] text-ink-faint text-center py-10">加载中…</div>}
 
       {entries && entries.length === 0 && (
-        <div className="rounded-2xl border border-dashed border-[#d3d1c7] bg-white px-6 py-12 text-center">
-          <div className="text-[14px] font-medium mb-1.5">集市还空着</div>
-          <div className="text-[12.5px] text-ink-soft mb-5 leading-relaxed">
-            去「课程记录」打开一门好课，在课程页左侧的课程卡里点「上架到课程集市」，它就会公开出现在这里。
+        <div className="max-w-2xl mx-auto px-6">
+          <div className="rounded-2xl border border-dashed border-[#d3d1c7] bg-white px-6 py-12 text-center">
+            <div className="text-[14px] font-medium mb-1.5">集市还空着</div>
+            <div className="text-[12.5px] text-ink-soft mb-5 leading-relaxed">
+              去「课程记录」打开一门好课，在课程页左侧的课程卡里点「上架到课程集市」，它就会公开出现在这里。
+            </div>
+            <button
+              onClick={onGoHome}
+              className="rounded-full bg-accent px-5 py-2 text-[12.5px] text-white font-medium hover:opacity-90"
+            >
+              回首页做一门课 →
+            </button>
           </div>
-          <button
-            onClick={onGoHome}
-            className="rounded-full bg-accent px-5 py-2 text-[12.5px] text-white font-medium hover:opacity-90"
-          >
-            回首页做一门课 →
-          </button>
         </div>
       )}
 
       {entries && entries.length > 0 && (
-        <div className="grid gap-3.5 sm:grid-cols-2">
-          {entries.map((e) => (
-            <div
-              key={e.courseId}
-              className="rounded-2xl border border-[#e7e5dc] bg-white p-5 flex flex-col hover:border-accent/50 transition-colors fade-up"
-            >
-              <div className="flex items-center gap-2 mb-2">
-                {e.author === "official" && (
-                  <span className="rounded-full bg-accent-soft text-accent px-2 py-0.5 text-[10px] font-medium">
-                    官方精选
-                  </span>
-                )}
-                <span className={`text-[11px] font-medium ${e.price > 0 ? "text-[#b45309]" : "text-emerald-600"}`}>
-                  {e.price > 0 ? `¥${e.price}` : "免费"}
-                </span>
-              </div>
-              <div className="text-[15px] font-semibold leading-snug mb-1.5">{e.title}</div>
-              {e.note && <div className="text-[12px] text-ink-soft leading-relaxed mb-3 flex-1">{e.note}</div>}
-              {!e.note && <div className="flex-1" />}
-              <div className="flex items-center justify-between pt-2">
-                <button
-                  onClick={() => onOpenCourse(e.courseId)}
-                  className="rounded-full bg-accent px-5 py-1.5 text-[12.5px] text-white font-medium hover:opacity-90"
-                >
-                  ▶ 去学习
-                </button>
-                {e.canDelete && (
-                  <button
-                    onClick={() => void removeFromMarket(e.courseId)}
-                    className="text-[11.5px] text-ink-faint hover:text-red-500 transition-colors"
-                    title="从集市下架（课程本身不受影响）"
-                  >
-                    下架
-                  </button>
-                )}
-              </div>
+        <div className="max-w-5xl mx-auto px-6">
+          {/* 分类筛选条 */}
+          <div className="flex gap-1.5 flex-wrap mb-5">
+            {["全部", ...cats].map((t) => (
+              <button
+                key={t}
+                onClick={() => setCat(t)}
+                className={`rounded-full px-3.5 py-1.5 text-[12px] font-medium transition-colors ${
+                  cat === t
+                    ? "bg-[#2c2c2a] text-white"
+                    : "bg-white border border-[#e7e5dc] text-ink-soft hover:border-accent/50"
+                }`}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+
+          {shown.length === 0 && (
+            <div className="text-[13px] text-ink-faint py-8 text-center">
+              {cat !== "全部" ? `分类「${cat}」下暂无课程` : `没有匹配「${q}」的课程`}
             </div>
-          ))}
+          )}
+
+          {/* hero 大卡：置顶的第一门课 */}
+          {hero && (
+            <button
+              onClick={() => onOpenCourse(hero.courseId)}
+              className="group w-full text-left rounded-3xl border border-[#e7e5dc] bg-white overflow-hidden flex mb-5 hover:border-accent/60 hover:shadow-[0_6px_24px_rgba(0,0,0,0.07)] transition-all fade-up"
+            >
+              <CourseCover seed={hero.courseId} rounded="rounded-none" className="w-[280px] shrink-0 min-h-[190px]" />
+              <div className="flex-1 min-w-0 p-6 flex flex-col">
+                <div className="flex items-center gap-2 mb-2">
+                  {hero.author === "official" && (
+                    <span className="rounded-full bg-accent-soft text-accent px-2 py-0.5 text-[10px] font-medium">官方精选</span>
+                  )}
+                  <span className={`text-[11px] font-medium ${hero.price > 0 ? "text-[#b45309]" : "text-emerald-600"}`}>
+                    {hero.price > 0 ? `¥${hero.price}` : "免费"}
+                  </span>
+                </div>
+                <div className="text-[20px] font-bold leading-snug mb-2 line-clamp-2">{hero.title}</div>
+                <div className="text-[13px] text-ink-soft leading-relaxed line-clamp-3 flex-1">
+                  {hero.note || hero.audience}
+                </div>
+                <div className="mt-3">
+                  <MetaChips e={hero} />
+                </div>
+                <div className="mt-4 inline-flex items-center gap-1.5 text-[13px] text-accent font-medium">
+                  ▶ 去学习
+                  <span className="inline-block transition-transform group-hover:translate-x-0.5">→</span>
+                </div>
+              </div>
+            </button>
+          )}
+
+          {/* 其余课程网格 */}
+          {rest.length > 0 && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              {rest.map((e) => (
+                <div
+                  key={e.courseId}
+                  className="group rounded-2xl border border-[#e7e5dc] bg-white overflow-hidden flex flex-col hover:border-accent/60 hover:shadow-[0_4px_20px_rgba(0,0,0,0.06)] transition-all fade-up"
+                >
+                  <button onClick={() => onOpenCourse(e.courseId)} className="text-left">
+                    <CourseCover seed={e.courseId} rounded="rounded-none" className="w-full h-[104px]" />
+                  </button>
+                  <div className="p-4 flex flex-col flex-1">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span className="text-[11px] text-ink-faint">{e.author === "official" ? "官方精选" : "学员上架"}</span>
+                      <span className={`text-[11px] font-medium ${e.price > 0 ? "text-[#b45309]" : "text-emerald-600"}`}>
+                        {e.price > 0 ? `¥${e.price}` : "免费"}
+                      </span>
+                    </div>
+                    <button onClick={() => onOpenCourse(e.courseId)} className="text-left text-[15px] font-semibold leading-snug mb-1 line-clamp-2 hover:text-accent transition-colors">
+                      {e.title}
+                    </button>
+                    {(e.note || e.audience) && (
+                      <div className="text-[12px] text-ink-soft leading-relaxed line-clamp-2 mb-2.5 flex-1">
+                        {e.note || e.audience}
+                      </div>
+                    )}
+                    <MetaChips e={e} />
+                    <div className="mt-3 pt-2.5 border-t border-[#f5f4ee] flex items-center justify-between">
+                      <button
+                        onClick={() => onOpenCourse(e.courseId)}
+                        className="text-[12px] text-accent font-medium hover:opacity-80"
+                      >
+                        ▶ 去学习
+                      </button>
+                      {e.canDelete && (
+                        <button
+                          onClick={() => void removeFromMarket(e.courseId)}
+                          className="text-[11.5px] text-ink-faint hover:text-red-500 transition-colors"
+                          title="从集市下架（课程本身不受影响）"
+                        >
+                          下架
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700">{error}</div>
+        <div className="max-w-5xl mx-auto px-6 mt-4">
+          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700">{error}</div>
+        </div>
       )}
     </div>
   );

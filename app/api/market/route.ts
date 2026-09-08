@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { MarketEntry } from "@/types";
 import { isAdminUser, userFromCookieHeader } from "@/lib/auth";
-import { getCourseState } from "@/lib/agent/course";
+import { getCourseState, metaKey, type CourseMeta } from "@/lib/agent/course";
 import { readJson, writeJson, storageMode } from "@/lib/storage";
 
 export const runtime = "nodejs";
@@ -33,14 +33,29 @@ export async function GET(req: NextRequest) {
     (e) => !e.ownerId || e.isPublic === true || (me && e.ownerId === me.id)
   );
   visible.sort((a, b) => b.addedAt - a.addedAt);
-  return NextResponse.json({
-    entries: visible.map((e) => ({
-      ...e,
-      canDelete:
-        Boolean(me && e.ownerId === me.id) ||
-        (!e.ownerId && (storageMode !== "r2" || isAdminUser(me?.email))),
-    })),
-  });
+  // 从 course-meta 小索引并行带出课程规模（集市卡徽标用；索引缺失就静默省略）
+  const enriched = await Promise.all(
+    visible.map(async (e) => {
+      let meta: CourseMeta | null = null;
+      try {
+        meta = await readJson<CourseMeta | null>(metaKey(e.courseId), null);
+      } catch {
+        meta = null;
+      }
+      return {
+        ...e,
+        canDelete:
+          Boolean(me && e.ownerId === me.id) ||
+          (!e.ownerId && (storageMode !== "r2" || isAdminUser(me?.email))),
+        audience: meta?.audience,
+        tags: meta?.tags,
+        units: meta?.units,
+        lectures: meta?.lectures,
+        totalMin: meta?.totalMin,
+      };
+    })
+  );
+  return NextResponse.json({ entries: enriched });
 }
 
 export async function POST(req: NextRequest) {

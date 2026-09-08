@@ -164,8 +164,76 @@ export async function getCourseState(id: string): Promise<CourseGenState | undef
   return (await readJson<CourseGenState | null>(courseKey(id), null)) ?? undefined;
 }
 
+// ---- 轻量索引（course-meta/）：列表页只要标题/规模/归属，不必拉整份课程文档 ----
+// 课程全文档里躺着全部澄清对话、抓取的网页正文、教材全文，几百 KB 到几 MB；
+// 列表页逐份读它，R2 模式下串行 24 门课要 7-9 秒。meta 只有几百字节。
+
+export interface CourseMeta {
+  title: string;
+  ownerId?: string;
+  audience: string;
+  tags: string[];
+  units: number;
+  lectures: number;
+  totalMin: number;
+  source: string; // 教材 PDF / 文档 / AI 生成（卡片"来源"行用）
+  createdAt?: number; // 首次生成时间（卡片"添加日期"用；补建索引时用课程文件的修改时间近似）
+  updatedAt: number;
+}
+
+export function metaKey(id: string): string {
+  return `course-meta/${id.replace(/[^a-zA-Z0-9_-]/g, "")}.json`;
+}
+
+/** 大纲未出的在制课程不进列表（返回 null），与列表接口的口径一致 */
+export function courseMetaFromState(state: {
+  ownerId?: string;
+  title?: string;
+  textbook?: { id: string } | null;
+  docMode?: boolean;
+  outline?: {
+    title?: string;
+    audience?: string;
+    tags?: string[];
+    units?: { lectures?: { duration_min?: number; content_type?: string }[] }[] | null;
+  } | null;
+}): CourseMeta | null {
+  const outline = state.outline;
+  if (!outline) return null;
+  const units = Array.isArray(outline.units) ? outline.units : [];
+  const lectures = units.reduce((s, u) => s + (u.lectures?.length || 0), 0);
+  // 时长只统计可学的白板课节（测验/项目环节不算进可学时长）
+  const totalMin = units.reduce(
+    (s, u) =>
+      s +
+      (u.lectures || [])
+        .filter((l) => l.content_type === "whiteboard" || !l.content_type)
+        .reduce((t, l) => t + (l.duration_min || 0), 0),
+    0
+  );
+  return {
+    title: state.title || outline.title || "未命名课程",
+    ownerId: state.ownerId,
+    audience: outline.audience || "",
+    tags: Array.isArray(outline.tags) ? outline.tags.slice(0, 3) : [],
+    units: units.length,
+    lectures,
+    totalMin,
+    source: state.textbook ? "教材 PDF" : state.docMode ? "文档" : "AI 生成",
+    updatedAt: Date.now(),
+  };
+}
+
 export async function setCourseState(id: string, state: CourseGenState): Promise<void> {
   await writeJson(courseKey(id), state);
+  // 顺手刷新小索引；索引写失败不拖累生成主流程（大头已经落盘）。
+  // createdAt 从旧索引继承（首次生成时间），没有就取现在。
+  const meta = courseMetaFromState(state);
+  if (meta) {
+    const prev = await readJson<CourseMeta | null>(metaKey(id), null).catch(() => null);
+    meta.createdAt = prev?.createdAt || Date.now();
+    await writeJson(metaKey(id), meta).catch(() => {});
+  }
 }
 
 // ---- 分步执行 ----

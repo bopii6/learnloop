@@ -296,4 +296,10 @@ export interface MarketEntry {
   isPublic?: boolean;
   // GET 响应附带的计算字段：当前登录用户能否下架此条目
   canDelete?: boolean;
+  // GET 响应从 course-meta 索引带出的课程规模（列表卡徽标用）
+  audience?: string;
+  tags?: string[];
+  units?: number;
+  lectures?: number;
+  totalMin?: number;
 }
