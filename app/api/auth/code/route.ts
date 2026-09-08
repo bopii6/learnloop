@@ -1,8 +1,8 @@
 // POST /api/auth/code —— 发送邮箱验证码
-// SMTP 未配置（本地开发）时直接把验证码返回给前端（devCode），生产配好 SMTP 后自动消失。
+// Brevo/SMTP 已配置 → 真发信；都没配置时：开发模式返回 devCode（仅本地），生产模式报错不泄露验证码。
 import { NextRequest, NextResponse } from "next/server";
 import { issueCode, isValidEmail, normalizeEmail } from "@/lib/auth";
-import { sendCodeEmail, smtpConfigured } from "@/lib/mailer";
+import { brevoConfigured, sendCodeEmail, smtpConfigured } from "@/lib/mailer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,22 +25,22 @@ export async function POST(req: NextRequest) {
   }
   const code = issued.code!;
 
-  if (smtpConfigured()) {
+  if (brevoConfigured() || smtpConfigured()) {
     const r = await sendCodeEmail(email, code);
     if (!r.sent) {
       return NextResponse.json(
-        { error: `验证码邮件发送失败：${r.error || "未知原因"}（请检查 .env 的 SMTP 配置）` },
+        { error: `验证码邮件发送失败：${r.error || "未知原因"}` },
         { status: 500 }
       );
     }
     return NextResponse.json({ sent: true });
   }
 
-  // 本地开发兜底：没配 SMTP，直接把验证码还给页面，登录流程不被卡死。
-  // 生产环境绝不返回验证码——否则部署忘配 SMTP 时，任何人填任意邮箱即可登录。
+  // 开发兜底：没配任何邮件服务，直接把验证码还给页面，登录流程不被卡死。
+  // 生产环境绝不返回验证码——否则部署忘配邮件服务时，任何人填任意邮箱即可登录。
   if (process.env.NODE_ENV === "production") {
     return NextResponse.json(
-      { error: "邮件服务未配置（.env 缺 SMTP_HOST/SMTP_USER/SMTP_PASS），无法发送验证码" },
+      { error: "邮件服务未配置（缺 BREVO_API_KEY/MAIL_FROM 或 SMTP_*），无法发送验证码" },
       { status: 500 }
     );
   }
