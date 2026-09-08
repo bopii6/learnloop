@@ -1,5 +1,6 @@
 // 网页搜索：Tavily（有 key 优先）→ 博查（国内）→ DuckDuckGo HTML → Bing HTML（免 key 兜底）
-// 所有结果统一做权威度评分 + 同域去重，保证"信息源头"质量。
+// 所有结果统一做权威度评分 + 相关性闸门 + 同域去重，保证"信息源头"质量。
+// 闸门逐引擎生效：某引擎返回的结果全被拦掉（实测 Bing 对英文查询会整页跑题）就换下一个引擎。
 import type { SourceItem } from "@/types";
 
 interface RawResult {
@@ -82,6 +83,52 @@ function authorityScore(url: string): number {
   }
   if (hitDomain(LOW_QUALITY)) score -= 5;
   return score;
+}
+
+// ---- 相关性闸门 + 垃圾模式：搜索引擎对数据中心 IP 的排序质量很差 ----
+// 实测（2026-09-08，Bing 抓取兜底）：「large language models tutorial」混回 6 条日本
+// iPhone 维修店目录页；「artificial intelligence tutorial」混回词典释义、(2026) 电影、
+// IMDb。这类垃圾权威度分不高但量大，会挤掉真正相关的结果，必须在出口拦掉。
+const LATIN_STOP = new Set([
+  "how", "what", "why", "when", "the", "and", "for", "with", "from", "into",
+  "learn", "learning", "study", "teach",
+  "tutorial", "tutorials", "guide", "course", "courses", "introduction", "intro",
+  "explained", "explain", "beginner", "beginners", "basics", "best", "complete",
+  "practical", "example", "examples", "getting", "started", "step", "concept", "concepts",
+]);
+
+function queryTokens(query: string): string[] {
+  const latin = (query.toLowerCase().match(/[a-z][a-z0-9.+#-]{1,}/g) || []).filter((w) => !LATIN_STOP.has(w));
+  const cjk = query.match(/[\u4e00-\u9fff]{2,}/g) || [];
+  return [...new Set([...latin, ...cjk])];
+}
+
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** title+snippet 里命中的查询词个数：英文按整词（避免 "ai" 命中 "said"），中文按子串 */
+function relevanceHits(text: string, tokens: string[]): number {
+  const t = text.toLowerCase();
+  let hits = 0;
+  for (const tok of tokens) {
+    if (/[\u4e00-\u9fff]/.test(tok)) {
+      if (t.includes(tok)) hits += 1;
+    } else if (new RegExp(`\\b${escapeRe(tok)}\\b`).test(t)) {
+      hits += 1;
+    }
+  }
+  return hits;
+}
+
+// 括号年份条目 = 影视/虚构作品（"Artificial (2026)"、"xxx (2026 film)"）；
+// Definition & Meaning / English meaning = 词典释义页——都不可能成为课程资料
+const JUNK_TITLE_RE = /\(\d{4}(?:\s*(?:film|movie))?\)|definition\s*(&|&amp;)\s*meaning|english meaning|disambiguation/i;
+const JUNK_DOMAINS = new Set(["imdb.com", "merriam-webster.com", "dictionary.cambridge.org", "dictionary.com", "vocabulary.com"]);
+
+function isJunkResult(domain: string, title: string): boolean {
+  if (JUNK_DOMAINS.has(domain) || [...JUNK_DOMAINS].some((d) => domain.endsWith("." + d))) return true;
+  return JUNK_TITLE_RE.test(title);
 }
 
 async function searchTavily(query: string, max = 8): Promise<RawResult[]> {
@@ -202,20 +249,30 @@ async function searchBing(query: string, max = 8): Promise<RawResult[]> {
 }
 
 export async function webSearch(query: string, max = 8): Promise<SourceItem[]> {
+  const tokens = queryTokens(query);
+  const minHits = Math.min(2, tokens.length);
+  const passesGate = (r: RawResult) =>
+    !isJunkResult(domainOf(r.url), r.title) && relevanceHits(`${r.title} ${r.snippet || ""}`, tokens) >= minHits;
+
   let raw: RawResult[] = [];
   const errors: string[] = [];
   const providers: [string, () => Promise<RawResult[]>][] = [
     ["tavily", () => searchTavily(query, max)],
     ["bocha", () => searchBocha(query, max)],
-    ["bing", () => searchBing(query, max)],
     ["ddg", () => searchDuckDuckGo(query, max)],
+    ["bing", () => searchBing(query, max)],
   ];
   for (const [name, run] of providers) {
     if (name === "tavily" && !process.env.TAVILY_API_KEY) continue;
     if (name === "bocha" && !process.env.BOCHA_API_KEY) continue;
     try {
-      raw = await run();
-      if (raw.length > 0) break;
+      const results = await run();
+      const kept = results.filter(passesGate);
+      if (kept.length > 0) {
+        raw = kept;
+        break;
+      }
+      errors.push(`${name}: ${results.length} raw → 0 passed relevance gate`);
     } catch (e) {
       errors.push(`${name}: ${String(e)}`);
     }
@@ -224,7 +281,7 @@ export async function webSearch(query: string, max = 8): Promise<SourceItem[]> {
     console.error("all search providers failed:", errors);
   }
 
-  // 权威度排序 + 同域最多 2 条（信息源多样性）
+  // 权威度排序 + 同域最多 2 条（信息源多样性）；结果已在各引擎出口过闸
   const scored = raw
     .map((r) => ({ ...r, score: authorityScore(r.url) }))
     .sort((a, b) => b.score - a.score);

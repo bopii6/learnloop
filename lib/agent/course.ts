@@ -20,6 +20,8 @@ interface HistoryMsg {
 
 const COURSE_CLARIFY_SYSTEM = `你是课程设计师。用户想系统学习某个主题，但关键信息缺失。请生成 1 个选择题来澄清需求，只输出 JSON，不要输出任何其他内容。
 
+铁律：问题必须针对用户本次想学的主题（见用户消息末尾的「用户想学习」）。画像和历史对话只用来校准基础水平与措辞，绝不能把问题、选项或理由引向画像/历史里的其他目标、项目或工具链——用户问"如何学习AI"，就不能问"你的 Coze 工作流卡在哪"。
+
 维度（每轮选一个，优先问没覆盖过的）：
 1. 前置经验 2. 关注的实现语境/方向 3. 学完的目标水平 4. 课程体量
 
@@ -56,6 +58,7 @@ JSON 格式（必须严格遵守）：
 }
 
 要求：
+- 课程主题只能是「用户想学习」的主题本身；画像与澄清回答用于定深度、定受众，不得改变主题方向（用户问"如何学习AI"，课程就是 AI 通用学习路径，不能变成 Agent 工程课）。
 - 课程标题格式为「主标题：副标题」，体现主题、深度和受众。禁止把用户输入拼上"系统课程"。
   正面示例："LLM Agent 深度工程：从 ReAct 理论到生产级 Tool Use 实现"
 - tags 是领域标签（如 "AI Engineering"、"ReAct Pattern"），禁止把用户原话当标签。
@@ -357,7 +360,7 @@ export async function runClarifyStep(opts: {
     ? `资料要点（选项要贴合这些真实语境，如提到具体技术/工具/场景）：\n${pageExcerpts}\n\n`
     : "";
   const profileContext = profileHint
-    ? `${profileHint}\n\n`
+    ? `学员历史画像（只用于判断基础水平、避免重复提问；问题本身必须围绕下面的「用户想学习」，禁止偏向画像里的其他目标/项目）：\n${profileHint}\n\n`
     : "";
 
   const question = await generateJson<ClarifyQuestion>(
@@ -415,7 +418,7 @@ export async function runBlueprintStep(opts: {
     ? `用户背景：\n${clarifyAnswers.map((a) => `${a.question}：${a.answer}`).join("\n")}\n\n`
     : "";
   const profileContext = profileText
-    ? `学习者画像（跨课程沉淀，结合它量身定制深度与取舍）：\n${profileText}\n\n`
+    ? `学习者画像（跨课程沉淀，只用于量身定制深度与取舍；课程主题只能是本次「用户想学习」的主题，禁止把单元/课节带向画像里的其他目标或项目）：\n${profileText}\n\n`
     : "";
   const excerptsContext = pageExcerpts
     ? `网络资料要点（单元和课节设计要覆盖这些真实内容中的关键概念，标题要具体到知识点）：\n${pageExcerpts}\n\n`
