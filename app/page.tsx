@@ -52,6 +52,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   // 登录态：课程记录/教材/集市条目按归属过滤
   const [user, setUser] = useState<{ id: string; email: string } | null>(null);
+  const [credits, setCredits] = useState<number | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
@@ -88,13 +89,26 @@ export default function Home() {
     refreshCourses();
   }, [refreshList, refreshCourses]);
 
-  // 登录态拉取 + 退出（退出后列表按"无主数据"刷新）
-  useEffect(() => {
+  // 登录态拉取 + 积分余额（扣积分的流程完成后发 ll:credits-changed 事件，侧栏数字随之刷新）
+  const refreshMe = useCallback(() => {
     fetch("/api/auth/me")
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => setUser(d?.user || null))
+      .then((d) => {
+        setUser(d?.user || null);
+        setCredits(typeof d?.credits === "number" ? d.credits : null);
+      })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    refreshMe();
+  }, [refreshMe]);
+
+  useEffect(() => {
+    const onCreditsChanged = () => refreshMe();
+    window.addEventListener("ll:credits-changed", onCreditsChanged);
+    return () => window.removeEventListener("ll:credits-changed", onCreditsChanged);
+  }, [refreshMe]);
 
   const logout = useCallback(async () => {
     await fetch("/api/auth/me", { method: "POST" }).catch(() => {});
@@ -318,6 +332,7 @@ export default function Home() {
         user={user}
         onLogin={() => setAuthOpen(true)}
         onLogout={() => void logout()}
+        credits={credits}
       />
 
       <main className="flex-1 flex flex-col min-w-0">
@@ -480,7 +495,8 @@ export default function Home() {
           onLoggedIn={(u) => {
             setUser(u);
             setAuthOpen(false);
-            // 登录后课程列表按归属变化，刷新
+            // 登录后课程列表与积分余额按归属变化，刷新
+            refreshMe();
             refreshCourses();
             refreshList();
           }}

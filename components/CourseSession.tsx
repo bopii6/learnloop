@@ -639,9 +639,16 @@ export function CourseSession({
         } else if (e.type === "error") {
           setError(e.message);
           setPreparing(false);
+        } else if (e.type === "credits_block") {
+          setError(
+            `积分不足：${e.reason}需要 ${e.need} 积分，当前余额 ${e.balance}。注册赠送 20 积分（生成一门课 10 分 + 听两节课 10 分）。`
+          );
+          setPreparing(false);
         } else if (e.type === "done") {
           streamDoneRef.current = true;
           setPreparing(false);
+          // 开讲扣过积分了：通知侧栏刷新余额
+          window.dispatchEvent(new Event("ll:credits-changed"));
           if (!playingRef.current && queueRef.current.length === 0 && !pausedRef.current) {
             setPlayback("done");
           }

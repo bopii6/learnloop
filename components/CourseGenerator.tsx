@@ -14,6 +14,7 @@ import type {
 } from "@/types";
 import { BlueprintEditor } from "./BlueprintEditor";
 import { consumeSse } from "@/lib/sse";
+import { uploadTextbookPdf } from "@/lib/textbook-client";
 
 interface CourseGeneratorProps {
   onComplete?: (courseId: string, title: string, outline: CourseOutline) => void;
@@ -71,6 +72,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
   const [textbookSize, setTextbookSize] = useState(0);
   const [textbookNotice, setTextbookNotice] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadLabel, setUploadLabel] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [courseSource, setCourseSource] = useState<"自学" | "学校同步">("自学");
@@ -158,8 +160,15 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
       setLoading(false);
       setProgress(null);
       setSaveFailed(Boolean(e.saveFailed));
+      // 课程交付完毕，积分已扣：通知侧栏刷新余额
+      window.dispatchEvent(new Event("ll:credits-changed"));
     } else if (e.type === "save_ok") {
       setSaveFailed(false);
+    } else if (e.type === "credits_block") {
+      setError(
+        `积分不足：${e.reason}需要 ${e.need} 积分，当前余额 ${e.balance}。注册赠送 20 积分（生成一门课 10 分 + 听两节课 10 分），用完后联系我们补充。`
+      );
+      setLoading(false);
     } else if (e.type === "error") {
       setError(e.message);
       setLoading(false);
@@ -192,16 +201,13 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
     [handleEvent]
   );
 
-  /** 上传教材 PDF：抽文字 + 提目录，之后建课全程以教材为准 */
+  /** 上传教材 PDF：浏览器端抽取逐页文字（Workers 服务端扛不动解析），之后建课全程以教材为准 */
   const uploadTextbook = useCallback(async (file: File) => {
     setUploading(true);
     setUploadError(null);
+    setUploadLabel("📄 文档解析中…");
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      const res = await fetch("/api/textbook", { method: "POST", body: fd });
-      const d = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(d.error || `上传失败 (${res.status})`);
+      const d = await uploadTextbookPdf(file, setUploadLabel);
       setTextbookId(d.id);
       setTextbookTitle(d.title);
       setTextbookPages(d.textPages ?? d.pageCount ?? 0);
@@ -212,6 +218,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
       setUploadError(e instanceof Error ? e.message : String(e));
     } finally {
       setUploading(false);
+      setUploadLabel(null);
     }
   }, []);
 
@@ -475,7 +482,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
                 disabled={uploading}
                 className="rounded-full border border-[#e7e5dc] px-3 py-1 text-[12px] text-ink-soft hover:border-accent hover:text-accent transition-colors disabled:opacity-50"
               >
-                {uploading ? "📄 文档解析中…（扫描版会自动 OCR，较慢）" : "＋ 上传文档，围绕它生成课程"}
+                {uploading ? uploadLabel || "📄 处理中…" : "＋ 上传文档，围绕它生成课程"}
               </button>
             )}
             {uploadError && <span className="text-[11.5px] text-red-600 ml-2">{uploadError}</span>}

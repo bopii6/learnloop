@@ -13,6 +13,24 @@ export function getModel() {
   return provider(modelId);
 }
 
+// 用量累计（本进程内）：eval 脚本与成本核算用。drainLlmUsage() 取走累计值并清零。
+const usageAcc = { calls: 0, promptTokens: 0, completionTokens: 0 };
+
+export function drainLlmUsage(): { calls: number; promptTokens: number; completionTokens: number } {
+  const snap = { ...usageAcc };
+  usageAcc.calls = 0;
+  usageAcc.promptTokens = 0;
+  usageAcc.completionTokens = 0;
+  return snap;
+}
+
+function addUsage(u?: { promptTokens?: number | null; completionTokens?: number | null }) {
+  if (!u) return;
+  usageAcc.calls += 1;
+  usageAcc.promptTokens += u.promptTokens || 0;
+  usageAcc.completionTokens += u.completionTokens || 0;
+}
+
 /** 非流式 JSON 生成：用于意图分类、搜索词规划、标题生成、课程结构生成 */
 export async function generateJson<T>(
   system: string,
@@ -20,7 +38,7 @@ export async function generateJson<T>(
   maxTokens = 1500
 ): Promise<T | null> {
   try {
-    const { text } = await generateText({
+    const { text, usage } = await generateText({
       model: getModel(),
       system,
       prompt: user,
@@ -28,6 +46,7 @@ export async function generateJson<T>(
       maxTokens,
       abortSignal: AbortSignal.timeout(120_000), // LLM 挂起时让管线走 error 分支，而不是无限等
     });
+    addUsage(usage);
     return extractJson<T>(text);
   } catch (e) {
     console.error("generateJson failed:", e);
@@ -71,6 +90,11 @@ export async function streamAnswer(
   for await (const chunk of result.textStream) {
     full += chunk;
     await onToken(chunk);
+  }
+  try {
+    addUsage(await result.usage); // 中途 abort 时 usage 可能不可用，别让统计拖垮主流程
+  } catch {
+    // 统计失败可忽略
   }
   return full;
 }

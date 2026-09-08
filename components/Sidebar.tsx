@@ -20,6 +20,7 @@ export function Sidebar({
   user,
   onLogin,
   onLogout,
+  credits,
 }: {
   mode: "course" | "chat" | "market" | "records" | "wrapped";
   onMode: (m: "course" | "chat" | "market" | "records" | "wrapped") => void;
@@ -32,6 +33,7 @@ export function Sidebar({
   user: { id: string; email: string } | null;
   onLogin: () => void;
   onLogout: () => void;
+  credits?: number | null;
 }) {
   return (
     <aside className="w-64 shrink-0 h-full p-3">
@@ -152,9 +154,19 @@ export function Sidebar({
                 <div className="text-[12px] text-ink truncate" title={user.email}>
                   {user.email}
                 </div>
-                <button onClick={onLogout} className="text-[10.5px] text-ink-faint hover:text-red-500 transition-colors">
-                  退出登录
-                </button>
+                <div className="flex items-center gap-2">
+                  {typeof credits === "number" && (
+                    <span
+                      className="text-[10.5px] text-accent font-medium"
+                      title="生成一门课 10 积分，听一节课 5 积分；注册赠送 20 积分"
+                    >
+                      ⚡ {credits} 积分
+                    </span>
+                  )}
+                  <button onClick={onLogout} className="text-[10.5px] text-ink-faint hover:text-red-500 transition-colors">
+                    退出登录
+                  </button>
+                </div>
               </div>
             </div>
           ) : (

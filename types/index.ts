@@ -170,6 +170,7 @@ export type CourseEvent =
   | { type: "outline"; outline: CourseOutline }
   | { type: "done"; courseId: string; title: string; saveFailed?: boolean } // saveFailed = 最终存档重试耗尽；大纲已在前端，可"重试保存"补写
   | { type: "save_ok" } // save_course 动作：补存成功
+  | { type: "credits_block"; balance: number; need: number; reason: string } // 积分不足拦截
   | { type: "error"; message: string };
 
 // ---- 白板教学：beat 脚本（生成与播放分离） ----
@@ -235,6 +236,7 @@ export type WhiteboardEvent =
   | { type: "achievement"; title: string; desc: string } // 答对课堂练习的成就徽章（原版同款）
   | { type: "lecture_quiz"; quiz: LectureQuizItem[] } // 课后练习：整节课讲完后下发 3-5 道题
   | { type: "done"; sessionId: string }
+  | { type: "credits_block"; balance: number; need: number; reason: string } // 积分不足拦截
   | { type: "error"; message: string };
 
 /** 课堂练习：内嵌在字幕区的选择题（原版 Hyperknow 的 checkpoint 打法） */

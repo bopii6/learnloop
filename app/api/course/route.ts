@@ -14,6 +14,8 @@ import {
 import { getProfile, captureCourseProfile, profileText, profileHintForClarify } from "@/lib/profile";
 import { loadTextbook, textbookToSources, buildTextbookExcerpt } from "@/lib/textbook";
 import { userFromCookieHeader } from "@/lib/auth";
+import { COST_COURSE_GENERATE, refundCredits, trySpend } from "@/lib/credits";
+import { storageMode } from "@/lib/storage";
 import type { CourseEvent, SourceItem, TextbookPage } from "@/types";
 
 export const runtime = "nodejs";
@@ -371,36 +373,60 @@ chat 时用 reply 字段给一句 60 字内的自然回复，友好地把话题�
           // 如果前端传了编辑后的蓝图，用编辑后的版本
           const finalBlueprint = body.blueprint || state.blueprint;
 
-          const { outline, title } = await runOutlineStep({
-            query: state.query,
-            clarifyAnswers: state.clarifyAnswers,
-            blueprint: finalBlueprint,
-            profileText: profileText(await getProfile(me?.id)),
-            refFileName: state.docName,
-            stepNo: state.docMode ? 5 : 4,
-            stepTotal: state.docMode ? 5 : 4,
-            emit: send,
-          });
-          state.step = "done";
-          state.outline = outline;
-          state.title = title;
-          // 最后一次存档失败不能吞掉整门课：大纲已经推给前端了，标记 saveFailed 让用户可补存
-          // （存储层内部已带 3 次重试 + 本地影子兜底，走到这里还失败就是真挂了）
-          let saveFailed = false;
-          try {
-            await setCourseState(courseId, state);
-          } catch {
-            saveFailed = true;
+          // 积分门卫：大纲生成是全管线最贵的一步，课程资产此刻才真正落袋。
+          // 未登录：本地自用放行（无公开暴露面）；公网部署（R2 模式）必须登录，否则积分形同虚设。
+          if (!me && storageMode === "r2") {
+            await send({ type: "error", message: "请先登录后再生成课程（课程消耗积分，与账号绑定）" });
+            controller.close();
+            return;
+          }
+          let creditsSpent = false;
+          if (me) {
+            const spend = await trySpend(me.id, COST_COURSE_GENERATE, `生成课程大纲：${(state.query || "").slice(0, 24)}`);
+            if (!spend.ok) {
+              await send({ type: "credits_block", balance: spend.balance, need: COST_COURSE_GENERATE, reason: "生成课程大纲" });
+              controller.close();
+              return;
+            }
+            creditsSpent = true;
           }
 
-          // 课程沉淀进学习者画像（澄清问答 + 课程标题），蒸馏失败不阻塞
           try {
-            await captureCourseProfile({ courseTitle: title, clarifyAnswers: state.clarifyAnswers }, me?.id);
-          } catch {
-            // 画像写入失败不影响课程交付
-          }
+            const { outline, title } = await runOutlineStep({
+              query: state.query,
+              clarifyAnswers: state.clarifyAnswers,
+              blueprint: finalBlueprint,
+              profileText: profileText(await getProfile(me?.id)),
+              refFileName: state.docName,
+              stepNo: state.docMode ? 5 : 4,
+              stepTotal: state.docMode ? 5 : 4,
+              emit: send,
+            });
+            state.step = "done";
+            state.outline = outline;
+            state.title = title;
+            // 最后一次存档失败不能吞掉整门课：大纲已经推给前端了，标记 saveFailed 让用户可补存
+            // （存储层内部已带 3 次重试 + 本地影子兜底，走到这里还失败就是真挂了）
+            let saveFailed = false;
+            try {
+              await setCourseState(courseId, state);
+            } catch {
+              saveFailed = true;
+            }
 
-          await send({ type: "done", courseId, title, saveFailed });
+            // 课程沉淀进学习者画像（澄清问答 + 课程标题），蒸馏失败不阻塞
+            try {
+              await captureCourseProfile({ courseTitle: title, clarifyAnswers: state.clarifyAnswers }, me?.id);
+            } catch {
+              // 画像写入失败不影响课程交付
+            }
+
+            await send({ type: "done", courseId, title, saveFailed });
+          } catch (e) {
+            // 生成失败退回积分：用户只为成功交付的资产付费
+            if (creditsSpent && me) await refundCredits(me.id, COST_COURSE_GENERATE, "课程生成失败退回");
+            throw e;
+          }
         } else if (action === "save_course") {
           // 存档失败后的手动补存：状态在生成过程中已多次落盘，重写一次完整状态
           const courseId = body.courseId || "";

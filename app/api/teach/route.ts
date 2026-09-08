@@ -5,6 +5,8 @@ import { getCourseState } from "@/lib/agent/course";
 import { runStartTeaching, runTeachChat, buildLectureContext } from "@/lib/agent/teach";
 import { getProfile } from "@/lib/profile";
 import { userFromCookieHeader } from "@/lib/auth";
+import { COST_TEACHING_SESSION, refundCredits, trySpend } from "@/lib/credits";
+import { storageMode } from "@/lib/storage";
 import { pagesForLecture } from "@/lib/textbook";
 import type { WhiteboardEvent } from "@/types";
 
@@ -120,8 +122,31 @@ export async function POST(req: NextRequest) {
         if (profile.name) ctx.studentName = profile.name;
 
         if (body.action === "start_teaching") {
-          await runStartTeaching({ ctx, emit: send });
-          await send({ type: "done", sessionId: `${body.courseId}:${body.lectureId}` });
+          // 积分门卫：开讲 = 整节课的 beat 脚本生成，是课堂里最贵的一次调用。
+          // 未登录：本地自用放行；公网部署（R2 模式）必须登录。
+          if (!me && storageMode === "r2") {
+            await send({ type: "error", message: "请先登录后再进入课堂（课堂消耗积分，与账号绑定）" });
+            controller.close();
+            return;
+          }
+          let creditsSpent = false;
+          if (me) {
+            const spend = await trySpend(me.id, COST_TEACHING_SESSION, `白板课堂：${(ctx.lectureTitle || "").slice(0, 24)}`);
+            if (!spend.ok) {
+              await send({ type: "credits_block", balance: spend.balance, need: COST_TEACHING_SESSION, reason: "开启白板课堂" });
+              controller.close();
+              return;
+            }
+            creditsSpent = true;
+          }
+          try {
+            await runStartTeaching({ ctx, emit: send });
+            await send({ type: "done", sessionId: `${body.courseId}:${body.lectureId}` });
+          } catch (e) {
+            // 开讲失败退回积分（课没讲成不收费）
+            if (creditsSpent && me) await refundCredits(me.id, COST_TEACHING_SESSION, "课堂启动失败退回");
+            throw e;
+          }
         } else if (body.action === "chat") {
           const message = (body.message || "").trim();
           if (!message) {
