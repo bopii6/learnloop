@@ -8,6 +8,7 @@ import { LectureQuizPanel } from "./LectureQuizPanel";
 import { useClassroomSocket, type ClassroomState } from "@/hooks/useClassroomSocket";
 import { startVoiceCapture, type VoiceCapture } from "./voice-capture";
 import { consumeSse } from "@/lib/sse";
+import { splitSpeechLines } from "@/lib/speech-lines";
 import { createTtsPlayer, fetchTtsSegments, prefetchTts, ttsUnavailable } from "@/lib/tts-client";
 import { exportBoardPoster, exportScriptPoster, downloadBlob, copyImageToClipboard, safeFilename } from "@/lib/board-poster";
 import { VerticalClipModal, type ClipBeat } from "./VerticalClipModal";
@@ -505,7 +506,9 @@ export function CourseSession({
           label: isFirstBeat ? `${item.index + 1} · ${item.title}` : undefined,
         },
       ]);
-      setSubtitle(item.beat.say);
+      // 电视字幕式：beat 按句切成字幕行，字幕一次只显示一行、语音逐句跟读
+      const speechLines = splitSpeechLines(item.beat.say);
+      if (speechLines[0]) setSubtitle(speechLines[0]);
 
       // 白板逐条书写（每句话都有板书动作，镜头以模块为单位切换）
       const boardItems = item.beat.items || [];
@@ -514,9 +517,14 @@ export function CourseSession({
       window.setTimeout(() => setBoardPulse(false), 900);
       if (item.lastOfSegment) writerRef.current?.removePencil();
 
-      // 朗读本句（或静音节奏计时）；先预取下一句的云端音频，播放期不空等
-      prefetchTts(queueRef.current[0]?.beat.say);
-      await speak(item.beat.say);
+      // 逐行朗读（或静音节奏计时）；播放本行期间预取下一行的云端音频，不空等
+      const nextBeatLines = queueRef.current[0] ? splitSpeechLines(queueRef.current[0].beat.say) : [];
+      for (let li = 0; li < speechLines.length; li++) {
+        if (pausedRef.current || exitedRef.current) break;
+        setSubtitle(speechLines[li]);
+        prefetchTts(speechLines[li + 1] ?? nextBeatLines[0]);
+        await speak(speechLines[li]);
+      }
 
       // 片段收尾：轨道打勾；有课堂练习则停下来，选项内嵌在字幕区等学员作答
       if (item.lastOfSegment) {
@@ -1139,6 +1147,12 @@ export function CourseSession({
             ×
           </button>
           <div className="text-[14px] font-medium truncate max-w-md">{lectureTitle}</div>
+          <span
+            className="hidden md:inline-block rounded-full bg-[#f1efe8] px-2 py-0.5 text-[10px] text-ink-soft shrink-0"
+            title="AI 生成内容可能存在错误，请以权威来源为准"
+          >
+            AI 生成
+          </span>
         </div>
         <div className="flex items-center gap-2">
           {(playback === "playing" || playback === "paused") && (

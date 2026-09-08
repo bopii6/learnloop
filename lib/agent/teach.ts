@@ -1,6 +1,7 @@
 // 白板教学：AI 讲师产出 beat 脚本（逐句讲解 + 绑定板书动作），播放同步交给前端播放器
 import type { TeachBeat, BoardItem, CourseOutline, WhiteboardEvent, SegmentCheckpoint, LectureQuizItem } from "@/types";
 import { generateJson, streamAnswer } from "./llm";
+import { constraintsBlock, langMatchesExpectation } from "./lang";
 
 type Emit = (e: WhiteboardEvent) => Promise<void> | void;
 
@@ -16,6 +17,8 @@ export interface LectureContext {
   studentName?: string; // 学员称呼：开场点名用
   keyConcepts?: string[]; // 本单元关键概念：编剧的提纲依据
   referenceMaterial?: string; // 建课时搜到的资料正文摘编：讲解的事实来源（grounding）
+  outputLanguage?: string; // 建课时用户要求的输出语言：讲解/板书/题目全部使用
+  constraints?: string[]; // 用户的其他硬性要求（原话关键词），讲课与出题都要遵守
 }
 
 const TEACH_STYLE = `讲解风格要求：
@@ -41,6 +44,12 @@ const BEAT_SCRIPT_SYSTEM = `你是白板课程讲师兼板书设计师。为一�
 - 参考资料若带【教材…第 N 页】标注，讲到对应内容时自然提一句页码（如"翻开教材第 42 页"），让学员能回到课本对照。
 - 参考资料只是素材：要重组、对比、简化成教学语言，不要整段照抄。
 - 没给参考资料时按你的知识讲，但不发明具体统计数字。
+
+费曼纪律（反"正确的废话"，每句都要过这道检查）：
+- 每句话都要让学员获得"不讲这句他就不会"的东西：一个具体机制、一个数字、一个案例细节、一个可操作的判断标准。
+- 禁止同主题通识介绍都能说出口的话："X 越来越重要""X 正在改变世界""学好 X 很有必要""随着技术的发展""在当今社会"——这类句子一句都不许出现。
+- 开场片段的钩子要回答三问：这个技术是为了解决什么问题而出现的？原来卡在哪？它是怎么解决的？
+- 学员听完要能复述出至少一句具体的话，而不是"感觉挺有道理"。
 
 讲解风格：
 - 抓人：钩子开头，不平铺直叙。
@@ -69,6 +78,17 @@ const BEAT_SCRIPT_SYSTEM = `你是白板课程讲师兼板书设计师。为一�
   - {"kind":"underline"} — 在上一条内容下划一条重点线（无参数），配合 say 里的"划重点/记住这句"
   - {"kind":"burst"} — 在上一条内容上方画放射强调线（无参数），配合 say 里的"最关键的一点来了"`;
 
+/** 输出语言硬约束行：建课时用户指定了语言，讲解/板书/题目全部照办（拼在相关 system 提示词后） */
+function langLineFor(ctx: LectureContext): string {
+  if (!ctx.outputLanguage) return "";
+  return `\n\n【输出语言（硬约束）】你的全部输出——讲解（say）、板书文字、练习题、选项、点评——必须使用「${ctx.outputLanguage}」。专有名词/术语可保留英文原词。`;
+}
+
+/** 用户其他硬性要求块（空则返回空串） */
+function teachConstraintsBlock(ctx: LectureContext): string {
+  return constraintsBlock(undefined, ctx.constraints);
+}
+
 /** 课后练习：整节课讲完后 3-5 道单选/多选，替代独立的测验模块 */
 const LECTURE_QUIZ_SYSTEM = `你是白板课程讲师。一节课刚讲完，出一份课后练习检验学员是否真的听懂了，只输出 JSON：
 {"quiz":[{"question":"...","multi":false,"options":["A","B","C"],"answerIndexes":[0],"explain":"..."}]}
@@ -89,10 +109,44 @@ const CHECKPOINT_SYSTEM = `你是白板课程讲师。根据刚讲完的教学�
 - options 恰好 2-3 个，每个 ≤ 16 字，是具体做法/具体事物，其中一个明显更有讨论价值。
 - 不输出正确答案，学员答完由讲师点评。`;
 
+/** 信息增量审稿人（费曼检验）：讲稿若和通识介绍区分不开，判不合格并给整改方向 */
+const INCREMENT_REVIEW_SYSTEM = `你是教学审稿人，用「费曼检验」审一段白板课讲稿：学员听完这一段，能说出或做出什么他原来不会的东西？
+只输出 JSON：{"specific":true|false,"increments":["学员获得的具体增量1","增量2"],"feedback":"判不合格时给一句整改方向"}
+
+判「不具体」（specific=false）的标准：
+- 你列出的增量和任何同主题通识介绍能给的东西区分不开——没有具体机制、具体数字、具体案例细节、具体判断标准；
+- 形容词多、实指少；学员听完能点头，但复述不出任何一句具体的话。
+拿不准就算过（specific=true）：只打回真正空的那版，不要吹毛求疵。`;
+
+/** 审一个片段的讲稿是否有具体的信息增量；审稿人本身挂了就放行（不阻塞交付） */
+async function reviewSegmentIncrements(
+  ctx: LectureContext,
+  segmentTitle: string,
+  segmentFocus: string,
+  beats: TeachBeat[]
+): Promise<{ specific: boolean; feedback: string }> {
+  try {
+    const res = await generateJson<{ specific?: boolean; feedback?: string }>(
+      INCREMENT_REVIEW_SYSTEM,
+      `课程：《${ctx.courseTitle}》（面向：${ctx.audience}）
+片段：${segmentTitle}（目标：${segmentFocus}）
+讲稿（逐句）：
+${beats.map((b) => b.say).join("\n").slice(0, 1600)}${
+        ctx.referenceMaterial ? "\n（本片段有参考资料，讲稿应优先吃透其中的具体机制/数字/案例）" : "\n（本片段无参考资料，讲稿至少要落到真实案例、具体步骤或可操作的判断上）"
+      }`,
+      400
+    );
+    if (!res || typeof res.specific !== "boolean") return { specific: true, feedback: "" };
+    return { specific: res.specific, feedback: String(res.feedback || "").slice(0, 140) };
+  } catch {
+    return { specific: true, feedback: "" };
+  }
+}
+
 /** 服务端兜底：beat 脚本生成失败时退化为一段纯讲解（无板书动作） */
 async function fallbackBeats(ctx: LectureContext, segmentTitle: string, segmentFocus: string): Promise<TeachBeat[]> {
   const text = await streamAnswer(
-    `你是一位白板课程讲师，请讲解一个教学片段（250-400 字，信息密度优先，每句都要有干货）。${TEACH_STYLE}
+    `你是一位白板课程讲师，请讲解一个教学片段（250-400 字，信息密度优先，每句都要有干货）。${TEACH_STYLE}${langLineFor(ctx)}
 不要标题、不要列表标记、不要客套话。`,
     `课程：《${ctx.courseTitle}》（面向：${ctx.audience}）
 课节：${ctx.lectureTitle} —— ${ctx.lectureSummary}
@@ -205,7 +259,7 @@ points 是整节课的 3-4 个大步骤名（如["提出问题","核心机制","
 格式：{"points":["...","..."],"segments":[{"id":"intro","title":"课程开场","focus":"...","anchor":"工具调用"},{"id":"mechanism","title":"核心机制","focus":"...","anchor":"反馈循环","checkpoint":"..."}]}`,
     `课程：${ctx.courseTitle}\n单元：${ctx.unitTitle}\n课节：${ctx.lectureTitle}\n摘要：${ctx.lectureSummary}${
       ctx.keyConcepts?.length ? `\n本单元关键概念：${ctx.keyConcepts.join("、")}` : ""
-    }${ctx.referenceMaterial ? `\n参考资料（片段划分要覆盖其中的关键内容）：\n${ctx.referenceMaterial.slice(0, 5000)}` : ""}`,
+    }${teachConstraintsBlock(ctx)}${ctx.referenceMaterial ? `\n参考资料（片段划分要覆盖其中的关键内容，资料里反复出现的概念、对比、案例必须各占一个片段）：\n${ctx.referenceMaterial.slice(0, 5000)}` : ""}`,
     1100
   );
   const points = (Array.isArray(plan?.points) ? plan!.points : [])
@@ -236,18 +290,25 @@ points 是整节课的 3-4 个大步骤名（如["提出问题","核心机制","
       i === 0 && ctx.studentName
         ? `\n本片段是全场开场：第一句 say 必须「${ctx.studentName}，你好！」式的点名问好开场，再接钩子。`
         : "";
+    // 收尾片段：以终为始——最后一拍落到学员的可用能力上
+    const closingLine =
+      i === lessonSegments.length - 1
+        ? `\n本片段是整节课收尾：最后一个 beat 收束主线时，要落到「现在你可以……」——学员听完这节课能做出/说出的具体能力（一两条，具体到可直接上手）。`
+        : "";
 
-    const script = await generateJson<{ beats: TeachBeat[] }>(
-      BEAT_SCRIPT_SYSTEM,
-      `课程：《${ctx.courseTitle}》（面向：${ctx.audience}）${profileLine}
+    const beatUserMsg = `课程：《${ctx.courseTitle}》（面向：${ctx.audience}）${profileLine}
 课节：${ctx.lectureTitle} —— ${ctx.lectureSummary}${ctx.keyConcepts?.length ? `\n本单元关键概念：${ctx.keyConcepts.join("、")}` : ""}
 本片段（第 ${i + 1}/${lessonSegments.length} 个）标题：${segment.title}
-本片段目标：${segment.focus}${greetingLine}${
-        ctx.referenceMaterial
-          ? `\n参考资料（讲解的事实、数字、案例优先取自这里）：\n${ctx.referenceMaterial.slice(0, 3000)}`
-          : ""
-      }
-请生成本片段的教学脚本。`,
+本片段目标：${segment.focus}${greetingLine}${closingLine}${
+      ctx.referenceMaterial
+        ? `\n参考资料（讲解的事实、数字、案例优先取自这里）：\n${ctx.referenceMaterial.slice(0, 3000)}`
+        : ""
+    }
+请生成本片段的教学脚本。`;
+
+    const script = await generateJson<{ beats: TeachBeat[] }>(
+      BEAT_SCRIPT_SYSTEM + langLineFor(ctx),
+      beatUserMsg,
       2600
     );
 
@@ -255,11 +316,37 @@ points 是整节课的 3-4 个大步骤名（如["提出问题","核心机制","
     if (beats.length === 0) beats = await fallbackBeats(ctx, String(segment.title), String(segment.focus));
     if (beats.length === 0) continue;
 
+    // 输出语言守卫：讲稿整段跑偏（要求西班牙语却产出中文）时带硬约束重生成一次
+    if (langMatchesExpectation(ctx.outputLanguage, beats.map((b) => b.say).join(" ")) === false) {
+      const retry = await generateJson<{ beats: TeachBeat[] }>(
+        BEAT_SCRIPT_SYSTEM + langLineFor(ctx),
+        `${beatUserMsg}\n\n【语言硬约束】上一版讲稿语言不符：所有 say 与板书文字必须使用「${ctx.outputLanguage}」重写。`,
+        2600
+      );
+      const retryBeats = normalizeBeats(retry?.beats);
+      if (retryBeats.length > 0) beats = retryBeats;
+    }
+
+    // 信息增量闸门（费曼检验）：讲稿和通识介绍区分不开 → 带审稿意见重写一次
+    const review = await reviewSegmentIncrements(ctx, String(segment.title), String(segment.focus), beats);
+    if (!review.specific) {
+      const retry = await generateJson<{ beats: TeachBeat[] }>(
+        BEAT_SCRIPT_SYSTEM + langLineFor(ctx),
+        `${beatUserMsg}\n\n【审稿意见】上一版讲稿被判为"正确的废话"：${review.feedback}
+重写要求：删掉所有同主题通识介绍也能说的话；每句话必须落到具体机制、具体数字、具体案例细节或可操作的判断上；${
+          ctx.referenceMaterial ? "逐句吃透参考资料，把资料里的细节讲出来。" : "用真实案例与具体步骤把内容做实，不发明统计数字。"
+        }`,
+        2600
+      );
+      const retryBeats = normalizeBeats(retry?.beats);
+      if (retryBeats.length > 0) beats = retryBeats;
+    }
+
     // 片段带练习提示 → 出一道场景化选择题（学员答完由讲师点评）
     let checkpoint: SegmentCheckpoint | undefined;
     if (segment.checkpoint) {
       const mcq = await generateJson<SegmentCheckpoint>(
-        CHECKPOINT_SYSTEM,
+        CHECKPOINT_SYSTEM + langLineFor(ctx),
         `课程：《${ctx.courseTitle}》（面向：${ctx.audience}）
 课节：${ctx.lectureTitle}
 片段标题：${segment.title}
@@ -296,7 +383,7 @@ points 是整节课的 3-4 个大步骤名（如["提出问题","核心机制","
   try {
     await emit({ type: "stage", name: "teach", label: "出课后练习", status: "start", detail: "3-5 道题" });
     const quizRaw = await generateJson<{ quiz: LectureQuizItem[] }>(
-      LECTURE_QUIZ_SYSTEM,
+      LECTURE_QUIZ_SYSTEM + langLineFor(ctx),
       `课程：《${ctx.courseTitle}》（面向：${ctx.audience}）
 课节：${ctx.lectureTitle} —— ${ctx.lectureSummary}
 本节课的完整讲解内容（出题依据）：
@@ -364,7 +451,7 @@ export async function runTeachChat(opts: {
     `你是一位白板课程讲师，正在讲一节课，学员可以随时打断提问。
 课程：《${ctx.courseTitle}》（面向：${ctx.audience}）
 单元：${ctx.unitTitle}
-本节课：${ctx.lectureTitle} —— ${ctx.lectureSummary}${progressLine}${boardLine}${profileLine}${checkpointLine}
+本节课：${ctx.lectureTitle} —— ${ctx.lectureSummary}${progressLine}${boardLine}${profileLine}${checkpointLine}${langLineFor(ctx)}${teachConstraintsBlock(ctx) ? `\n${teachConstraintsBlock(ctx)}` : ""}
 
 ${TEACH_STYLE}
 
@@ -385,7 +472,7 @@ ${TEACH_STYLE}
     const ach = await generateJson<{ title: string; desc: string }>(
       `你是白板课堂的成就系统。学员刚回答了课堂练习并得到讲师点评。为学员颁发一个成就徽章，只输出 JSON：{"title":"...","desc":"..."}
 规则：title ≤ 8 字，概念式命名（如"建立行动者意识""跳出概率陷阱"）；desc ≤ 30 字，把刚练的知识点写成一句肯定语。即使答错也发（desc 写"你已经注意到了这个陷阱，进步了"这类），
-但如果学员的选择明显错了且没有自救，title 用"勇气可嘉"风格。`,
+但如果学员的选择明显错了且没有自救，title 用"勇气可嘉"风格。${langLineFor(ctx)}`,
       `练习：${context.checkpointQuestion}\n学员选择：${message}`,
       250
     );
@@ -413,5 +500,7 @@ export function buildLectureContext(
     lectureSummary: lecture.summary,
     depthTags: lecture.depth_tags,
     audience: outline.audience,
+    outputLanguage: outline.outputLanguage,
+    constraints: outline.constraints,
   };
 }

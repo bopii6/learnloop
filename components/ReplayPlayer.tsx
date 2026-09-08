@@ -8,6 +8,7 @@ import type { ReplayReel } from "@/types";
 import { Whiteboard } from "./Whiteboard";
 import { createBoardWriter, type BoardWriter } from "./board-writer";
 import { createTtsPlayer, fetchTtsSegments, prefetchTts, ttsUnavailable } from "@/lib/tts-client";
+import { splitSpeechLines } from "@/lib/speech-lines";
 
 let cachedZhVoice: SpeechSynthesisVoice | null = null;
 function pickZhVoice(): SpeechSynthesisVoice | null {
@@ -177,15 +178,22 @@ export function ReplayPlayer({ replayId }: { replayId: string }) {
         if (cancelRef.current !== gen) return; // 被 seek/重播取代
         const b = beats[i];
         setIdx(i);
-        setSubtitle(b.say);
+        // 电视字幕式：beat 按句切成字幕行，字幕一次只显示一行、语音逐句跟读
+        const speechLines = splitSpeechLines(b.say);
+        if (speechLines[0]) setSubtitle(speechLines[0]);
         if (b.segmentTitle !== curSeg) {
           curSeg = b.segmentTitle;
           await writer.beginSegment(b.segmentTitle, prog(b.segmentTitle));
         }
         await writer.write(b.section, b.items || []);
-        prefetchTts(beats[i + 1]?.say); // 播放本句期间预取下一句云端音频
-        await speak(b.say);
-        if (cancelRef.current !== gen) return;
+        const nextLines = beats[i + 1] ? splitSpeechLines(beats[i + 1].say) : [];
+        for (let li = 0; li < speechLines.length; li++) {
+          if (cancelRef.current !== gen) return;
+          setSubtitle(speechLines[li]);
+          prefetchTts(speechLines[li + 1] ?? nextLines[0]); // 播放本行期间预取下一行云端音频
+          await speak(speechLines[li]);
+          if (cancelRef.current !== gen) return;
+        }
       }
       setStatus((s) => (s === "playing" ? "done" : s));
     },
@@ -234,7 +242,9 @@ export function ReplayPlayer({ replayId }: { replayId: string }) {
         writer.setTurbo(false);
         writer.focusCurrent();
         setIdx(target);
-        setSubtitle(beats[target].say);
+        // 停在落点的第一行字幕上（与播放时的逐行字幕一致）
+        const targetLines = splitSpeechLines(beats[target].say);
+        setSubtitle(targetLines[0] || beats[target].say);
         setStatus("paused");
         if (cancelRef.current === gen) {
           // 落位后再播下一拍

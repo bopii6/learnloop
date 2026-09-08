@@ -4,6 +4,7 @@ import type {
   CourseEvent,
   CourseOutline,
   CourseBlueprint,
+  BlueprintCapstone,
   ClarifyQuestion,
   SourceItem,
   TextbookPage,
@@ -11,6 +12,7 @@ import type {
 import { generateJson, streamAnswer } from "./llm";
 import { webSearch } from "./search";
 import { readUrl } from "./read";
+import { constraintsBlock, langMatchesExpectation } from "./lang";
 type Emit = (e: CourseEvent) => Promise<void> | void;
 
 interface HistoryMsg {
@@ -23,7 +25,17 @@ const COURSE_CLARIFY_SYSTEM = `你是课程设计师。用户想系统学习某�
 铁律：问题必须针对用户本次想学的主题（见用户消息末尾的「用户想学习」）。画像和历史对话只用来校准基础水平与措辞，绝不能把问题、选项或理由引向画像/历史里的其他目标、项目或工具链——用户问"如何学习AI"，就不能问"你的 Coze 工作流卡在哪"。
 
 维度（每轮选一个，优先问没覆盖过的）：
-1. 前置经验 2. 关注的实现语境/方向 3. 学完的目标水平 4. 课程体量
+1. 前置经验 2. 关注的实现语境/方向 3. 学完的目标水平 4. 课程体量 5. 结课作品
+
+【第 4 轮固定问结课作品——全流程最重要的一问】
+以终为始：学员必须带着一个亲手做出的东西离开，而不是带走一堆"懂了"。所以第 4 轮（最后一轮）必须出这道题，除非「已收集信息」里用户已经明确说了他要做出什么具体东西。
+- 问题句式：「学完这门课，你想亲手做出哪个东西？（它是你的结课作品，整门课会围绕它倒推设计）」可按语境润色。
+- multi 必须是 false。
+- 选项是 3 个候选结课作品，每个都必须是**名词**——一个具体的、做出来能拿给别人看的东西；从资料主题和前面回答里长出来，难度贴合学员水平（零基础/青少年就别出"生产级系统"这种选项）。
+- 每个选项 desc 两层：① 这东西具体是什么、做出来长什么样；② 它因什么而因人而异（学员的什么选择/信息会留在作品里）。
+- 反面示例："一个 AI 项目"（太空泛）、"掌握提示词工程"（是状态不是东西）、"提升数据思维"（是形容词不是作品）。
+- 正面示例（青少年 AI 课）："我自己的 AI 小助手——一个按他的性格和需求调教好的对话助手 + 他手写的提示词库；因人而异：每个孩子的助手人设和提示词都不一样"。
+- 用户跳过或自己写一个都行（前端有自定义输入和跳过按钮），你只管把候选出好。
 
 让选项"可对号入座"是最高优先级——每个选项的 desc 必须是可自查的具体行为或具体事物，而不是形容词：
 - 好："实际编写过包含 tools 参数的 Prompt，并手动解析过 LLM 返回的 JSON 结果"
@@ -44,6 +56,11 @@ JSON 格式（必须严格遵守）：
   "title": "课程标题",
   "audience": "目标受众描述（一句话，结合用户背景）",
   "tags": ["标签1", "标签2", "标签3"],
+  "capstone": {
+    "name": "结课作品名（一个名词，学员亲手做出的东西）",
+    "description": "学员结课时手里具体有什么，1-2 句",
+    "criteria": ["做成判断标准1（外人能对照检查）", "做成判断标准2", "做成判断标准3"]
+  },
   "units": [
     {
       "id": "unit-1",
@@ -59,6 +76,11 @@ JSON 格式（必须严格遵守）：
 
 要求：
 - 课程主题只能是「用户想学习」的主题本身；画像与澄清回答用于定深度、定受众，不得改变主题方向（用户问"如何学习AI"，课程就是 AI 通用学习路径，不能变成 Agent 工程课）。
+- 以终为始：capstone（结课作品）是整门课的倒推起点。澄清回答里用户已选了结课作品 → 必须原样采用（名字可润色，不得偷换成别的作品）；用户跳过/没答 → 你根据资料和受众定一个最合适的，同样必须是名词、可展示、能带着学员自己的信息（全班做出来一模一样的不是作品）。
+- 每个单元的 summary 先说"这个单元给结课作品贡献哪一块"，再说学完能做到什么；禁止"了解 XX""熟悉 XX"这类状态动词堆砌。
+- 最后一个单元的最后一个课节必须是结课实操课，标题格式「结课实操：<完成并展示作品的具体动作>」，如「结课实操：调通你的 AI 小助手并讲给家人用」。
+- 教材模式（给了教材内容）例外：单元/课节结构仍必须镜像教材目录，结课作品要在教材内容能支撑的范围内选，结课实操课对齐教材最后一章，不得新增教材外的课节。
+- 有资料（网络资料要点/教材内容）时，单元和课节必须优先长在资料特有的主张、案例、数据、结构上——教材模式镜像教材目录，资料模式吃透资料要点；禁止对着主题凭空铺一张通用知识图谱，通识部分只做必要铺垫。
 - 课程标题格式为「主标题：副标题」，体现主题、深度和受众。禁止把用户输入拼上"系统课程"。
   正面示例："LLM Agent 深度工程：从 ReAct 理论到生产级 Tool Use 实现"
 - tags 是领域标签（如 "AI Engineering"、"ReAct Pattern"），禁止把用户原话当标签。
@@ -70,7 +92,8 @@ JSON 格式（必须严格遵守）：
 - 课节标题必须具体到知识点，格式推荐「具体概念：要解决的问题或角度」。
   反面示例："核心概念"、"基本术语"。正面示例："Function Calling 机制：原生支持与技术差异"。
 - 每个课节标注 1-2 个深度标签：建立直觉 / 正式定义 / 公式推导 / 进阶理论 / 应用实操。
-- 课节 id 格式 lec-{单元号}-{序号}。`;
+- 课节 id 格式 lec-{单元号}-{序号}。
+- 【输出语言】全部内容（标题/受众/单元/课节/标签）必须使用「用户对这门课的要求」中指定的语言。`;
 
 const COURSE_SKELETON_SYSTEM = `你是资深课程设计师。根据用户想学的主题、背景信息和课程蓝图，设计课程骨架（不含具体课节）。
 只输出 JSON，不要输出任何其他内容。
@@ -148,6 +171,8 @@ interface CourseGenState {
   docMode?: boolean; // 文档建课：管线为 5 步（查看文档→搜索补充→构思澄清→蓝图→大纲），步骤编号与纯文字不同
   docName?: string; // 上传文档的展示名（讲次参考文件回链用）
   courseSource?: string; // 自学 / 学校同步（原版同款）
+  outputLanguage?: string; // 建课时从用户输入提取的输出语言（自由文本：中文/西班牙语/…，没提默认中文）
+  constraints?: string[]; // 用户的其他硬性要求（原话关键词），注入管线每一步
   clarifyAnswers: { question: string; answer: string }[];
   clarifyRound: number;
   currentQuestion?: string;
@@ -177,6 +202,9 @@ export interface CourseMeta {
   lectures: number;
   totalMin: number;
   source: string; // 教材 PDF / 文档 / AI 生成（卡片"来源"行用）
+  // 可学课节的有序清单（id+标题，测验/项目不在内）：课程记录页据此算学习进度和"下一讲"。
+  // 旧索引无此字段，列表接口会回读全文档一次性补建。
+  lecs?: { id: string; t: string }[];
   createdAt?: number; // 首次生成时间（卡片"添加日期"用；补建索引时用课程文件的修改时间近似）
   updatedAt: number;
 }
@@ -195,7 +223,7 @@ export function courseMetaFromState(state: {
     title?: string;
     audience?: string;
     tags?: string[];
-    units?: { lectures?: { duration_min?: number; content_type?: string }[] }[] | null;
+    units?: { lectures?: { id?: string; title?: string; duration_min?: number; content_type?: string }[] }[] | null;
   } | null;
 }): CourseMeta | null {
   const outline = state.outline;
@@ -211,6 +239,13 @@ export function courseMetaFromState(state: {
         .reduce((t, l) => t + (l.duration_min || 0), 0),
     0
   );
+  // 可学课节的有序清单：进度条与"接下来学什么"都按这个顺序推
+  const lecs = units.flatMap((u) =>
+    (u.lectures || [])
+      .filter((l) => l.content_type === "whiteboard" || !l.content_type)
+      .filter((l) => l.id)
+      .map((l) => ({ id: l.id!, t: l.title || "" }))
+  );
   return {
     title: state.title || outline.title || "未命名课程",
     ownerId: state.ownerId,
@@ -220,6 +255,7 @@ export function courseMetaFromState(state: {
     lectures,
     totalMin,
     source: state.textbook ? "教材 PDF" : state.docMode ? "文档" : "AI 生成",
+    lecs,
     updatedAt: Date.now(),
   };
 }
@@ -245,6 +281,9 @@ const SEARCH_PLAN_SYSTEM = `你是搜索专家。用户想系统学习一个明�
 - 只要主题涉及编程、AI、大模型、Agent、算法、数据、软件工具、数学、自然科学（判断依据：输入里出现 LLM/模型/Agent/API/算法/Python/代码/数据 等词，或主题是技术概念），3 个查询必须全部用英文——英文互联网的一手资料质量远高于中文。
 - 人文 / 历史 / 语言考试 / 中国本土生活话题：用中文查询。
 - 示例判断："LLM Agent 的 Tool Use" 是纯技术主题 → 全英文；"雅思托福备考" → 全中文；"上海本帮菜烹饪" → 全中文。
+
+查询词与用户要求的边界（必须遵守）：
+- 查询词只装主题内容词。用户对课程产出的要求——输出语言、水平、风格、格式（如"用中文讲""零基础""弄成西班牙语"）——不是资料的语言，禁止进入查询词：他要西班牙语的课，主题是机器学习，照样用英文查机器学习。
 
 硬性要求（搜索引擎对长查询会返回垃圾结果，必须遵守）：
 - 每个查询最多 4 个单词（英文）或 2 个词（中文）：「核心主题词 + 一个角度词」。
@@ -313,6 +352,7 @@ export async function runSearchStep(opts: {
   existingSources?: SourceItem[]; // 文档内容块（已占用的编号），网络来源接着编号
   existingPages?: Record<number, string>;
   readLimit?: number; // 要读全文的网页数（文档模式读少一点，文档本身才是主料）
+  constraintsText?: string; // 用户对课程的要求块（提醒规划器别把语言/风格要求当查询词）
 }): Promise<{ sources: SourceItem[]; pageContents: Record<number, string> }> {
   const { query, emit } = opts;
   const stepNo = opts.stepNo ?? 1;
@@ -328,7 +368,7 @@ export async function runSearchStep(opts: {
   let searchQueries: string[] = [];
   const plan = await generateJson<{ queries: string[] }>(
     SEARCH_PLAN_SYSTEM,
-    `${docContext ? `用户已上传一份文档，主题如下（查询词必须围绕文档主题做补充，不要偏航）：\n${docContext.slice(0, 800)}\n\n` : ""}用户原始目标：${query}\n已提炼主题（必须围绕它搜索）：${topic}`,
+    `${opts.constraintsText ?? ""}${docContext ? `用户已上传一份文档，主题如下（查询词必须围绕文档主题做补充，不要偏航）：\n${docContext.slice(0, 800)}\n\n` : ""}用户原始目标：${query}\n已提炼主题（必须围绕它搜索）：${topic}`,
     400
   );
   if (plan?.queries && Array.isArray(plan.queries) && plan.queries.length > 0) {
@@ -405,6 +445,7 @@ export async function runClarifyStep(opts: {
   pageExcerpts?: string; // 搜索到的资料摘要，让澄清选项更贴近真实语境
   stepNo?: number; // 文档建课模式：澄清在第 3 步（共 5 步）
   stepTotal?: number;
+  constraintsText?: string; // 用户已提出的要求：澄清题要遵守其语言，且不重复问已覆盖的事
   emit: Emit;
 }): Promise<{ question?: ClarifyQuestion; done: boolean }> {
   const { query, history, sources, clarifyAnswers, round, courseId, profileHint, pageExcerpts, emit } = opts;
@@ -430,10 +471,13 @@ export async function runClarifyStep(opts: {
   const profileContext = profileHint
     ? `学员历史画像（只用于判断基础水平、避免重复提问；问题本身必须围绕下面的「用户想学习」，禁止偏向画像里的其他目标/项目）：\n${profileHint}\n\n`
     : "";
+  const constraintsContext = opts.constraintsText
+    ? `${opts.constraintsText}（其中输出语言等要求同样适用于你出的澄清题；用户已明确表达的要求不要再问）\n\n`
+    : "";
 
   const question = await generateJson<ClarifyQuestion>(
     COURSE_CLARIFY_SYSTEM,
-    `${context}${prevAnswers}${sourceContext}${excerptsContext}${profileContext}用户想学习：${query}\n\n请生成第 ${round} 个澄清问题。`
+    `${constraintsContext}${context}${prevAnswers}${sourceContext}${excerptsContext}${profileContext}用户想学习：${query}\n\n请生成第 ${round} 个澄清问题。`
   );
 
   if (!question || !question.question || !question.options || question.options.length < 2) {
@@ -464,6 +508,20 @@ export async function runClarifyStep(opts: {
   return { question: normalized, done: false };
 }
 
+/** 从澄清回答里捞用户选的结课作品（蓝图 LLM 弄丢字段时的兜底；跳过/未答返回 undefined） */
+function capstoneFromAnswers(
+  answers: { question: string; answer: string }[]
+): BlueprintCapstone | undefined {
+  const hit = answers.find((a) => /结课作品|亲手做出|做出哪个|做出什么/.test(a.question));
+  const name = hit?.answer?.trim();
+  if (!name || name === "跳过" || name === "未作答") return undefined;
+  return {
+    name: name.slice(0, 60),
+    description: "学员结课时亲手完成的作品（澄清阶段自选或自填）",
+    criteria: [],
+  };
+}
+
 export async function runBlueprintStep(opts: {
   query: string;
   clarifyAnswers: { question: string; answer: string }[];
@@ -472,6 +530,8 @@ export async function runBlueprintStep(opts: {
   profileText?: string; // 学习者画像（跨课程持久化）
   pageExcerpts?: string; // 已读网页要点：让蓝图 grounded 在真实资料上
   textbookHint?: string; // 教材模式：目录+要点，蓝图必须镜像教材结构
+  outputLanguage?: string; // 用户要求的输出语言（自由文本），蓝图全文必须使用
+  constraints?: string[]; // 用户的其他硬性要求
   stepNo?: number; // 文档建课模式：蓝图在第 4 步（共 5 步）
   stepTotal?: number;
   emit: Emit;
@@ -494,12 +554,13 @@ export async function runBlueprintStep(opts: {
   const textbookContext = textbookHint
     ? `教材内容（课程结构必须镜像这本教材：单元对应教材的章/单元，课节对应教材的节，标题优先用教材官方术语，按教材顺序排列，不要自由发挥）：\n${textbookHint}\n\n`
     : "";
+  const constraintsContext = constraintsBlock(opts.outputLanguage, opts.constraints);
 
   // 先产出"设计思路"给用户看：推理外显，而不是黑盒蹦出一张蓝图
   const thinking = await generateJson<{ notes: string[] }>(
     `你是课程架构师。基于用户目标、澄清回答和资料要点，用 2-3 句话说明你打算怎么设计这门课、为什么，只输出 JSON：{"notes":["...","..."]}
-要求：每句 ≤ 45 字；必须引用澄清回答里的具体选择和资料里的具体概念（如"你选了生产级，所以第 4 单元直接进错误重试实战"）；不要客套。`,
-    `${answerContext}${excerptsContext}用户想学习：${query}`,
+要求：每句 ≤ 45 字；必须引用澄清回答里的具体选择和资料里的具体概念（如"你选了生产级，所以第 4 单元直接进错误重试实战"）；不要客套；使用「用户对这门课的要求」中指定的输出语言。`,
+    `${constraintsContext}${answerContext}${excerptsContext}用户想学习：${query}`,
     500
   );
   if (Array.isArray(thinking?.notes) && thinking.notes.length > 0) {
@@ -509,17 +570,47 @@ export async function runBlueprintStep(opts: {
     ? `上一版蓝图：\n${JSON.stringify(previousBlueprint || {}, null, 2)}\n\n用户对上一版蓝图的修改意见：${feedback}\n请根据修改意见重新生成完整蓝图（保持 JSON 格式不变）。\n\n`
     : "";
 
-  const raw = await generateJson<CourseBlueprint>(
-    COURSE_BLUEPRINT_SYSTEM,
-    `${answerContext}${profileContext}${textbookContext}${excerptsContext}${feedbackContext}用户想学习：${query}\n\n请生成课程结构蓝图。`,
-    4000
-  );
+  const blueprintUserMsg = `${constraintsContext}${answerContext}${profileContext}${textbookContext}${excerptsContext}${feedbackContext}用户想学习：${query}\n\n请生成课程结构蓝图。`;
+  let raw = await generateJson<CourseBlueprint>(COURSE_BLUEPRINT_SYSTEM, blueprintUserMsg, 4000);
+
+  // 输出语言守卫：蓝图整段跑偏（要求西班牙语却产出中文）时带硬约束重试一次。
+  // 守卫判不了的语言（null）不拦，重试仍失败也不拦——管线不因守卫卡死。
+  const langCheckText = raw
+    ? [
+        raw.title,
+        raw.audience,
+        raw.capstone ? [raw.capstone.name, raw.capstone.description, ...(raw.capstone.criteria || [])].join(" ") : "",
+        ...(raw.units || []).flatMap((u) => [u.title, u.summary, ...(u.lectures || []).map((l) => l.title)]),
+      ]
+        .filter(Boolean)
+        .join("\n")
+    : "";
+  if (raw && langMatchesExpectation(opts.outputLanguage, langCheckText) === false) {
+    const retry = await generateJson<CourseBlueprint>(
+      COURSE_BLUEPRINT_SYSTEM,
+      `${blueprintUserMsg}\n\n【语言硬约束】上一版的语言不符合要求：整份蓝图必须使用「${opts.outputLanguage}」输出，逐字检查后再交。`,
+      4000
+    );
+    if (retry?.units?.length) raw = retry;
+  }
 
   // 兜底：LLM 失败时返回一个最小骨架
+  const capstone: BlueprintCapstone | undefined = raw?.capstone?.name
+    ? {
+        name: String(raw.capstone.name).slice(0, 60),
+        description: String(raw.capstone.description || "").slice(0, 200),
+        criteria: Array.isArray(raw.capstone.criteria)
+          ? raw.capstone.criteria.map(String).map((c) => c.slice(0, 80)).filter(Boolean).slice(0, 4)
+          : [],
+      }
+    : // LLM 没给 capstone 时从澄清回答里捞：用户明明选了作品，蓝图却弄丢是不可接受的
+      capstoneFromAnswers(clarifyAnswers);
+
   const blueprint: CourseBlueprint = {
     title: raw?.title || `${query}：系统精讲`,
     audience: raw?.audience || "希望系统学习该主题的学习者",
     tags: Array.isArray(raw?.tags) ? raw.tags.map(String) : [],
+    ...(capstone ? { capstone } : {}),
     units: Array.isArray(raw?.units) && raw.units.length > 0
       ? raw.units.map((u, i) => ({
           id: u.id || `unit-${i + 1}`,
@@ -555,6 +646,8 @@ export async function runOutlineStep(opts: {
   blueprint: CourseBlueprint;
   profileText?: string;
   refFileName?: string; // 文档建课模式：讲次卡回链的上传文档名
+  outputLanguage?: string; // 用户要求的输出语言：大纲全文（含课节简介）必须使用
+  constraints?: string[]; // 用户的其他硬性要求，写进大纲带到课堂
   stepNo?: number; // 文档建课模式：大纲在第 5 步（共 5 步）
   stepTotal?: number;
   emit: Emit;
@@ -571,6 +664,9 @@ export async function runOutlineStep(opts: {
   const profileContext = profileText
     ? `学习者画像：\n${profileText}\n\n`
     : "";
+  const capstoneContext = blueprint.capstone
+    ? `课程结课作品：《${blueprint.capstone.name}》——${blueprint.capstone.description}（学员学完必须亲手完成它，这是全课的终点）。\n\n`
+    : "";
 
   // 蓝图已经包含完整的课程结构（单元+课节标题+深度标签），
   // 大纲步骤只需逐单元填充课节细节（简介、时长、内容类型）
@@ -578,6 +674,7 @@ export async function runOutlineStep(opts: {
   const fullUnits = [];
   for (let i = 0; i < blueprint.units.length; i++) {
     const unit = blueprint.units[i];
+    const isLastUnit = i === blueprint.units.length - 1;
     await emit({
       type: "outline_progress",
       current: i + 1,
@@ -587,13 +684,15 @@ export async function runOutlineStep(opts: {
 
     const detailJson = await generateJson<{ lectures: { id: string; summary: string; duration_min: number; content_type: string }[] }>(
       `你是课程设计师。为课程的某一个单元的课节列表填充细节。
-只输出 JSON：{"lectures":[{"id":"...","summary":"一句话说明学完能掌握什么","duration_min":20,"content_type":"whiteboard"}]}
+只输出 JSON：{"lectures":[{"id":"...","summary":"...","duration_min":20,"content_type":"whiteboard"}]}
 
 规则：
-- content_type 只能是 "whiteboard" | "project" | "quiz"；绝大多数为 "whiteboard"，每个单元最多 1 个 "project" 或 "quiz"。
+- summary 用「能做成什么」句式：学完本节能独立完成 / 能解释为什么 / 能判断什么具体的事，一句话 ≤ 30 字。禁止"了解 XX""熟悉 XX"这类状态动词空话。
+- 输出语言：summary 必须使用「用户对这门课的要求」中指定的语言。
+- content_type 只能是 "whiteboard" | "project" | "quiz"；绝大多数为 "whiteboard"，每个单元最多 1 个 "project" 或 "quiz"。${isLastUnit ? '\n- 本单元是课程的最后一个单元：最后一个课节的 content_type 必须是 "project"（结课实操课，学员在这节课完成并展示结课作品），summary 写清学员在这里把作品做成什么样。' : ""}
 - 课节时长 15-30 分钟。
 - 不要修改课节 id 和标题，只填充细节。`,
-      `${profileContext}${answerContext}课程：《${blueprint.title}》\n当前单元：${unit.title}\n课节列表：${unit.lectures.map((l) => `${l.id}: ${l.title} (${l.depth_tags.join("/")})`).join("\n")}`,
+      `${constraintsBlock(opts.outputLanguage, opts.constraints)}${capstoneContext}${profileContext}${answerContext}课程：《${blueprint.title}》\n当前单元：${unit.title}\n课节列表：${unit.lectures.map((l) => `${l.id}: ${l.title} (${l.depth_tags.join("/")})`).join("\n")}`,
       2000
     );
 
@@ -604,18 +703,21 @@ export async function runOutlineStep(opts: {
       }
     }
 
-    const lectures = unit.lectures.map((l) => {
+    const lectures = unit.lectures.map((l, j) => {
       const detail = detailMap.get(l.id);
       optimizedLectures += 1;
+      // 结课实操保底：末单元的最后一课固定为 project（单课节的兜底课程除外，否则整门课不可学）
+      const isCapstoneLecture = isLastUnit && j === unit.lectures.length - 1 && unit.lectures.length > 1;
+      const detailType = (["whiteboard", "project", "quiz"] as const).includes(detail?.content_type as any)
+        ? (detail!.content_type as "whiteboard" | "project" | "quiz")
+        : ("whiteboard" as const);
       return {
         id: l.id,
         title: l.title,
         summary: detail?.summary || `深入讲解「${l.title}」`,
         duration_min: typeof detail?.duration_min === "number" ? detail.duration_min : 20,
         depth_tags: l.depth_tags,
-        content_type: (["whiteboard", "project", "quiz"] as const).includes(detail?.content_type as any)
-          ? (detail!.content_type as "whiteboard" | "project" | "quiz")
-          : ("whiteboard" as const),
+        content_type: isCapstoneLecture ? ("project" as const) : detailType,
         ...(refFileName ? { ref_files: [refFileName] } : {}),
       };
     });
@@ -635,7 +737,10 @@ export async function runOutlineStep(opts: {
     title: blueprint.title,
     audience: blueprint.audience,
     tags: blueprint.tags,
+    ...(blueprint.capstone ? { capstone: blueprint.capstone } : {}),
     units: fullUnits,
+    outputLanguage: opts.outputLanguage,
+    constraints: opts.constraints,
   };
 
   await emit({ type: "outline", outline });

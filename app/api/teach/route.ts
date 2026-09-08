@@ -7,6 +7,7 @@ import { getProfile } from "@/lib/profile";
 import { userFromCookieHeader } from "@/lib/auth";
 import { CHAT_LIMIT_PER_LECTURE, COST_TEACHING_SESSION, refundCredits, trySpend } from "@/lib/credits";
 import { storageMode } from "@/lib/storage";
+import { drainToUsage, ipSubject, logOpsError } from "@/lib/ops";
 import { bumpChatCount, loadTeachScript, saveTeachScript } from "@/lib/teach-cache";
 import { pagesForLecture } from "@/lib/textbook";
 import type { WhiteboardEvent } from "@/types";
@@ -36,6 +37,8 @@ export async function POST(req: NextRequest) {
   }
 
   const encoder = new TextEncoder();
+  // catch/finally 与登录态不同作用域，用外层变量桥接（错误日志和用量落档要用）
+  let actorId: string | undefined;
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -61,6 +64,9 @@ export async function POST(req: NextRequest) {
           controller.close();
           return;
         }
+        // 建课时的用户要求（输出语言/硬性约束）跟着课堂走：大纲没带的退回状态层
+        if (!ctx.outputLanguage && state.outputLanguage) ctx.outputLanguage = state.outputLanguage;
+        if (!ctx.constraints?.length && state.constraints?.length) ctx.constraints = state.constraints;
 
         // 讲解的事实来源。教材模式：按本节课挑最相关的教材页（词命中优先，
         // 全书均摊兜底——保证整本书都会被讲到）；摘录带页码，讲师会自然报页码。
@@ -118,6 +124,7 @@ export async function POST(req: NextRequest) {
 
         // 跨课程学习者画像注入（按登录用户隔离；有摘要用摘要，否则退化为画像全文）
         const me = await userFromCookieHeader(req.headers.get("cookie"));
+        actorId = me?.id;
         const profile = await getProfile(me?.id);
         if (profile.summary) ctx.profileHint = profile.summary;
         if (profile.name) ctx.studentName = profile.name;
@@ -195,11 +202,17 @@ export async function POST(req: NextRequest) {
           await send({ type: "error", message: `unknown action: ${body.action}` });
         }
       } catch (e) {
+        await logOpsError({
+          kind: "teach",
+          userId: actorId,
+          detail: `action=${body.action} ${e instanceof Error ? e.message : String(e)}`,
+        }).catch(() => {});
         await send({
           type: "error",
           message: e instanceof Error ? e.message : String(e),
         });
       } finally {
+        await drainToUsage(actorId || ipSubject(req)).catch(() => {});
         try {
           controller.close();
         } catch {

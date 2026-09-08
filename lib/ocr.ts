@@ -41,10 +41,12 @@ export async function ocrPdf(
 
   await fs.mkdir(OCR_CACHE_DIR, { recursive: true });
 
-  // 变量形式的动态导入：打包器（esbuild）无法静态解析，原生模块不进部署产物。
+  // 变量形式的动态导入：打包器无法静态解析，原生模块不进部署产物。
+  // 注意必须用 join 拼接而不是单一 const 字符串——esbuild 会做字面量传播，
+  // const canvasModule = "@napi-rs/canvas" 这种写法照样会被静态解析（实测踩坑）。
   // 这两个包只支持本地 Node（Workers 上 OCR 分支已被路由层守卫拦下，不会执行到这里）。
-  const tessModule = "tesseract.js";
-  const canvasModule = "@napi-rs/canvas";
+  const tessModule = ["tesseract", "js"].join(".");
+  const canvasModule = ["@napi-rs", "canvas"].join("/");
 
   // tesseract 的 worker 单线程，起 N 个并行吃页
   const { createWorker } = await import(/* webpackIgnore: true */ tessModule);

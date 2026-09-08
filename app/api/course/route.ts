@@ -12,10 +12,12 @@ import {
   setCourseState,
 } from "@/lib/agent/course";
 import { getProfile, captureCourseProfile, profileText, profileHintForClarify } from "@/lib/profile";
+import { constraintsBlock } from "@/lib/agent/lang";
 import { loadTextbook, textbookToSources, buildTextbookExcerpt } from "@/lib/textbook";
 import { userFromCookieHeader } from "@/lib/auth";
-import { COST_COURSE_GENERATE, refundCredits, trySpend } from "@/lib/credits";
+import { COST_COURSE_GENERATE, getBalance, refundCredits, trySpend } from "@/lib/credits";
 import { storageMode } from "@/lib/storage";
+import { drainToUsage, ipSubject, logOpsError } from "@/lib/ops";
 import type { CourseEvent, SourceItem, TextbookPage } from "@/types";
 
 export const runtime = "nodejs";
@@ -90,10 +92,46 @@ export async function POST(req: NextRequest) {
             return;
           }
 
+          // 积分预检：在大括其前先告诉用户"分不够"，而不是让他做完搜索+澄清+蓝图编辑
+          // （约 2 分钟投入）后才在扣费点撞墙。查询免费，扣费点仍在最贵的大纲步骤不变。
+          if (me && (await getBalance(me.id)) < COST_COURSE_GENERATE) {
+            await send({
+              type: "credits_block",
+              balance: await getBalance(me.id),
+              need: COST_COURSE_GENERATE,
+              reason: "生成课程大纲",
+            });
+            controller.close();
+            return;
+          }
+
           const courseId = `course-${randomUUID().slice(0, 8)}`;
 
           // 学习者画像：注入澄清提问（避免重复问已覆盖的维度）；按登录用户隔离
           const profile = await getProfile(me?.id);
+
+          // 需求抽取：用户在输入框里说的要求（输出语言、水平、风格……）原样贯穿整条管线。
+          // 教材模式没有意图门卫，单独跑一次轻量抽取（实测教训：英文 PDF + "弄成中文"
+          // 曾被当成搜索关键词去搜"AI 课程 中文"——约束必须是管线的一等参数，不能靠路由捎带）。
+          let outputLanguage = "中文";
+          let constraints: string[] = [];
+          let constraintsText = "";
+          if (tb) {
+            const extract = await generateJson<{ outputLanguage?: string; constraints?: string[] }>(
+              `你是建课需求抽取器。用户上传了一份文档来生成课程，并附了一句话。认真对待这句话：他说的是对课程产出的要求，不是搜索词。
+- outputLanguage：希望课程用什么语言输出，没提就默认"中文"；他怎么说都照记（"弄成中文""要西班牙语的""英文吧"都算）。
+- constraints：其他明确要求逐条提取，保留原话关键词，每条 ≤ 60 字。没提的不要编；不要把文档主题本身当要求。
+只输出 JSON：{"outputLanguage":"中文","constraints":[]}`,
+              `用户上传文档：《${tb.title}》\n用户附言：${query}`,
+              300
+            );
+            outputLanguage = String(extract?.outputLanguage || "中文").trim() || "中文";
+            constraints = (Array.isArray(extract?.constraints) ? extract!.constraints : [])
+              .map((c) => String(c).slice(0, 60))
+              .filter(Boolean)
+              .slice(0, 6);
+            constraintsText = constraintsBlock(outputLanguage, constraints);
+          }
 
           let sources: SourceItem[];
           let pageContents: Record<number, string>;
@@ -135,6 +173,7 @@ export async function POST(req: NextRequest) {
               existingSources: sources,
               existingPages: pageContents,
               readLimit: 3,
+              constraintsText,
             });
             sources = web.sources;
             pageContents = web.pageContents;
@@ -148,18 +187,25 @@ export async function POST(req: NextRequest) {
               .filter(Boolean)
               .join("\n\n");
           } else {
-            // 意图门卫（三向）：建课 / 真问题（带引用回答，不建课）/ 纯闲聊。
-            // 用户只有一个输入框，误触"你好"或随手一个疑问都不该硬造一门课。
-            const intent = await generateJson<{ mode: "course" | "answer" | "chat"; reply?: string }>(
+            // 意图门卫（三向 + 需求抽取）：建课 / 真问题（带引用回答，不建课）/ 纯闲聊。
+            // 用户只有一个输入框，误触"你好"或随手一个疑问都不该硬造一门课；
+            // 用户在输入框里说的一切要求（输出语言、水平、风格……）都被当作正经需求
+            // 原样提取并贯穿整条建课管线，而不是被路由碾平（实测教训：英文 PDF + "弄成
+            // 中文"被当成搜索关键词去搜"AI 课程 中文"）。
+            const intent = await generateJson<{ mode: "course" | "answer" | "chat"; reply?: string; outputLanguage?: string; constraints?: string[] }>(
               `你是学习助手 LearnLoop 的入口分流器。产品定位：用户输入一个主题，我们生成一门系统课程。用户只有一个输入框，输入可能是：
 - "course"：想系统学习某个主题/技能/概念（哪怕只写了主题词，如"机器学习"、"雅思备考"、"高中函数"）
 - "answer"：一个具体的知识性疑问，期望直接得到回答而非一门课（如"1+1为什么等于2"、"RAG和微调有什么区别"、"什么是MCP协议"）
 - "chat"：问候、闲聊、与学习无关的求助（如"你好"、"你是谁"、"帮我写周报"）
 判断规则：能成为一个课程主题的选 course；只是一个问题、答案几句话就能说清的选 answer；既不是学习也不是知识疑问的选 chat。
 chat 时用 reply 字段给一句 60 字内的自然回复，友好地把话题引回"想系统学点什么"，可顺带回答闲聊本身。
-只输出 JSON：{"mode":"course"} 或 {"mode":"answer"} 或 {"mode":"chat","reply":"..."}`,
+
+mode 为 course 或 answer 时，额外做需求抽取（认真对待用户说的每一句话，他说的是需求，不是搜索词）：
+- outputLanguage：用户希望课程/回答用什么语言输出。他没提就用"中文"。他怎么说都照记（"弄成中文""我想要西班牙语的""英文吧"都算）。
+- constraints：除语言外的其他明确要求，逐条提取，保留用户原话关键词（如"我是零基础""多举游戏行业的例子""不要数学公式""讲深一点"）。用户没提的要求不要编。
+只输出 JSON：{"mode":"course","outputLanguage":"中文","constraints":[]} 或 {"mode":"answer",...} 或 {"mode":"chat","reply":"..."}`,
               `用户输入：${query}`,
-              300
+              400
             );
             if (intent?.mode === "chat") {
               await send({
@@ -212,8 +258,16 @@ chat 时用 reply 字段给一句 60 字内的自然回复，友好地把话题�
               return;
             }
 
+            // 门卫放行（course）：把意图门卫顺带抽取的需求装进管线公共变量
+            outputLanguage = String(intent?.outputLanguage || "中文").trim() || "中文";
+            constraints = (Array.isArray(intent?.constraints) ? intent!.constraints : [])
+              .map((c) => String(c).slice(0, 60))
+              .filter(Boolean)
+              .slice(0, 6);
+            constraintsText = constraintsBlock(outputLanguage, constraints);
+
             // 阶段 1：搜索 + 读取网页正文
-            const r = await runSearchStep({ query, history: [], emit: send });
+            const r = await runSearchStep({ query, history: [], emit: send, constraintsText });
             sources = r.sources;
             pageContents = r.pageContents;
             excerpts = buildPageExcerpts(sources, pageContents);
@@ -231,6 +285,7 @@ chat 时用 reply 字段给一句 60 字内的自然回复，友好地把话题�
             pageExcerpts: excerpts,
             stepNo: tb ? 3 : 2,
             stepTotal: tb ? 5 : 4,
+            constraintsText,
             emit: send,
           });
 
@@ -245,6 +300,8 @@ chat 时用 reply 字段给一句 60 字内的自然回复，友好地把话题�
             docMode: Boolean(tb),
             docName: tb ? `${tb.title}.pdf` : undefined,
             courseSource: body.courseSource,
+            outputLanguage,
+            constraints,
             clarifyAnswers: [],
             clarifyRound: 1,
             currentQuestion: question?.question,
@@ -258,6 +315,8 @@ chat 时用 reply 字段给一句 60 字内的自然回复，友好地把话题�
               profileText: profileText(profile),
               pageExcerpts: excerpts,
               textbookHint: tb ? excerpts : undefined,
+              outputLanguage,
+              constraints,
               stepNo: tb ? 4 : 3,
               stepTotal: tb ? 5 : 4,
               emit: send,
@@ -293,6 +352,8 @@ chat 时用 reply 字段给一句 60 字内的自然回复，友好地把话题�
               profileText: profileText(await getProfile(me?.id)),
               pageExcerpts: buildPageExcerpts(state.sources, state.pageContents || {}),
               textbookHint: state.textbook ? buildTextbookExcerpt(state.textbook) : undefined,
+              outputLanguage: state.outputLanguage,
+              constraints: state.constraints,
               stepNo: state.docMode ? 4 : 3,
               stepTotal: state.docMode ? 5 : 4,
               emit: send,
@@ -353,6 +414,8 @@ chat 时用 reply 字段给一句 60 字内的自然回复，友好地把话题�
             profileText: profileText(await getProfile(me?.id)),
             pageExcerpts: buildPageExcerpts(state.sources, state.pageContents || {}),
             textbookHint: state.textbook ? buildTextbookExcerpt(state.textbook) : undefined,
+            outputLanguage: state.outputLanguage,
+            constraints: state.constraints,
             stepNo: state.docMode ? 4 : 3,
             stepTotal: state.docMode ? 5 : 4,
             emit: send,
@@ -398,6 +461,8 @@ chat 时用 reply 字段给一句 60 字内的自然回复，友好地把话题�
               blueprint: finalBlueprint,
               profileText: profileText(await getProfile(me?.id)),
               refFileName: state.docName,
+              outputLanguage: state.outputLanguage,
+              constraints: state.constraints,
               stepNo: state.docMode ? 5 : 4,
               stepTotal: state.docMode ? 5 : 4,
               emit: send,
@@ -446,11 +511,17 @@ chat 时用 reply 字段给一句 60 字内的自然回复，友好地把话题�
           await send({ type: "error", message: `unknown action: ${action}` });
         }
       } catch (e) {
+        await logOpsError({
+          kind: "course_generate",
+          userId: me?.id,
+          detail: `action=${action} ${e instanceof Error ? e.message : String(e)}`,
+        }).catch(() => {});
         await send({
           type: "error",
           message: e instanceof Error ? e.message : String(e),
         });
       } finally {
+        await drainToUsage(me?.id || ipSubject(req)).catch(() => {});
         try {
           controller.close();
         } catch {

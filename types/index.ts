@@ -103,7 +103,10 @@ export interface CourseOutline {
   title: string;
   audience: string;
   tags: string[];
+  capstone?: BlueprintCapstone; // 结课作品（澄清阶段由用户选定，蓝图/大纲贯穿使用）
   units: CourseUnit[];
+  outputLanguage?: string; // 建课时从用户输入提取的输出语言（自由文本，如"中文""西班牙语"）
+  constraints?: string[]; // 用户的其他硬性要求（原话关键词，如"零基础""多举游戏行业的例子"）
 }
 
 export interface CourseSession {
@@ -134,10 +137,19 @@ export interface BlueprintUnit {
   lectures: BlueprintLecture[];
 }
 
+/** 结课作品：学员学完必须亲手做出的那个东西（名词、可展示、带着学员自己的信息），
+ *  整门课的单元按"为它贡献哪一块"倒推组织。 */
+export interface BlueprintCapstone {
+  name: string; // 作品名（一个名词，如"我自己的 AI 小助手"）
+  description: string; // 学员结课时手里具体有什么，1-2 句
+  criteria: string[]; // 做成判断标准：外人能对照检查的 2-4 条
+}
+
 export interface CourseBlueprint {
   title: string;
   audience: string;
   tags: string[];
+  capstone?: BlueprintCapstone;
   units: BlueprintUnit[];
 }
 
