@@ -1,11 +1,19 @@
 // 白板语音播报的云端 TTS 客户端：调用 /api/tts（阿里云百炼 qwen3-tts）。
-// 服务端未配置 key（501）或请求失败时返回 null，调用方回退浏览器 speechSynthesis。
+// 服务端未配置 key（501）时回退浏览器 speechSynthesis（自部署兜底）；
+// 已配置但瞬时失败则重试，仍失败进入冷却窗口由调用方安静推进——不再用浏览器音色凑合。
 // blob URL 进程内缓存：同一句重播/续播不再请求、不再计费。
 const cache = new Map<string, string[]>(); // 原文 -> blob URL 分段
-let disabled = false; // 服务端未配置时置 true，本次会话不再发请求
+let disabled = false; // 服务端未配置（501）时置 true，本次会话不再发请求
+let failStreak = 0; // 连续失败计数：瞬时抖动不该把课堂拖回生硬的浏览器音色
+let failBackoffUntil = 0; // 连续失败后的快速失败窗口：先安静推进，稍后再探
 
 export function ttsUnavailable(): boolean {
   return disabled;
+}
+
+/** 云端已配置但暂时连不上（连续失败后的冷却窗口内）：调用方应安静推进而不是回退浏览器音色 */
+export function ttsDegraded(): boolean {
+  return !disabled && Date.now() < failBackoffUntil;
 }
 
 /** 预取下一句的音频（当前句播放期间后台合成，消除逐句等待） */
@@ -26,28 +34,38 @@ export async function fetchTtsSegments(text: string): Promise<string[] | null> {
   if (!text || disabled) return null;
   const hit = cache.get(text);
   if (hit) return hit;
-  try {
-    const res = await fetch("/api/tts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
-      signal: AbortSignal.timeout(35000),
-    });
-    if (res.status === 501) {
-      disabled = true;
-      return null;
+  if (Date.now() < failBackoffUntil) return null; // 冷却窗口：别让每句都干等超时拖垮课堂节奏
+  // 瞬时故障重试一次：偶发网络抖动/5xx 时第二击基本能中，避免掉回浏览器音色
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+        signal: AbortSignal.timeout(20000),
+      });
+      if (res.status === 501) {
+        disabled = true;
+        return null;
+      }
+      if (!res.ok) throw new Error(`tts ${res.status}`);
+      const data = await res.json();
+      const segs: unknown = data?.segments;
+      if (!Array.isArray(segs) || segs.length === 0 || typeof segs[0] !== "string") {
+        throw new Error("tts bad-response");
+      }
+      const urls = (segs as string[]).map(b64ToBlobUrl);
+      if (cache.size >= 200) clearTtsCache();
+      cache.set(text, urls);
+      failStreak = 0;
+      return urls;
+    } catch {
+      if (attempt === 0) await new Promise((r) => setTimeout(r, 600));
     }
-    if (!res.ok) return null;
-    const data = await res.json();
-    const segs: unknown = data?.segments;
-    if (!Array.isArray(segs) || segs.length === 0 || typeof segs[0] !== "string") return null;
-    const urls = (segs as string[]).map(b64ToBlobUrl);
-    if (cache.size >= 200) clearTtsCache();
-    cache.set(text, urls);
-    return urls;
-  } catch {
-    return null;
   }
+  failStreak++;
+  if (failStreak >= 2) failBackoffUntil = Date.now() + 30000; // 连续两轮失败：冷却 30s，期间安静推进
+  return null;
 }
 
 export function clearTtsCache(): void {

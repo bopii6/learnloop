@@ -8,7 +8,7 @@ import { LectureQuizPanel } from "./LectureQuizPanel";
 import { useClassroomSocket, type ClassroomState } from "@/hooks/useClassroomSocket";
 import { startVoiceCapture, type VoiceCapture } from "./voice-capture";
 import { consumeSse } from "@/lib/sse";
-import { createTtsPlayer, fetchTtsSegments, prefetchTts } from "@/lib/tts-client";
+import { createTtsPlayer, fetchTtsSegments, prefetchTts, ttsUnavailable } from "@/lib/tts-client";
 import { exportBoardPoster, exportScriptPoster, downloadBlob, copyImageToClipboard, safeFilename } from "@/lib/board-poster";
 import { VerticalClipModal, type ClipBeat } from "./VerticalClipModal";
 
@@ -350,8 +350,8 @@ export function CourseSession({
             setMicArmed(false);
             setError("麦克风权限被拒绝：请在浏览器地址栏重新授权，语音模式已停用");
           } else if (code === "network") {
-            // Chrome 语音识别服务不可达（国内网络）→ 自动切换"本地录音 + 云端识别"链路
-            setVoiceHeard({ text: "Chrome 语音服务不可达，已切换云端识别（录整句上传）", status: "error" });
+            // 浏览器自带识别服务不可达（国内网络常见）→ 自动切换"本地录音 + 云端识别"链路
+            setVoiceHeard({ text: "识别服务不可达，已自动切换云端识别，不影响使用", status: "error" });
             window.setTimeout(() => setVoiceHeard((v) => (v?.text?.includes("不可达") ? null : v)), 4000);
             void startCloudCapture();
           } else if (code === "audio-capture") {
@@ -429,10 +429,15 @@ export function CourseSession({
           speechStopRef.current = () => player.stop();
           await player.promise;
           finish();
-        } else {
+        } else if (ttsUnavailable()) {
+          // 服务端没配云端 TTS（自部署）：回退浏览器系统音色
           speakWithBrowser(text, spd, (stop) => {
             speechStopRef.current = stop;
           }, finish);
+        } else {
+          // 云端已配置但这句暂时失败（重试仍失败）：字幕/板书照常、按阅读节奏安静推进，
+          // 绝不回退浏览器音色——生硬的机器声突兀插进来比安静几秒糟糕得多
+          window.setTimeout(finish, Math.max(minMs, (text.length * 170 + 400) / spd));
         }
       })();
     });
@@ -467,7 +472,7 @@ export function CourseSession({
         setRail((prev) => prev.map((r) => (r.id === item.segmentId ? { ...r, status: "active" } : r)));
         // 断线恢复的续播：画面快照已含片段胶囊，不重画
         if (!restoredRef.current) {
-          await writerRef.current?.beginSegment(item.title);
+          await writerRef.current?.beginSegment(item.title, { index: item.index + 1, total: item.total });
         }
       }
 
@@ -1344,7 +1349,7 @@ export function CourseSession({
                   <div className="space-y-2">
                     {([
                       { key: "text", title: "仅用文字", desc: "在输入框里打字提问，老师照常讲解和板书。", beta: false },
-                      { key: "voice", title: "语音 + 文字", desc: "直接开口说就行。老师一听到你说话就会停下来，先回答你的问题，再从暂停的地方继续讲。建议戴耳机。注意：Chrome 的语音识别在国内网络可能不可用，无反应请改用 Edge。", beta: true },
+                      { key: "voice", title: "语音 + 文字", desc: "直接开口说就行。老师一听到你说话就会停下来，先回答你的问题，再从暂停的地方继续讲。建议戴耳机。识别无反应时会自动切换云端识别，稍等片刻即可。", beta: true },
                     ] as const).map((opt) => (
                       <button
                         key={opt.key}

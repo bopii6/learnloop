@@ -7,7 +7,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReplayReel } from "@/types";
 import { Whiteboard } from "./Whiteboard";
 import { createBoardWriter, type BoardWriter } from "./board-writer";
-import { createTtsPlayer, fetchTtsSegments, prefetchTts } from "@/lib/tts-client";
+import { createTtsPlayer, fetchTtsSegments, prefetchTts, ttsUnavailable } from "@/lib/tts-client";
 
 let cachedZhVoice: SpeechSynthesisVoice | null = null;
 function pickZhVoice(): SpeechSynthesisVoice | null {
@@ -25,6 +25,19 @@ function pickZhVoice(): SpeechSynthesisVoice | null {
 }
 
 type Status = "loading" | "ready" | "playing" | "paused" | "done" | "error";
+
+/** 片段进度表：segmentTitle 首次出现的顺序即模块序号，总数为去重个数（模块板徽章用） */
+function segmentProgress(beats: { segmentTitle?: string }[]) {
+  const order: string[] = [];
+  for (const b of beats) {
+    const t = b.segmentTitle || "";
+    if (!order.includes(t)) order.push(t);
+  }
+  return (title: string) => ({
+    index: Math.max(0, order.indexOf(title || "")) + 1,
+    total: order.length,
+  });
+}
 
 export function ReplayPlayer({ replayId }: { replayId: string }) {
   const [reel, setReel] = useState<ReplayReel | null>(null);
@@ -105,6 +118,11 @@ export function ReplayPlayer({ replayId }: { replayId: string }) {
           finish();
           return;
         }
+        if (!ttsUnavailable()) {
+          // 云端已配置但这句暂时失败：按阅读节奏安静推进，不回退生硬的浏览器音色
+          window.setTimeout(finish, Math.max(minMs, (text.length * 170 + 400) / spd));
+          return;
+        }
         const synth = window.speechSynthesis;
         const u = new SpeechSynthesisUtterance(text);
         u.lang = "zh-CN";
@@ -136,6 +154,7 @@ export function ReplayPlayer({ replayId }: { replayId: string }) {
     async (start: number, gen: number) => {
       const writer = writerRef.current;
       if (!writer) return;
+      const prog = segmentProgress(beats);
       // 快进重建：已播过的拍瞬间铺到位
       if (start > 0) {
         writer.setTurbo(true);
@@ -144,7 +163,7 @@ export function ReplayPlayer({ replayId }: { replayId: string }) {
           const b = beats[i];
           if (b.segmentTitle !== curSeg) {
             curSeg = b.segmentTitle;
-            await writer.beginSegment(b.segmentTitle);
+            await writer.beginSegment(b.segmentTitle, prog(b.segmentTitle));
           }
           await writer.write(b.section, b.items || []);
         }
@@ -161,7 +180,7 @@ export function ReplayPlayer({ replayId }: { replayId: string }) {
         setSubtitle(b.say);
         if (b.segmentTitle !== curSeg) {
           curSeg = b.segmentTitle;
-          await writer.beginSegment(b.segmentTitle);
+          await writer.beginSegment(b.segmentTitle, prog(b.segmentTitle));
         }
         await writer.write(b.section, b.items || []);
         prefetchTts(beats[i + 1]?.say); // 播放本句期间预取下一句云端音频
@@ -202,12 +221,13 @@ export function ReplayPlayer({ replayId }: { replayId: string }) {
       if (!writer) return;
       (async () => {
         writer.setTurbo(true);
+        const prog = segmentProgress(beats);
         let curSeg: string | null = null;
         for (let k = 0; k <= target; k++) {
           const b = beats[k];
           if (b.segmentTitle !== curSeg) {
             curSeg = b.segmentTitle;
-            await writer.beginSegment(b.segmentTitle);
+            await writer.beginSegment(b.segmentTitle, prog(b.segmentTitle));
           }
           await writer.write(b.section, b.items || []);
         }

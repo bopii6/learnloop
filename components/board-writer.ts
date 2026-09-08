@@ -1,40 +1,45 @@
 // BoardWriter：白板增量书写器 —— 播放器的"手"。
-// 布局逻辑（真实黑板 + 导演式镜头）：
-//   一块"黑板"= 固定区域，划分为 2×2 四个分区（quad）；
-//   模块（section）按 左上 → 右上 → 左下 → 右下 依次写入分区；
-//   四个分区写满 → 翻到下一块黑板。
-//   镜头（camera）以"分区"为单位跟随：每切入新分区，镜头平滑推近该分区——
-//   板书始终铺满画面，字号在屏上被放大，这是"面向观看的画面密度"的来源。
+// 布局逻辑（模块板 + 导演式镜头）：
+//   一个教学片段 = 一块"模块板"：指数徽章（第几块/共几块）+ 大标题 + 主题色底卡与下划线；
+//   板内走双列流式排版——短条目（要点卡/注释/判断行）成对并排铺满一行，
+//   结构图元（小节标题/流程图/表格/趋势图/对比栏/分支树/金句）独占整行；
+//   片段讲完 → 板间画衔接箭头，镜头右移到下一块模块板。整节课的板书连成一条学习路径。
+//   镜头跟随书写进度：模块开始先推近标题区，随内容增多平滑后拉——手写在哪、镜头看哪。
 //   turbo 模式（回放重建用）：跳过动画与延时，瞬间把板书写到位。
 import type { BoardItem } from "@/types";
 
 const PALETTE = ["#7c3aed", "#2563eb", "#059669", "#d97706", "#dc2626"];
-const START_X = 40;
-const START_Y = 30;
-// 黑板尺寸：严格按可视区计算（1440 视口 - 对话栏 320 - 边距；高度避开顶栏和底部字幕区）
-const BOARD_W = 1020;
-const BOARD_H = 500;
-const QUAD_W = 480; // 分区宽（BOARD_W/2 - 间隙）
-const QUAD_H = 225; // 分区高（BOARD_H/2 - 间隙）
-const BOARD_GAP = 80; // 两块黑板之间的间距
-const ITEM_DELAY_MS = 320; // 每条板书出现间隔，模拟手写节奏
+const START_X = 60;
+const START_Y = 60;
+const MODULE_W = 780; // 模块板总宽
+const CONTENT_W = 756; // 板内内容宽
+const COL_W = 366; // 半行宽（短条目成对并排）
+const COL_GAP = 24;
+const HEADER_H = 92; // 标题区高（徽章 + 大标题 + 主题色下划线）
+const ROW_GAP = 14;
+const MODULE_X_GAP = 230; // 两块模块板的间距
+const ITEM_DELAY_MS = 280; // 每条板书出现间隔，模拟手写节奏
+const WRITE_MAX_ZOOM = 1.45; // 书写镜头最大推近（字别放得过大）
+const CAM_PAD = { x: 70, top: 64, bottom: 56 };
 const ANCHOR_ID = "camera-anchor";
-// 镜头取景：给分区四周留出呼吸位（画布坐标的扩边量）
-const CAM_PAD_X = 26;
-const CAM_PAD_TOP = 88; // 分区上方留出片段胶囊/分区标题的空间
-const CAM_PAD_BOTTOM = 34;
-const CAM_ZOOM_FACTOR = 0.94; // fitToContent 后再缩一点，避免内容顶边
+
+interface Box {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
 
 export interface BoardWriter {
-  /** 新片段：在当前分区写一个片段标题胶囊（不推进分区） */
-  beginSegment(title: string): Promise<void>;
-  /** 写一条 beat 的板书（section 变化时推进到下一分区），逐条出现 */
+  /** 新片段：把镜头带到新模块板，画指数徽章 + 大标题（progress 可选，缺失则只显示序号） */
+  beginSegment(title: string, progress?: { index: number; total: number }): Promise<void>;
+  /** 写一条 beat 的板书（section 是模块内的小节标题，可选），逐条出现 */
   write(section: string | undefined, items: BoardItem[]): Promise<void>;
-  /** 已写下的分区名（注入学员提问上下文） */
+  /** 已写下的模块名/小节名（注入学员提问上下文） */
   outline(): string[];
   /** 移除铅笔指示（片段讲完时调用） */
   removePencil(): void;
-  /** 镜头对准当前黑板（断线恢复还原画面后调用） */
+  /** 镜头对准当前模块板（断线恢复还原画面后调用） */
   focusCurrent(): void;
   /** turbo 模式：跳过手写动画与延时（回放重建瞬间到位） */
   setTurbo(on: boolean): void;
@@ -46,19 +51,19 @@ export interface BoardWriter {
 
 export function createBoardWriter(getApi: () => any): BoardWriter {
   let convert: ((skeleton: any[]) => any[]) | null = null;
-  // 黑板/分区游标
-  let boardOrigin = { x: START_X, y: START_Y };
-  let quadIndex = 0; // 0=左上 1=右上 2=左下 3=右下
-  let qx = START_X; // 当前分区左上角（画布坐标）
-  let qy = START_Y;
-  let writeY = START_Y; // 分区内的书写游标
+  // 模块板游标
+  let mx = START_X; // 当前模块板左上角
+  let my = START_Y;
+  let rowY = my + HEADER_H; // 当前书写行顶部
+  let contentBottom = my + HEADER_H; // 已写内容的最低点（镜头取景/底卡撑高用）
+  let moduleIndex = 0; // 已开始的模块数（徽章从 1 起）
+  let moduleUsed = false; // 当前模块是否写过内容
+  let pairPending: Box | null = null; // 半行卡已占左列、等右侧配对
   let currentSection: string | null = null;
-  let quadUsed = false; // 当前分区是否已写入内容
-  let pendingTitle: string | null = null; // 待绘制的片段标题（随片段第一个模块落位）
   let colorIndex = 0;
+  let lastItemBox: Box | null = null;
+  let backdropId: string | null = null; // 当前模块底卡元素 id（finalize 时按内容撑高）
   const sections: string[] = [];
-  let lastItemBox: { x: number; y: number; w: number; h: number } | null = null;
-  let firstBoardFocused = false;
   let turbo = false;
 
   const delay = (ms: number) =>
@@ -149,7 +154,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
   }
 
   /**
-   * 导演镜头：把画布上的一个矩形区域平滑推进视口中央（仅模块切换/恢复时调用）。
+   * 导演镜头：把画布上的一个矩形区域平滑推进视口中央（仅模块切换/书写推进时调用）。
    * 自己按视口尺寸计算 scroll/zoom 并用 rAF 补间——Excalidraw 的 scrollToContent
    * 在 viewMode + 高频 updateScene 下会静默失效，不能依赖。
    */
@@ -159,14 +164,15 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
     y: number,
     w: number,
     h: number,
-    zoomFactor = CAM_ZOOM_FACTOR
+    zoomFactor = 0.94,
+    maxZoom = 2.2
   ) {
     const api = await waitForApi();
     if (!api) return;
     const st = api.getAppState();
     const vpW = st.width || 1100;
     const vpH = st.height || 620;
-    const zoom = Math.max(0.35, Math.min(2.2, Math.min(vpW / w, vpH / h) * zoomFactor));
+    const zoom = Math.max(0.35, Math.min(maxZoom, Math.min(vpW / w, vpH / h) * zoomFactor));
     const scrollX = -(x + w / 2) + vpW / (2 * zoom);
     const scrollY = -(y + h / 2) + vpH / (2 * zoom);
 
@@ -199,123 +205,172 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
     camAnim = requestAnimationFrame(step);
   }
 
-  /** 当前分区的取景框（含上方标题空间） */
-  function quadCamBox(x = qx, y = qy) {
-    return {
-      x: x - CAM_PAD_X,
-      y: y - CAM_PAD_TOP,
-      w: QUAD_W + CAM_PAD_X * 2,
-      h: QUAD_H + CAM_PAD_TOP + CAM_PAD_BOTTOM,
-    };
+  /** 当前书写内容的最低点（含未配对的半行卡） */
+  function writingBottom(): number {
+    return Math.max(contentBottom, pairPending ? pairPending.y + pairPending.h : 0);
   }
 
-  /** 象限左上角坐标 */
-  function quadPos(index: number, origin = boardOrigin) {
-    return {
-      x: origin.x + (index % 2) * (QUAD_W + 60),
-      y: origin.y + Math.floor(index / 2) * (QUAD_H + 30),
-    };
+  /** 书写镜头：框住本模块从标题到当前书写行，随内容增多自然后拉 */
+  async function focusWriting() {
+    const w = MODULE_W + CAM_PAD.x * 2;
+    const h = writingBottom() - my + CAM_PAD.top + CAM_PAD.bottom;
+    await focusRegion(mx - CAM_PAD.x, my - CAM_PAD.top, w, h, 0.97, WRITE_MAX_ZOOM);
   }
 
-  /** 在当前分区画分区标题胶囊 */
-  async function drawSectionHeader(name: string, reuseColor = false) {
-    const color = reuseColor ? PALETTE[(colorIndex - 1) % PALETTE.length] : PALETTE[colorIndex % PALETTE.length];
-    if (!reuseColor) colorIndex += 1;
+  /** 模块收尾：把底卡撑到实际内容高度（底卡元素在 beginSegment 时以固定 id 画入） */
+  function finalizeModule() {
+    if (!backdropId) return;
+    const api = getApi();
+    if (!api) return;
+    const h = Math.max(220, writingBottom() - my + 34);
+    try {
+      const els = api
+        .getSceneElements()
+        .map((el: any) => (el.id === backdropId ? { ...el, height: h } : el));
+      api.updateScene({ elements: els });
+    } catch {
+      // 场景未就绪时忽略
+    }
+  }
+
+  /** 板间衔接箭头：整节课的板书串成一条路径 */
+  async function drawConnector() {
     await append([
       {
-        type: "rectangle",
-        x: qx,
-        y: writeY,
-        width: 164,
-        height: 34,
-        backgroundColor: color + "18",
-        strokeColor: color,
-        strokeWidth: 1,
-        roughness: 0,
-        roundness: { type: 3 },
-      },
-      {
-        type: "text",
-        x: qx + 12,
-        y: writeY + 6,
-        text: name.slice(0, 10),
-        fontSize: 17,
-        fontFamily: 2,
-        strokeColor: color,
-      },
-    ]);
-    writeY += 50;
-  }
-
-  /** 在当前分区顶部画片段标题胶囊 */
-  async function drawSegmentChip(title: string) {
-    const chipWidth = Math.min(320, Math.max(96, title.length * 18 + 30));
-    await append([
-      {
-        type: "rectangle",
-        x: qx,
-        y: writeY,
-        width: chipWidth,
-        height: 36,
-        backgroundColor: "#1e1e1e10",
+        type: "arrow",
+        x: mx + MODULE_W + 46,
+        y: my + 140,
+        points: [[0, 0], [MODULE_X_GAP - 92, 0]],
         strokeColor: "#b4b2a9",
+        strokeWidth: 2,
+        roughness: 1,
+      },
+    ]);
+  }
+
+  /** 模块板头部：指数徽章 + 大标题 + 主题色手绘下划线 */
+  async function drawModuleHeader(title: string, progress?: { index: number; total: number }) {
+    const color = PALETTE[(colorIndex - 1) % PALETTE.length];
+    const shown = title.slice(0, 14);
+    const badgeText = progress?.total ? `${moduleIndex}/${progress.total}` : `${moduleIndex}`;
+    await append([
+      {
+        type: "rectangle",
+        x: mx + 8,
+        y: my + 6,
+        width: 62,
+        height: 30,
+        backgroundColor: color + "1f",
+        strokeColor: color,
         strokeWidth: 1,
         roughness: 0,
         roundness: { type: 3 },
       },
       {
         type: "text",
-        x: qx + 14,
-        y: writeY + 7,
-        text: title.slice(0, 16),
-        fontSize: 17,
+        x: mx + 8 + Math.max(10, (62 - badgeText.length * 9) / 2),
+        y: my + 12,
+        text: badgeText,
+        fontSize: 14,
         fontFamily: 2,
-        strokeColor: "#5f5e5a",
+        strokeColor: color,
+      },
+      {
+        type: "text",
+        x: mx + 86,
+        y: my + 3,
+        text: shown,
+        fontSize: 25,
+        fontFamily: 2,
+        strokeColor: "#1e1e1e",
+      },
+      {
+        type: "line",
+        x: mx + 12,
+        y: my + 56,
+        points: [
+          [0, 0],
+          [Math.min(shown.length * 27 + 34, MODULE_W - 24), 0],
+        ],
+        strokeColor: color,
+        strokeWidth: 4,
+        roughness: 1,
       },
     ]);
-    writeY += 54;
   }
 
-  /** 分区粉笔底色：像老师用彩粉笔先抹一片区域，让每个模块有自己的"地盘" */
-  async function drawQuadWash() {
-    const color = PALETTE[colorIndex % PALETTE.length];
+  /** 在当前行画一个小节标题（模块内换主题时）：色条 + 加粗文字，独占整行 */
+  async function drawSectionHeading(name: string) {
+    const color = PALETTE[(colorIndex - 1) % PALETTE.length];
+    const text = name.slice(0, 12);
     await append([
       {
         type: "rectangle",
-        x: qx - 10,
-        y: qy - 46,
-        width: QUAD_W + 20,
-        height: QUAD_H + 66,
-        backgroundColor: color + "0b",
+        x: mx + 4,
+        y: rowY + 5,
+        width: 5,
+        height: 26,
+        backgroundColor: color,
         strokeColor: "transparent",
         strokeWidth: 0,
         roughness: 0,
-        roundness: { type: 3 },
+      },
+      {
+        type: "text",
+        x: mx + 22,
+        y: rowY + 6,
+        text,
+        fontSize: 20,
+        fontFamily: 2,
+        strokeColor: "#1e1e1e",
       },
     ]);
+    lastItemBox = { x: mx, y: rowY, w: CONTENT_W, h: 40 };
+    rowY += 40 + ROW_GAP;
+    contentBottom = Math.max(contentBottom, rowY - ROW_GAP);
   }
 
-  /** 推进到下一分区；本块黑板写满则翻新黑板。镜头随分区切换平滑推近。 */
-  async function nextQuad(repeatSection = false) {
-    quadIndex += 1;
-    if (quadIndex > 3) {
-      boardOrigin = { x: START_X, y: boardOrigin.y + BOARD_H + BOARD_GAP };
-      quadIndex = 0;
-    }
-    const pos = quadPos(quadIndex);
-    qx = pos.x;
-    qy = pos.y;
-    writeY = qy;
-    quadUsed = false;
-    // 镜头先行：推近新分区，板书随后写进画面
-    const cam = quadCamBox();
-    await focusRegion(cam.x, cam.y, cam.w, cam.h);
-    // 分区还没讲完就换分区了（内容溢出）→ 在新分区把分区标题补上，保持上下文连续
-    if (repeatSection && currentSection) {
-      await drawSectionHeader(currentSection, true);
+  /** 结掉未配对的半行卡：把书写游标推过它（独占整行的图元画之前必须调用） */
+  function flushPendingPair() {
+    if (!pairPending) return;
+    rowY = pairPending.y + pairPending.h + ROW_GAP;
+    contentBottom = Math.max(contentBottom, pairPending.y + pairPending.h);
+    pairPending = null;
+  }
+
+  /** 左列占位（等右侧配对）：要点卡/注释/判断行走这里 */
+  async function placeShort(render: (ox: number) => { skeleton: any[]; h: number }) {
+    if (!pairPending) {
+      const { skeleton, h } = render(mx);
+      if (skeleton.length === 0) return;
+      await append(skeleton);
+      const box: Box = { x: mx, y: rowY, w: COL_W, h };
+      pairPending = box;
+      lastItemBox = box;
     } else {
-      currentSection = null; // 新分区重置分区状态
+      const first = pairPending;
+      const ox2 = mx + COL_W + COL_GAP;
+      const { skeleton, h } = render(ox2);
+      if (skeleton.length === 0) return;
+      await append(skeleton);
+      lastItemBox = { x: ox2, y: rowY, w: COL_W, h };
+      rowY += Math.max(first.h, h) + ROW_GAP;
+      contentBottom = Math.max(contentBottom, Math.max(first.y + first.h, rowY - ROW_GAP));
+      pairPending = null;
+      await focusWriting();
     }
+  }
+
+  /** 独占整行的图元：先结掉未配对的半行，再画整行并推进书写游标 */
+  async function placeFull(render: () => { skeleton: any[]; h: number }) {
+    flushPendingPair();
+    const { skeleton, h } = render();
+    if (skeleton.length === 0) return;
+    await append(skeleton);
+    lastItemBox = { x: mx, y: rowY, w: CONTENT_W, h };
+    rowY += h + ROW_GAP;
+    contentBottom = Math.max(contentBottom, rowY - ROW_GAP);
+    await focusWriting();
   }
 
   /** 在上一条板书上做强调（圈重点 / 划重点线 / 爆星强调） */
@@ -328,7 +383,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
           type: "ellipse",
           x: b.x - 14,
           y: b.y - 8,
-          width: Math.min(b.w + 28, 480 + 20),
+          width: Math.min(b.w + 28, CONTENT_W + 20),
           height: b.h + 14,
           backgroundColor: "#dc262610",
           strokeColor: "#dc2626",
@@ -343,7 +398,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
           type: "line",
           x: b.x + 2,
           y: b.y + b.h + 5,
-          points: [[0, 0], [Math.min(b.w - 4, 470), 0]],
+          points: [[0, 0], [Math.min(b.w - 4, CONTENT_W - 8), 0]],
           strokeColor: "#d97706",
           strokeWidth: 2,
           roughness: 1,
@@ -351,7 +406,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
       ];
     }
     // burst：内容上方放射短线（强调"这个点很关键"）
-    const cx = b.x + Math.min(b.w / 2, 240);
+    const cx = b.x + Math.min(b.w / 2, 300);
     const cy = b.y - 12;
     const rays: any[] = [];
     const angles = [-150, -110, -70, -30, 10, 50];
@@ -373,352 +428,520 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
   }
 
   return {
-    async beginSegment(title: string) {
-      // 开课首次对焦：镜头推近第一块黑板的第一分区（否则 Excalidraw 默认把原点放屏幕中央）
-      if (!firstBoardFocused) {
-        firstBoardFocused = true;
-        const cam = quadCamBox(quadPos(0).x, quadPos(0).y);
-        await focusRegion(cam.x, cam.y, cam.w, cam.h);
+    async beginSegment(title: string, progress?: { index: number; total: number }) {
+      // 上一块模块收尾：底卡撑高 → 板间箭头 → 右移开新板
+      if (moduleUsed) {
+        finalizeModule();
+        await drawConnector();
+        mx += MODULE_W + MODULE_X_GAP;
       }
-      // 片段标题暂存：等本片段第一个模块写入时一起画（避免胶囊和内容分离）
-      pendingTitle = title;
+      moduleIndex += 1;
+      colorIndex += 1;
+      currentSection = null;
+      pairPending = null;
+      lastItemBox = null;
+      rowY = my + HEADER_H;
+      contentBottom = my + HEADER_H;
+      moduleUsed = true;
+
+      // 模块底卡：先画（z 序在最底），收尾时按内容撑高
+      const color = PALETTE[(colorIndex - 1) % PALETTE.length];
+      backdropId = `mod-backdrop-${moduleIndex}`;
+      await append([
+        {
+          id: backdropId,
+          type: "rectangle",
+          x: mx - 18,
+          y: my - 24,
+          width: MODULE_W + 36,
+          height: 220,
+          backgroundColor: color + "08",
+          strokeColor: color + "30",
+          strokeWidth: 1,
+          roughness: 0,
+          roundness: { type: 3 },
+        },
+      ]);
+      await drawModuleHeader(title, progress);
+      // 镜头先行：推近新模块标题区，板书随后写进画面
+      await focusWriting();
     },
 
     async write(section, items) {
       const list = (items || []).filter((it) => it && it.kind).slice(0, 4);
-      const newSection = (section || "").trim() || (currentSection === null && list.length > 0 ? "板书" : null);
+      const newSection = (section || "").trim();
 
-      // 分区变化 → 推进分区写新模块（当前分区已占用才推进；新片段标题胶囊随行）
-      if (newSection && newSection !== currentSection) {
-        if (quadUsed) {
-          await nextQuad();
-        }
+      // 模块内换小主题 → 画小节标题（独占整行）
+      if (newSection && newSection !== currentSection && list.length > 0) {
         currentSection = newSection;
         sections.push(newSection);
-        await drawQuadWash();
-        if (pendingTitle) {
-          await drawSegmentChip(pendingTitle);
-          pendingTitle = null;
-        }
-        await drawSectionHeader(newSection);
-        quadUsed = true;
+        flushPendingPair();
+        await drawSectionHeading(newSection);
       }
 
-      // 逐条写内容，边讲边写；分区写不下就换下一分区（分区标题跟着补上）
+      // 逐条写内容，边讲边写
       for (const item of list) {
-        if (writeY > qy + QUAD_H - 44) {
-          await nextQuad(true);
-        }
-        quadUsed = true;
-        const skeleton: any[] = [];
-        let advance = 34;
-        let box: { x: number; y: number; w: number; h: number } | null = null;
-        const itemX = qx + 4;
-        const maxW = Math.min(QUAD_W - 24, 460);
-
         if (item.kind === "circle" || item.kind === "underline" || item.kind === "burst") {
-          skeleton.push(...emphasizeSkeleton(item.kind));
-          advance = 18; // 强调动作基本不占行高
-        } else if (item.kind === "diagram" && item.nodes && item.nodes.length >= 2) {
-          const nodes = item.nodes.slice(0, 4).map((n) => (n || "").slice(0, 5));
-          const n = nodes.length;
-          const gap = 22;
-          const boxW = Math.floor((maxW - (n - 1) * gap) / n);
-          const boxH = 46;
-          for (let ni = 0; ni < n; ni++) {
-            const nx = itemX + ni * (boxW + gap);
-            skeleton.push({
-              type: "rectangle",
-              x: nx,
-              y: writeY,
-              width: boxW,
-              height: boxH,
-              backgroundColor: "#2563eb10",
-              strokeColor: "#2563eb",
-              strokeWidth: 1.2,
-              roughness: 0,
-              roundness: { type: 3 },
-            });
-            skeleton.push({
-              type: "text",
-              x: nx + Math.max(3, Math.floor((boxW - nodes[ni].length * 13) / 2)),
-              y: writeY + 15,
-              text: nodes[ni],
-              fontSize: 13,
-              fontFamily: 2,
-              strokeColor: "#1e1e1e",
-            });
-            if (ni < n - 1) {
-              skeleton.push({
-                type: "arrow",
-                x: nx + boxW + 3,
-                y: writeY + boxH / 2,
-                points: [[0, 0], [gap - 6, 0]],
-                strokeColor: "#5f5e5a",
-                strokeWidth: 1.5,
-              });
-            }
-          }
-          advance = boxH + 14;
-          box = { x: itemX, y: writeY, w: maxW, h: boxH };
-        } else if (item.kind === "subtitle") {
-          skeleton.push({
-            type: "text",
-            x: itemX,
-            y: writeY,
-            text: (item.text || "").slice(0, 24),
-            fontSize: 20,
-            fontFamily: 2,
-            strokeColor: "#1e1e1e",
-          });
-          advance = 44;
-          box = { x: itemX, y: writeY, w: Math.min((item.text || "").length * 20 + 8, maxW), h: 32 };
-        } else if (item.kind === "bullet") {
-          skeleton.push({
-            type: "text",
-            x: itemX + 6,
-            y: writeY,
-            text: `· ${(item.text || "").slice(0, 36)}`,
-            fontSize: 16,
-            fontFamily: 1,
-            strokeColor: "#1e1e1e",
-          });
-          advance = 36;
-          box = { x: itemX, y: writeY, w: Math.min(((item.text || "").length + 2) * 16 + 10, maxW), h: 30 };
-        } else if (item.kind === "note") {
-          skeleton.push({
-            type: "text",
-            x: itemX + 6,
-            y: writeY,
-            text: (item.text || "").slice(0, 30),
-            fontSize: 14,
-            fontFamily: 1,
-            strokeColor: "#846358",
-          });
-          advance = 30;
-          box = { x: itemX, y: writeY, w: Math.min((item.text || "").length * 14 + 10, maxW), h: 26 };
-        } else if (item.kind === "table" && item.headers && item.rows) {
-          const cols = Math.max(2, Math.min(3, item.headers.length));
-          const cellW = Math.floor((maxW - 8) / cols);
-          const cellH = 34;
-          for (let ci = 0; ci < cols; ci++) {
-            skeleton.push({
-              type: "rectangle",
-              x: itemX + ci * cellW,
-              y: writeY,
-              width: cellW,
-              height: cellH,
-              backgroundColor: PALETTE[colorIndex % PALETTE.length] + "12",
-              strokeColor: "#d3d1c7",
-              strokeWidth: 1,
-              roughness: 0,
-            });
-            skeleton.push({
-              type: "text",
-              x: itemX + ci * cellW + 6,
-              y: writeY + 8,
-              text: (item.headers[ci] || "").slice(0, 12),
-              fontSize: 13,
-              fontFamily: 2,
-              strokeColor: "#1e1e1e",
-            });
-          }
-          let tableY = writeY + cellH;
-          for (const row of item.rows.slice(0, 4)) {
-            for (let ci = 0; ci < cols; ci++) {
-              skeleton.push({
+          await append(emphasizeSkeleton(item.kind));
+          await delay(ITEM_DELAY_MS * 0.5);
+          continue;
+        }
+
+        const color = PALETTE[(colorIndex - 1) % PALETTE.length];
+
+        if (item.kind === "bullet" && item.text) {
+          const text = item.text.replace(/\s+/g, " ").trim().slice(0, 20);
+          if (!text) continue;
+          await placeShort((ox) => ({
+            skeleton: [
+              {
                 type: "rectangle",
-                x: itemX + ci * cellW,
-                y: tableY,
-                width: cellW,
-                height: cellH,
-                backgroundColor: "transparent",
-                strokeColor: "#e7e5dc",
+                x: ox,
+                y: rowY,
+                width: COL_W,
+                height: 46,
+                backgroundColor: color + "0d",
+                strokeColor: color + "55",
                 strokeWidth: 1,
                 roughness: 0,
-              });
-              skeleton.push({
+                roundness: { type: 3 },
+              },
+              {
                 type: "text",
-                x: itemX + ci * cellW + 6,
-                y: tableY + 8,
-                text: (row[ci] || "").slice(0, 12),
-                fontSize: 12,
+                x: ox + 18,
+                y: rowY + 13,
+                text,
+                fontSize: 16,
                 fontFamily: 1,
                 strokeColor: "#1e1e1e",
-              });
-            }
-            tableY += cellH;
-          }
-          advance = cellH * (item.rows.slice(0, 4).length + 1) + 12;
-          box = { x: itemX, y: writeY, w: maxW, h: advance - 12 };
-        } else if (item.kind === "chart" && item.values && item.values.length >= 2) {
-          // 手绘趋势折线：坐标轴 + 折线 + 数据点（讲增长/下降/波动）
-          const vals = item.values.slice(0, 5).map((v) => Math.max(0, Number(v) || 0));
-          const cw = Math.min(maxW - 30, 290);
-          const chh = 92;
-          const maxV = Math.max(...vals) || 1;
-          const minV = Math.min(...vals, 0);
-          skeleton.push({ type: "line", x: itemX, y: writeY, points: [[0, 0], [0, -chh]], strokeColor: "#8a8880", strokeWidth: 1.2 });
-          skeleton.push({ type: "line", x: itemX, y: writeY, points: [[0, 0], [cw + 8, 0]], strokeColor: "#8a8880", strokeWidth: 1.2 });
-          const pts: number[][] = vals.map((v, i) => [
-            Math.round((cw / (vals.length - 1)) * i),
-            -Math.round(10 + ((v - minV) / (maxV - minV || 1)) * (chh - 20)),
-          ]);
-          skeleton.push({ type: "line", x: itemX, y: writeY, points: pts, strokeColor: "#2563eb", strokeWidth: 2.2, roughness: 1 });
-          for (const p of pts) {
-            skeleton.push({
-              type: "ellipse",
-              x: itemX + p[0] - 3,
-              y: writeY + p[1] - 3,
-              width: 6,
-              height: 6,
-              backgroundColor: "#2563eb",
-              strokeColor: "#2563eb",
-              strokeWidth: 1,
-            });
-          }
-          advance = chh + 6;
-          box = { x: itemX, y: writeY - chh, w: cw + 12, h: chh };
-        } else if (item.kind === "vs" && (item.text || "").includes("|")) {
-          // 左右对比栏：中缝手绘分隔线 + 两侧标签
-          const [l, r] = (item.text || "").split("|").map((s) => s.trim().slice(0, 10));
-          const halfW = Math.floor((maxW - 40) / 2);
-          skeleton.push({ type: "line", x: itemX + halfW + 20, y: writeY + 2, points: [[0, 0], [0, 34]], strokeColor: "#b4b2a9", strokeWidth: 1.5, roughness: 1 });
-          skeleton.push({ type: "text", x: itemX, y: writeY + 8, text: l || "A", fontSize: 17, fontFamily: 2, strokeColor: "#846358", textAlign: "center" });
-          skeleton.push({ type: "text", x: itemX + halfW + 40, y: writeY + 8, text: r || "B", fontSize: 17, fontFamily: 2, strokeColor: "#2563eb", textAlign: "center" });
-          skeleton.push({
-            type: "text",
-            x: itemX + halfW + 8,
-            y: writeY + 10,
-            text: "vs",
-            fontSize: 12,
-            fontFamily: 2,
-            strokeColor: "#a3a19a",
-          });
-          advance = 46;
-          box = { x: itemX, y: writeY, w: maxW, h: 40 };
+              },
+            ],
+            h: 46,
+          }));
+        } else if (item.kind === "note" && item.text) {
+          const text = item.text.replace(/\s+/g, " ").trim().slice(0, 14);
+          if (!text) continue;
+          await placeShort((ox) => ({
+            skeleton: [
+              {
+                type: "text",
+                x: ox + 8,
+                y: rowY + 5,
+                text: `— ${text}`,
+                fontSize: 14,
+                fontFamily: 1,
+                strokeColor: "#846358",
+              },
+            ],
+            h: 36,
+          }));
         } else if (item.kind === "judge" && item.text) {
           // ✓/✗ 判断行：推荐做法绿勾、常见错误红叉
           const good = item.verdict !== "bad";
-          skeleton.push({
-            type: "text",
-            x: itemX + 2,
-            y: writeY,
-            text: `${good ? "✓" : "✗"} ${(item.text || "").slice(0, 20)}`,
-            fontSize: 16,
-            fontFamily: 2,
-            strokeColor: good ? "#059669" : "#dc2626",
+          const jc = good ? "#059669" : "#dc2626";
+          const text = item.text.replace(/\s+/g, " ").trim().slice(0, 19);
+          if (!text) continue;
+          await placeShort((ox) => ({
+            skeleton: [
+              {
+                type: "rectangle",
+                x: ox,
+                y: rowY,
+                width: COL_W,
+                height: 46,
+                backgroundColor: jc + "0f",
+                strokeColor: jc + "44",
+                strokeWidth: 1,
+                roughness: 0,
+                roundness: { type: 3 },
+              },
+              {
+                type: "text",
+                x: ox + 18,
+                y: rowY + 13,
+                text: `${good ? "✓" : "✗"} ${text}`,
+                fontSize: 16,
+                fontFamily: 2,
+                strokeColor: good ? "#047857" : "#b91c1c",
+              },
+            ],
+            h: 46,
+          }));
+        } else if (item.kind === "subtitle" && item.text) {
+          const text = item.text.replace(/\s+/g, " ").trim().slice(0, 12);
+          if (!text) continue;
+          await placeFull(() => ({
+            skeleton: [
+              {
+                type: "text",
+                x: mx + 22,
+                y: rowY + 2,
+                text,
+                fontSize: 22,
+                fontFamily: 2,
+                strokeColor: "#1e1e1e",
+              },
+              {
+                type: "line",
+                x: mx + 4,
+                y: rowY + 18,
+                points: [
+                  [0, 0],
+                  [Math.min(text.length * 24 + 40, CONTENT_W - 12), 0],
+                ],
+                strokeColor: color + "88",
+                strokeWidth: 2,
+                roughness: 1,
+              },
+            ],
+            h: 46,
+          }));
+        } else if (item.kind === "diagram" && item.nodes && item.nodes.length >= 2) {
+          // 横向流程图：2-4 个节点盒子 + 衔接箭头（讲流程/数据流/架构）
+          const nodes = item.nodes.slice(0, 4).map((n) => (n || "").trim().slice(0, 6)).filter(Boolean);
+          if (nodes.length < 2) continue;
+          await placeFull(() => {
+            const n = nodes.length;
+            const gap = 38;
+            const boxW = Math.floor((CONTENT_W - (n - 1) * gap) / n);
+            const boxH = 58;
+            const sk: any[] = [];
+            for (let ni = 0; ni < n; ni++) {
+              const nx = mx + ni * (boxW + gap);
+              sk.push({
+                type: "rectangle",
+                x: nx,
+                y: rowY + 6,
+                width: boxW,
+                height: boxH,
+                backgroundColor: color + "12",
+                strokeColor: color,
+                strokeWidth: 1.2,
+                roughness: 0,
+                roundness: { type: 3 },
+              });
+              sk.push({
+                type: "text",
+                x: nx + Math.max(4, (boxW - nodes[ni].length * 15) / 2),
+                y: rowY + 6 + 20,
+                text: nodes[ni],
+                fontSize: 15,
+                fontFamily: 2,
+                strokeColor: "#1e1e1e",
+              });
+              if (ni < n - 1) {
+                sk.push({
+                  type: "arrow",
+                  x: nx + boxW + 5,
+                  y: rowY + 6 + boxH / 2,
+                  points: [[0, 0], [gap - 10, 0]],
+                  strokeColor: "#5f5e5a",
+                  strokeWidth: 2,
+                });
+              }
+            }
+            return { skeleton: sk, h: boxH + 12 };
           });
-          advance = 34;
-          box = { x: itemX, y: writeY, w: Math.min((item.text || "").length * 16 + 30, maxW), h: 28 };
+        } else if (item.kind === "table" && item.headers && item.rows) {
+          const cols = Math.max(2, Math.min(3, item.headers.length));
+          const rows = item.rows.slice(0, 4);
+          await placeFull(() => {
+            const cellW = Math.floor(CONTENT_W / cols);
+            const headH = 42;
+            const rowH = 38;
+            const sk: any[] = [];
+            for (let ci = 0; ci < cols; ci++) {
+              sk.push({
+                type: "rectangle",
+                x: mx + ci * cellW,
+                y: rowY,
+                width: cellW,
+                height: headH,
+                backgroundColor: color + "14",
+                strokeColor: "#d3d1c7",
+                strokeWidth: 1,
+                roughness: 0,
+              });
+              sk.push({
+                type: "text",
+                x: mx + ci * cellW + 10,
+                y: rowY + 11,
+                text: (item.headers?.[ci] || "").slice(0, 8),
+                fontSize: 15,
+                fontFamily: 2,
+                strokeColor: "#1e1e1e",
+              });
+            }
+            let ty = rowY + headH;
+            for (const row of rows) {
+              for (let ci = 0; ci < cols; ci++) {
+                sk.push({
+                  type: "rectangle",
+                  x: mx + ci * cellW,
+                  y: ty,
+                  width: cellW,
+                  height: rowH,
+                  backgroundColor: "transparent",
+                  strokeColor: "#e7e5dc",
+                  strokeWidth: 1,
+                  roughness: 0,
+                });
+                sk.push({
+                  type: "text",
+                  x: mx + ci * cellW + 10,
+                  y: ty + 10,
+                  text: (row?.[ci] || "").slice(0, 8),
+                  fontSize: 13,
+                  fontFamily: 1,
+                  strokeColor: "#1e1e1e",
+                });
+              }
+              ty += rowH;
+            }
+            return { skeleton: sk, h: headH + rows.length * rowH + 6 };
+          });
+        } else if (item.kind === "chart" && item.values && item.values.length >= 2) {
+          // 手绘趋势折线：坐标轴 + 折线 + 数据点 + 数值标注（讲增长/下降/波动）
+          await placeFull(() => {
+            const vals = item.values!.slice(0, 5).map((v) => Math.max(0, Number(v) || 0));
+            const cw = Math.min(CONTENT_W - 60, 480);
+            const chh = 118;
+            const maxV = Math.max(...vals) || 1;
+            const minV = Math.min(...vals, 0);
+            const baseY = rowY + chh;
+            const sk: any[] = [
+              { type: "line", x: mx, y: baseY, points: [[0, 0], [0, -chh]], strokeColor: "#8a8880", strokeWidth: 1.2 },
+              { type: "line", x: mx, y: baseY, points: [[0, 0], [cw + 12, 0]], strokeColor: "#8a8880", strokeWidth: 1.2 },
+            ];
+            const pts: number[][] = vals.map((v, i) => [
+              Math.round((cw / (vals.length - 1)) * i),
+              Math.round(-10 - ((v - minV) / (maxV - minV || 1)) * (chh - 26)),
+            ]);
+            sk.push({ type: "line", x: mx, y: baseY, points: pts, strokeColor: color, strokeWidth: 2.4, roughness: 1 });
+            for (let pi = 0; pi < pts.length; pi++) {
+              sk.push({
+                type: "ellipse",
+                x: mx + pts[pi][0] - 4,
+                y: baseY + pts[pi][1] - 4,
+                width: 8,
+                height: 8,
+                backgroundColor: color,
+                strokeColor: color,
+                strokeWidth: 1,
+              });
+              sk.push({
+                type: "text",
+                x: mx + pts[pi][0] - 8,
+                y: baseY + pts[pi][1] - 26,
+                text: String(vals[pi]),
+                fontSize: 12,
+                fontFamily: 2,
+                strokeColor: "#57534e",
+              });
+            }
+            return { skeleton: sk, h: chh + 14 };
+          });
+        } else if (item.kind === "vs" && (item.text || "").includes("|")) {
+          // 左右对比栏：两块半行卡 + 中央 vs 圆徽
+          const [l, r] = (item.text || "").split("|").map((s) => s.trim().slice(0, 10));
+          if (!l && !r) continue;
+          await placeFull(() => {
+            const halfW = Math.floor((CONTENT_W - 76) / 2);
+            const boxH = 56;
+            const sk: any[] = [
+              {
+                type: "rectangle",
+                x: mx,
+                y: rowY,
+                width: halfW,
+                height: boxH,
+                backgroundColor: "#84635810",
+                strokeColor: "#84635844",
+                strokeWidth: 1,
+                roughness: 0,
+                roundness: { type: 3 },
+              },
+              {
+                type: "text",
+                x: mx + (halfW - (l || "A").length * 17) / 2,
+                y: rowY + 16,
+                text: l || "A",
+                fontSize: 17,
+                fontFamily: 2,
+                strokeColor: "#846358",
+              },
+              {
+                type: "rectangle",
+                x: mx + halfW + 76,
+                y: rowY,
+                width: halfW,
+                height: boxH,
+                backgroundColor: color + "12",
+                strokeColor: color + "55",
+                strokeWidth: 1,
+                roughness: 0,
+                roundness: { type: 3 },
+              },
+              {
+                type: "text",
+                x: mx + halfW + 76 + (halfW - (r || "B").length * 17) / 2,
+                y: rowY + 16,
+                text: r || "B",
+                fontSize: 17,
+                fontFamily: 2,
+                strokeColor: "#1e1e1e",
+              },
+              {
+                type: "ellipse",
+                x: mx + halfW + 20,
+                y: rowY + 11,
+                width: 36,
+                height: 36,
+                backgroundColor: "#1e1e1e08",
+                strokeColor: "#a3a19a",
+                strokeWidth: 1,
+              },
+              {
+                type: "text",
+                x: mx + halfW + 26,
+                y: rowY + 21,
+                text: "vs",
+                fontSize: 13,
+                fontFamily: 2,
+                strokeColor: "#a3a19a",
+              },
+            ];
+            return { skeleton: sk, h: boxH + 8 };
+          });
         } else if (item.kind === "tree" && item.nodes && item.nodes.length >= 2) {
-          // 一层分支树：父概念在上，2-3 个子概念在下
-          const nodes = item.nodes.slice(0, 3).map((n) => (n || "").slice(0, 6));
-          const parentW = Math.max(72, nodes[0].length * 15 + 22);
-          const parentX = itemX + Math.floor((maxW - parentW) / 2);
-          skeleton.push({
-            type: "rectangle",
-            x: parentX,
-            y: writeY,
-            width: parentW,
-            height: 34,
-            backgroundColor: "#7c3aed14",
-            strokeColor: "#7c3aed",
-            strokeWidth: 1.2,
-            roughness: 0,
-            roundness: { type: 3 },
+          // 一层分支树：父概念在上，2-3 个子概念在下（讲分类/组成/派生）
+          const nodes = item.nodes.slice(0, 3).map((n) => (n || "").trim().slice(0, 7)).filter(Boolean);
+          if (nodes.length < 2) continue;
+          await placeFull(() => {
+            const parentW = Math.max(96, nodes[0].length * 17 + 28);
+            const parentX = mx + Math.floor((CONTENT_W - parentW) / 2);
+            const parentH = 40;
+            const childY = rowY + parentH + 26;
+            const n = nodes.length - 1;
+            const gap = 22;
+            const childW = Math.floor((CONTENT_W - (n - 1) * gap) / n);
+            const sk: any[] = [
+              {
+                type: "rectangle",
+                x: parentX,
+                y: rowY,
+                width: parentW,
+                height: parentH,
+                backgroundColor: color + "16",
+                strokeColor: color,
+                strokeWidth: 1.2,
+                roughness: 0,
+                roundness: { type: 3 },
+              },
+              {
+                type: "text",
+                x: parentX + Math.max(4, (parentW - nodes[0].length * 16) / 2),
+                y: rowY + 9,
+                text: nodes[0],
+                fontSize: 16,
+                fontFamily: 2,
+                strokeColor: "#1e1e1e",
+              },
+            ];
+            for (let ci = 1; ci < nodes.length; ci++) {
+              const cx = mx + (ci - 1) * (childW + gap);
+              sk.push({
+                type: "line",
+                x: parentX + parentW / 2,
+                y: rowY + parentH,
+                points: [[0, 0], [cx + childW / 2 - (parentX + parentW / 2), 26]],
+                strokeColor: "#b4b2a9",
+                strokeWidth: 1.2,
+                roughness: 1,
+              });
+              sk.push({
+                type: "rectangle",
+                x: cx,
+                y: childY,
+                width: childW,
+                height: 42,
+                backgroundColor: color + "09",
+                strokeColor: color + "77",
+                strokeWidth: 1,
+                roughness: 0,
+                roundness: { type: 3 },
+              });
+              sk.push({
+                type: "text",
+                x: cx + Math.max(3, (childW - nodes[ci].length * 15) / 2),
+                y: childY + 11,
+                text: nodes[ci],
+                fontSize: 15,
+                fontFamily: 2,
+                strokeColor: "#1e1e1e",
+              });
+            }
+            return { skeleton: sk, h: parentH + 26 + 42 + 6 };
           });
-          skeleton.push({ type: "text", x: parentX + Math.max(4, Math.floor((parentW - nodes[0].length * 15) / 2)), y: writeY + 7, text: nodes[0], fontSize: 14, fontFamily: 2, strokeColor: "#1e1e1e" });
-          const childY = writeY + 62;
-          const n = nodes.length - 1;
-          const gap = 16;
-          const childW = Math.floor((maxW - (n - 1) * gap) / n);
-          for (let ci = 1; ci < nodes.length; ci++) {
-            const cx = itemX + (ci - 1) * (childW + gap);
-            // 分支连线：父底 → 子顶
-            skeleton.push({
-              type: "line",
-              x: parentX + parentW / 2,
-              y: writeY + 34,
-              points: [[0, 0], [cx + childW / 2 - (parentX + parentW / 2), 28]],
-              strokeColor: "#b4b2a9",
-              strokeWidth: 1.2,
-              roughness: 1,
-            });
-            skeleton.push({
-              type: "rectangle",
-              x: cx,
-              y: childY,
-              width: childW,
-              height: 32,
-              backgroundColor: "#7c3aed08",
-              strokeColor: "#a78bfa",
-              strokeWidth: 1,
-              roughness: 0,
-              roundness: { type: 3 },
-            });
-            skeleton.push({ type: "text", x: cx + Math.max(3, Math.floor((childW - nodes[ci].length * 13) / 2)), y: childY + 7, text: nodes[ci], fontSize: 13, fontFamily: 2, strokeColor: "#1e1e1e" });
-          }
-          advance = 104;
-          box = { x: itemX, y: writeY, w: maxW, h: 96 };
         } else if (item.kind === "mark") {
           // 简笔标记：星标/感叹号/问号，画在上一条板书右上角（不占行）
           if (lastItemBox) {
-            const mx = lastItemBox.x + Math.min(lastItemBox.w, 420) + 8;
-            const my = lastItemBox.y - 4;
+            const b = lastItemBox;
+            const mxp = b.x + Math.min(b.w, CONTENT_W - 40) + 8;
+            const myp = b.y - 4;
             if (item.style === "alert") {
-              skeleton.push({ type: "line", x: mx, y: my - 22, points: [[0, 0], [0, 14]], strokeColor: "#dc2626", strokeWidth: 2.4, roughness: 1 });
-              skeleton.push({ type: "line", x: mx, y: my - 2, points: [[0, 0], [0, 2.5]], strokeColor: "#dc2626", strokeWidth: 2.8, roughness: 1 });
+              await append([
+                { type: "line", x: mxp, y: myp - 22, points: [[0, 0], [0, 14]], strokeColor: "#dc2626", strokeWidth: 2.4, roughness: 1 },
+                { type: "line", x: mxp, y: myp - 2, points: [[0, 0], [0, 2.5]], strokeColor: "#dc2626", strokeWidth: 2.8, roughness: 1 },
+              ]);
             } else if (item.style === "question") {
-              skeleton.push({ type: "text", x: mx, y: my - 30, text: "?", fontSize: 24, fontFamily: 2, strokeColor: "#7c3aed" });
+              await append([{ type: "text", x: mxp, y: myp - 30, text: "?", fontSize: 24, fontFamily: 2, strokeColor: "#7c3aed" }]);
             } else {
               // star：四芒星（两长两短交叉线）
-              skeleton.push({ type: "line", x: mx + 8, y: my - 26, points: [[-8, 8], [8, -8]], strokeColor: "#d97706", strokeWidth: 1.8, roughness: 1 });
-              skeleton.push({ type: "line", x: mx + 8, y: my - 26, points: [[-8, -8], [8, 8]], strokeColor: "#d97706", strokeWidth: 1.8, roughness: 1 });
-              skeleton.push({ type: "line", x: mx + 8, y: my - 26, points: [[-13, 0], [13, 0]], strokeColor: "#d97706", strokeWidth: 1.4, roughness: 1 });
-              skeleton.push({ type: "line", x: mx + 8, y: my - 26, points: [[0, -13], [0, 13]], strokeColor: "#d97706", strokeWidth: 1.4, roughness: 1 });
+              await append([
+                { type: "line", x: mxp + 8, y: myp - 26, points: [[-8, 8], [8, -8]], strokeColor: "#d97706", strokeWidth: 1.8, roughness: 1 },
+                { type: "line", x: mxp + 8, y: myp - 26, points: [[-8, -8], [8, 8]], strokeColor: "#d97706", strokeWidth: 1.8, roughness: 1 },
+                { type: "line", x: mxp + 8, y: myp - 26, points: [[-13, 0], [13, 0]], strokeColor: "#d97706", strokeWidth: 1.4, roughness: 1 },
+                { type: "line", x: mxp + 8, y: myp - 26, points: [[0, -13], [0, 13]], strokeColor: "#d97706", strokeWidth: 1.4, roughness: 1 },
+              ]);
             }
+            await delay(ITEM_DELAY_MS * 0.5);
           }
-          advance = 8;
         } else if (item.kind === "quote" && item.text) {
-          // 金句：手绘椭圆圈住一句话，字略大
-          const q = (item.text || "").slice(0, 16);
-          const qw = Math.min(maxW, q.length * 19 + 56);
-          skeleton.push({
-            type: "ellipse",
-            x: itemX,
-            y: writeY - 2,
-            width: qw,
-            height: 50,
-            backgroundColor: "#fbbf2416",
-            strokeColor: "#d97706",
-            strokeWidth: 1.6,
-            roughness: 1,
+          // 金句：手绘椭圆圈住一句话，字略大（片段收尾用）
+          const q = item.text.replace(/\s+/g, " ").trim().slice(0, 18);
+          if (!q) continue;
+          await placeFull(() => {
+            const qw = Math.min(CONTENT_W, q.length * 20 + 84);
+            return {
+              skeleton: [
+                {
+                  type: "ellipse",
+                  x: mx + Math.floor((CONTENT_W - qw) / 2),
+                  y: rowY - 2,
+                  width: qw,
+                  height: 60,
+                  backgroundColor: "#fbbf2416",
+                  strokeColor: "#d97706",
+                  strokeWidth: 1.6,
+                  roughness: 1,
+                },
+                {
+                  type: "text",
+                  x: mx + Math.floor((CONTENT_W - q.length * 20) / 2),
+                  y: rowY + 17,
+                  text: q,
+                  fontSize: 19,
+                  fontFamily: 1,
+                  strokeColor: "#92400e",
+                },
+              ],
+              h: 66,
+            };
           });
-          skeleton.push({
-            type: "text",
-            x: itemX + Math.floor((qw - q.length * 19) / 2),
-            y: writeY + 12,
-            text: q,
-            fontSize: 17,
-            fontFamily: 1,
-            strokeColor: "#92400e",
-          });
-          advance = 62;
-          box = { x: itemX, y: writeY, w: qw, h: 50 };
         }
 
-        if (skeleton.length > 0) {
-          await append(skeleton);
-          if (box) lastItemBox = box;
-          else if (item.kind === "circle" || item.kind === "underline" || item.kind === "burst" || item.kind === "mark") {
-            // 强调/标记动作不推进板书游标
-          } else {
-            lastItemBox = null;
-          }
-          writeY += advance;
-          await delay(ITEM_DELAY_MS);
-        }
+        await delay(ITEM_DELAY_MS);
       }
     },
 
@@ -729,13 +952,14 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
     removePencil,
 
     focusCurrent() {
-      const cam = {
-        x: boardOrigin.x - CAM_PAD_X,
-        y: boardOrigin.y - CAM_PAD_TOP,
-        w: BOARD_W + CAM_PAD_X * 2,
-        h: BOARD_H + CAM_PAD_TOP + CAM_PAD_BOTTOM,
-      };
-      void focusRegion(cam.x, cam.y, cam.w, cam.h, 0.9);
+      const bottom = Math.max(writingBottom() + 40, my + 220);
+      void focusRegion(
+        mx - CAM_PAD.x,
+        my - CAM_PAD.top,
+        MODULE_W + CAM_PAD.x * 2,
+        bottom - my + CAM_PAD.top + CAM_PAD.bottom,
+        0.9
+      );
     },
 
     setTurbo(on: boolean) {
@@ -744,35 +968,36 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
 
     snapshot() {
       return {
-        boardOrigin,
-        quadIndex,
-        qx,
-        qy,
-        writeY,
+        mx,
+        my,
+        rowY,
+        contentBottom,
+        moduleIndex,
+        moduleUsed,
+        pairPending,
         currentSection,
         colorIndex,
         sections: [...sections],
         lastItemBox,
-        firstBoardFocused,
-        pendingTitle,
+        backdropId,
       };
     },
 
     restore(s: Record<string, any>) {
       if (!s) return;
-      boardOrigin = s.boardOrigin || { x: START_X, y: START_Y };
-      quadIndex = s.quadIndex ?? 0;
-      qx = s.qx ?? START_X;
-      qy = s.qy ?? START_Y;
-      writeY = s.writeY ?? START_Y;
+      mx = typeof s.mx === "number" ? s.mx : START_X;
+      my = typeof s.my === "number" ? s.my : START_Y;
+      rowY = typeof s.rowY === "number" ? s.rowY : my + HEADER_H;
+      contentBottom = typeof s.contentBottom === "number" ? s.contentBottom : my + HEADER_H;
+      moduleIndex = typeof s.moduleIndex === "number" ? s.moduleIndex : 0;
+      moduleUsed = s.moduleUsed ?? true;
+      pairPending = s.pairPending || null;
       currentSection = s.currentSection ?? null;
-      colorIndex = s.colorIndex ?? 0;
+      colorIndex = typeof s.colorIndex === "number" ? s.colorIndex : 0;
       sections.length = 0;
       if (Array.isArray(s.sections)) sections.push(...s.sections);
       lastItemBox = s.lastItemBox || null;
-      firstBoardFocused = s.firstBoardFocused ?? false;
-      pendingTitle = s.pendingTitle ?? null;
-      quadUsed = s.quadUsed ?? true;
+      backdropId = typeof s.backdropId === "string" ? s.backdropId : null;
     },
   };
 }
