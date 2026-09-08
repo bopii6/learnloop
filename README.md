@@ -35,8 +35,7 @@ npm run dev
 | `LLM_MODEL` | 是 | 默认 `deepseek-chat` |
 | `TAVILY_API_KEY` | 否 | 填了搜索质量更好（国内需代理）；不填走博查/必应 |
 | `BOCHA_API_KEY` | 否 | 国内搜索 API，有免费额度：https://open.bochaai.com |
-| `BAIDU_ASR_API_KEY` / `BAIDU_ASR_SECRET_KEY` | 否 | 白板语音模式云端识别（Chrome 兜底不可用时） |
-| `DASHSCOPE_API_KEY` | 否 | 白板语音播报走阿里云百炼 qwen3-tts（0.8 元/万字符，送 1 万字符）：https://bailian.console.aliyun.com/?tab=model#/api-key ；不填用浏览器系统音色 |
+| `DASHSCOPE_API_KEY` | 否 | 白板语音播报（qwen3-tts）与语音识别（qwen3-asr，Chrome 兜底不可用时）共用，走阿里云百炼（0.8 元/万字符，送 1 万字符）：https://bailian.console.aliyun.com/?tab=model#/api-key ；不填播报用浏览器系统音色、识别用浏览器原生 |
 
 LLM 可换任何 OpenAI 兼容端点（GLM / 通义 / 中转站），改三个变量即可。
 语音播报选型调研与细节见 [docs/白板语音播报TTS选型与接入.md](docs/白板语音播报TTS选型与接入.md)。
