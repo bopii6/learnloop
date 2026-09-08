@@ -1,16 +1,16 @@
 "use client";
 
-// /course/[id] —— 课程详情独立路由：可刷新、可收藏、可分享找回。
-// 此前课程页只是首页内存态，登录态一丢/一刷新课程就"消失"（实测踩过的坑）。
-// 数据接口 /api/courses/[id] 本就是公开的，这里只是给它一个 URL 入口。
+// /course/[id] —— 课程详情独立路由（挂在外壳组里，带侧栏）。
+// 可刷新、可收藏、可分享找回；侧栏「打开课程」、集市、课程记录都跳到这里。
 import { use, useEffect, useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { CourseOutline } from "@/types";
 import { CourseOutlineView } from "@/components/CourseOutlineView";
 
 export default function CourseDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const [outline, setOutline] = useState<CourseOutline | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
   const id = use(params).id;
 
   useEffect(() => {
@@ -33,12 +33,15 @@ export default function CourseDetailPage({ params }: { params: Promise<{ id: str
 
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center px-6">
+      <div className="flex-1 flex items-center justify-center px-6">
         <div className="text-center">
           <div className="text-[15px] text-ink-soft mb-4">{error}</div>
-          <Link href="/" className="rounded-full bg-accent px-5 py-2 text-[13px] text-white font-medium hover:opacity-90">
+          <button
+            onClick={() => router.push("/")}
+            className="rounded-full bg-accent px-5 py-2 text-[13px] text-white font-medium hover:opacity-90"
+          >
             回首页
-          </Link>
+          </button>
         </div>
       </div>
     );
@@ -46,19 +49,14 @@ export default function CourseDetailPage({ params }: { params: Promise<{ id: str
 
   if (!outline) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="flex-1 flex items-center justify-center">
         <span className="stage-spinner inline-block" style={{ width: 18, height: 18 }} />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen">
-      <div className="max-w-6xl mx-auto px-6 pt-5">
-        <Link href="/" className="text-[12.5px] text-ink-faint hover:text-accent transition-colors">
-          ← 返回 LearnLoop
-        </Link>
-      </div>
+    <div className="flex-1 overflow-y-auto">
       <CourseOutlineView outline={outline} courseId={id} />
     </div>
   );

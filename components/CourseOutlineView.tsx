@@ -1,8 +1,8 @@
 "use client";
 
 import type { CourseOutline } from "@/types";
+import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
-import { CourseSession } from "./CourseSession";
 import { uploadTextbookPdf } from "@/lib/textbook-client";
 
 interface CourseOutlineViewProps {
@@ -11,11 +11,7 @@ interface CourseOutlineViewProps {
 }
 
 export function CourseOutlineView({ outline, courseId }: CourseOutlineViewProps) {
-  const [selectedLecture, setSelectedLecture] = useState<{
-    unitId: string;
-    lectureId: string;
-    title: string;
-  } | null>(null);
+  const router = useRouter();
   // 上架到课程集市：好课标个价放进集市，别人点开就能学
   const [marketOpen, setMarketOpen] = useState(false);
   const [marketPrice, setMarketPrice] = useState("");
@@ -72,22 +68,9 @@ export function CourseOutlineView({ outline, courseId }: CourseOutlineViewProps)
     }
   };
 
-  if (selectedLecture) {
-    return (
-      <CourseSession
-        courseId={courseId}
-        outline={outline}
-        unitId={selectedLecture.unitId}
-        lectureId={selectedLecture.lectureId}
-        lectureTitle={selectedLecture.title}
-        onExit={() => setSelectedLecture(null)}
-      />
-    );
-  }
-
-  // 进入课节（原版同款：点"学习"开白板课堂）
-  const openLecture = (unitId: string, lec: { id: string; title: string }) => {
-    setSelectedLecture({ unitId, lectureId: lec.id, title: lec.title });
+  // 进入课节（原版同款：点"学习"开白板课堂）—— 独立路由，可刷新、可后退
+  const openLecture = (lec: { id: string; title: string }) => {
+    router.push(`/learn/${courseId}/${lec.id}`);
   };
 
   const scrollToUnit = (unitId: string) => {
@@ -133,7 +116,7 @@ export function CourseOutlineView({ outline, courseId }: CourseOutlineViewProps)
               </button>
             ) : marketState === "done" ? (
               <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-[12px] text-emerald-700">
-                ✓ 已上架，去侧栏「课程集市」看看
+                ✓ 已上架并公开，所有访客都能在侧栏「课程集市」看到
               </div>
             ) : (
               <div className="rounded-xl border border-[#e7e5dc] bg-[#faf9f6] p-3 space-y-2">
@@ -288,7 +271,7 @@ export function CourseOutlineView({ outline, courseId }: CourseOutlineViewProps)
                   </span>
                   {lec.content_type === "whiteboard" ? (
                     <button
-                      onClick={() => openLecture(unit.id, lec)}
+                      onClick={() => openLecture(lec)}
                       className="shrink-0 rounded-full bg-accent px-4 py-1.5 text-[12px] text-white font-medium hover:opacity-90 transition-opacity flex items-center gap-1"
                     >
                       <span className="text-[10px]">▶</span> 学习
