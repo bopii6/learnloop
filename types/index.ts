@@ -219,6 +219,7 @@ export interface WhiteboardMessage {
 
 export type WhiteboardEvent =
   | { type: "stage"; name: string; label: string; status: "start" | "end"; detail?: string }
+  | { type: "doc_pages"; docTitle: string; pages: { page: number; text: string }[] } // 文档建课：本节课引用的原文页，白板页"对照原文"面板用
   | {
       type: "beats";
       segmentId: string;

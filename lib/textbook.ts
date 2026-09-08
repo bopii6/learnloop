@@ -135,6 +135,13 @@ export function buildTextbookExcerpt(tb: TextbookLike, budgetChars = 7000): stri
     const c = chunks[Math.min(chunks.length - 1, Math.floor(i * step))];
     lines.push(`${c.label}：${c.text.slice(0, Math.floor(budgetChars / take))}`);
   }
+  // 薄文档规模收敛：2 句话的笔记不该被撑成 6 单元 24 课节的"系统课"（实测踩过的坑）
+  const totalChars = tb.pages.reduce((s, p) => s + p.text.trim().length, 0);
+  if (totalChars < 800) {
+    lines.push(
+      `（注意：这份文档全文仅约 ${totalChars} 字，是笔记级体量。课程规模必须与内容量匹配：3-5 个单元、每单元 3-4 课节，宁少勿凑；超出原文的内容只能来自联网补充资料，课节设计要能区分"原文精讲"和"补充资料"。）`
+    );
+  }
   return lines.join("\n\n").slice(0, budgetChars + 1200);
 }
 

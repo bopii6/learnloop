@@ -133,6 +133,9 @@ export function CourseSession({
   const [chatStreaming, setChatStreaming] = useState(false);
   const [outlineOpen, setOutlineOpen] = useState(false); // 左侧大纲默认收起，把空间留给白板
   const [chatOpen, setChatOpen] = useState(true);
+  // 文档建课：讲师讲到的原文页（teach 流的 doc_pages 事件），"对照原文"面板展示
+  const [docPages, setDocPages] = useState<{ docTitle: string; pages: { page: number; text: string }[] } | null>(null);
+  const [docOpen, setDocOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rail, setRail] = useState<{ id: string; title: string; status: RailStatus }[]>([]);
   const [points, setPoints] = useState<string[]>([]);
@@ -627,6 +630,9 @@ export function CourseSession({
         if (lectureGenRef.current !== gen) return; // 旧流（已被 abort/替换）的事件全部丢弃
         if (e.type === "beats") {
           enqueueBeats(e);
+        } else if (e.type === "doc_pages") {
+          // 本节课引用的文档原文页：右上角"对照原文"入口点亮
+          setDocPages({ docTitle: e.docTitle, pages: e.pages });
         } else if (e.type === "lecture_quiz") {
           // 课后练习已出好：讲完自动可做，也可在大纲里提前打开
           setLectureQuiz(e.quiz);
@@ -1167,6 +1173,18 @@ export function CourseSession({
           >
             ⛶
           </button>
+          {/* 对照原文（文档建课模式）：讲师讲到的原文页 */}
+          {docPages && (
+            <button
+              onClick={() => setDocOpen((v) => !v)}
+              className={`rounded-lg border px-3 py-1.5 text-[12px] transition-colors ${
+                docOpen ? "border-accent text-accent" : "border-[#d3d1c7] text-ink-soft hover:border-accent hover:text-accent"
+              }`}
+              title="查看讲师本节课引用的上传文档原文"
+            >
+              📄 对照原文
+            </button>
+          )}
           {/* 传播产物：海报 / 竖屏速览 / 回放链接 */}
           <button
             onClick={() => void generatePoster()}
@@ -1445,6 +1463,31 @@ export function CourseSession({
                 ))}
           </div>
         </div>
+
+        {/* 对照原文面板（文档建课模式）：讲师本节课引用的上传文档页 */}
+        {docOpen && docPages && (
+          <div className="w-80 border-l border-[#e7e5dc] bg-[#faf9f6] flex flex-col shrink-0">
+            <div className="p-3 border-b border-[#e7e5dc] flex items-center justify-between">
+              <span className="text-[13px] font-medium">对照原文</span>
+              <button onClick={() => setDocOpen(false)} className="text-ink-soft hover:text-ink text-[14px]">
+                ×
+              </button>
+            </div>
+            <div className="px-3 pt-2 pb-1 text-[11px] text-ink-faint truncate">
+              📄 {docPages.docTitle} · 讲师本节引用 {docPages.pages.length} 页
+            </div>
+            <div className="flex-1 overflow-y-auto p-3 space-y-3">
+              {docPages.pages.map((p) => (
+                <div key={p.page} className="rounded-xl border border-[#e7e5dc] bg-white p-3">
+                  <div className="text-[11px] text-accent font-medium mb-1.5">第 {p.page} 页</div>
+                  <div className="text-[12px] text-ink-soft leading-relaxed whitespace-pre-wrap max-h-72 overflow-y-auto">
+                    {p.text}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* 右侧聊天 */}
         {chatOpen && (

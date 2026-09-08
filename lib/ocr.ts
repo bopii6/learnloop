@@ -41,8 +41,13 @@ export async function ocrPdf(
 
   await fs.mkdir(OCR_CACHE_DIR, { recursive: true });
 
+  // 变量形式的动态导入：打包器（esbuild）无法静态解析，原生模块不进部署产物。
+  // 这两个包只支持本地 Node（Workers 上 OCR 分支已被路由层守卫拦下，不会执行到这里）。
+  const tessModule = "tesseract.js";
+  const canvasModule = "@napi-rs/canvas";
+
   // tesseract 的 worker 单线程，起 N 个并行吃页
-  const { createWorker } = await import("tesseract.js");
+  const { createWorker } = await import(/* webpackIgnore: true */ tessModule);
   const workers = await Promise.all(
     Array.from({ length: concurrency }, () => createWorker(lang, 1, { cachePath: OCR_CACHE_DIR }))
   );
@@ -56,7 +61,7 @@ export async function ocrPdf(
       if (i > total) return;
       try {
         const png = await renderPageAsImage(pdf, i, {
-          canvasImport: async () => await import("@napi-rs/canvas"),
+          canvasImport: async () => await import(/* webpackIgnore: true */ canvasModule),
           scale,
         });
         const { data } = await workers[workerIdx].recognize(Buffer.from(png));

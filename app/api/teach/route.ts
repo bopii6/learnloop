@@ -86,6 +86,12 @@ export async function POST(req: NextRequest) {
               .map((p) => `【教材《${state.textbook!.title}》第 ${p.page} 页】\n${p.text.slice(0, 1200)}`)
               .join("\n\n");
             grounded = true;
+            // 把本节课引用的原文页推给前端：白板页"对照原文"面板展示，学员看得到讲师所讲内容的出处
+            await send({
+              type: "doc_pages",
+              docTitle: state.docName || `${state.textbook.title}.pdf`,
+              pages: relPages.map((p) => ({ page: p.page, text: p.text.slice(0, 1600) })),
+            });
           }
         }
         if (!grounded && state.sources?.length && state.pageContents) {
