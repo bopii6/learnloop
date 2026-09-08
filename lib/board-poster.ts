@@ -432,7 +432,7 @@ export async function exportScriptPoster(opts: {
       ctx.fillStyle = c.color;
       ctx.fillText("·", tx + 2, cy);
       ctx.fillStyle = "#2b2a27";
-      const shown = p.length > 22 ? p.slice(0, 22) : p;
+      const shown = p.length > 22 ? p.slice(0, 22) + "…" : p;
       ctx.fillText(shown, tx + 20, cy);
       cy += 38;
     }

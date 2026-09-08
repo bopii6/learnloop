@@ -132,7 +132,6 @@ export function CourseSession({
   const [input, setInput] = useState("");
   const [draft, setDraft] = useState("");
   const [chatStreaming, setChatStreaming] = useState(false);
-  const [outlineOpen, setOutlineOpen] = useState(false); // 左侧大纲默认收起，把空间留给白板
   const [chatOpen, setChatOpen] = useState(true);
   // 文档建课：讲师讲到的原文页（teach 流的 doc_pages 事件），"对照原文"面板展示
   const [docPages, setDocPages] = useState<{ docTitle: string; pages: { page: number; text: string }[] } | null>(null);
@@ -655,7 +654,7 @@ export function CourseSession({
           // 本节课引用的文档原文页：右上角"对照原文"入口点亮
           setDocPages({ docTitle: e.docTitle, pages: e.pages });
         } else if (e.type === "lecture_quiz") {
-          // 课后练习已出好：讲完自动可做，也可在大纲里提前打开
+          // 课后练习已出好：讲完后从字幕条入口作答
           setLectureQuiz(e.quiz);
         } else if (e.type === "error") {
           setError(e.message);
@@ -811,6 +810,9 @@ export function CourseSession({
     const saved = savedStateRef.current;
     if (saved && (saved.cursor || 0) > 0 && (saved.script?.length || 0) > 0) {
       restoredRef.current = true;
+      // 恢复模式必须挡住 startLecture：pump 会同步消费 restoredRef，等 introCard 卸载触发
+      // effect 时三个守卫全空，开讲流会整份再排一遍队列（表现为"讲过的内容重播"）
+      startedRef.current = true;
       resumeSegmentRef.current = typeof saved.writer?.lastSegmentKey === "string" ? saved.writer.lastSegmentKey : null;
       try {
         excalidrawApiRef.current?.updateScene({ elements: saved.elements || [] });
@@ -1216,12 +1218,12 @@ export function CourseSession({
               📄 对照原文
             </button>
           )}
-          {/* 传播产物：海报 / 竖屏速览 / 回放链接 */}
+          {/* 传播产物：海报 / 竖屏速览 / 回放链接。海报 = 全节讲义，讲完才生成，保证与白板终态一致 */}
           <button
             onClick={() => void generatePoster()}
-            disabled={posterBusy}
-            className="rounded-lg border border-[#d3d1c7] px-3 py-1.5 text-[12px] text-ink-soft hover:border-accent hover:text-accent transition-colors disabled:opacity-50"
-            title="把白板终态生成竖版知识海报"
+            disabled={posterBusy || playback !== "done"}
+            className="rounded-lg border border-[#d3d1c7] px-3 py-1.5 text-[12px] text-ink-soft hover:border-accent hover:text-accent transition-colors disabled:opacity-50 disabled:hover:border-[#d3d1c7] disabled:hover:text-ink-soft"
+            title={playback === "done" ? "把整节讲义生成竖版知识海报" : "讲完本节后可生成（内容为整节讲义，和板书终态一致）"}
           >
             {posterBusy ? "生成中…" : "🖼 海报"}
           </button>
@@ -1267,76 +1269,6 @@ export function CourseSession({
                   知道了
                 </button>
               </div>
-            </div>
-          </div>
-        )}
-
-        {/* 左侧大纲（Hyperknow 风格：面包屑 + 知识点 + 练习） */}
-        {outlineOpen && (
-          <div className="w-64 border-r border-[#e7e5dc] bg-[#faf9f6] flex flex-col shrink-0">
-            {/* 面包屑 */}
-            <div className="p-3 border-b border-[#e7e5dc]">
-              <div className="text-[11px] text-ink-faint truncate">{unit?.title}</div>
-              <div className="text-[13px] font-medium mt-0.5 leading-snug">{lectureTitle}</div>
-            </div>
-
-            {/* 知识点列表 */}
-            <div className="flex-1 overflow-y-auto p-3">
-              <div className="text-[11px] text-ink-faint uppercase tracking-wider mb-2">学习</div>
-              {(() => {
-                const lec = unit?.lectures.find((l) => l.id === lectureId);
-                return (
-                  <div className="space-y-2">
-                    {/* 当前课节的知识点 */}
-                    {lec?.depth_tags.map((tag) => (
-                      <div key={tag} className="rounded-lg bg-accent/5 border border-accent/20 px-3 py-2">
-                        <div className="text-[12px] font-medium text-accent">{lec.title}</div>
-                        <div className="text-[10px] text-ink-soft mt-0.5">{tag}</div>
-                      </div>
-                    ))}
-                    <div className="rounded-lg px-3 py-2 text-[12px] text-ink-soft leading-relaxed">
-                      {lec?.summary}
-                    </div>
-                    <div className="text-[10px] text-ink-faint px-3">
-                      时长 {lec?.duration_min} 分钟 · {lec?.content_type === "whiteboard" ? "白板讲解" : lec?.content_type === "project" ? "项目实战" : "测验"}
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* 同单元其他课节 */}
-              <div className="text-[11px] text-ink-faint uppercase tracking-wider mt-6 mb-2">本单元其他课节</div>
-              <div className="space-y-1">
-                {unit?.lectures.filter((l) => l.id !== lectureId).map((lec) => (
-                  <div
-                    key={lec.id}
-                    className="w-full text-left rounded-lg px-3 py-2 text-[12px] text-ink hover:bg-[#f1efe8] transition-colors"
-                  >
-                    <div className="font-medium">{lec.title}</div>
-                    <div className="text-[10px] text-ink-soft mt-0.5">{lec.duration_min}min · {lec.depth_tags.join("/")}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* 练习入口：课后练习在脚本生成时一并出好，讲完即可作答 */}
-            <div className="p-3 border-t border-[#e7e5dc]">
-              {lectureQuiz && lectureQuiz.length > 0 ? (
-                <button
-                  onClick={() => setQuizOpen(true)}
-                  className="w-full rounded-lg bg-accent text-white text-[12px] font-medium py-2 hover:opacity-90 transition-opacity"
-                >
-                  📝 课后练习（{lectureQuiz.length} 题）
-                </button>
-              ) : (
-                <button
-                  className="w-full rounded-lg bg-accent text-white text-[12px] font-medium py-2 opacity-50"
-                  disabled
-                  title="课后练习会在讲师备课时一并出好"
-                >
-                  课后练习（备课中）
-                </button>
-              )}
             </div>
           </div>
         )}
@@ -1602,17 +1534,7 @@ export function CourseSession({
       </div>
 
       {/* 底部控制栏 */}
-      <div className="h-12 border-t border-[#e7e5dc] flex items-center justify-between px-4 shrink-0">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setOutlineOpen(!outlineOpen)}
-            className={`rounded-lg px-3 py-1.5 text-[12px] border ${
-              outlineOpen ? "border-accent text-accent" : "border-[#d3d1c7] text-ink-soft"
-            }`}
-          >
-            大纲
-          </button>
-        </div>
+      <div className="h-12 border-t border-[#e7e5dc] flex items-center justify-end px-4 shrink-0">
         <div className="flex items-center gap-2">
           {!chatOpen && (
             <button
