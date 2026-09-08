@@ -103,6 +103,35 @@ async function fallbackBeats(ctx: LectureContext, segmentTitle: string, segmentF
   return text ? [{ say: text.replace(/\s+/g, " ").trim() }] : [];
 }
 
+function clampSay(s: string): string {
+  if (s.length <= 120) return s;
+  const cut = s.slice(0, 110);
+  const m = Math.max(cut.lastIndexOf("。"), cut.lastIndexOf("！"), cut.lastIndexOf("？"), cut.lastIndexOf("；"));
+  return m > 40 ? cut.slice(0, m + 1) : cut;
+}
+
+// 课时兜底天花板（目标 10-13 分钟，绝不超 15）：模型普遍超写字数（实测均值 ~470 字/段，
+// 预算 260-330），光靠 prompt 管不住。这里是保险丝而非目标——正常生成不动它；只有整段
+// 严重超标（>450 字）才砍：保留首尾 beat（钩子与收束/金句），中段按序保留到预算用尽——
+// 被砍 beat 的板书随之消失，双列板式下模块依然成立。450×5-6 段 ≈ 10.5 分钟语音 ≈ 最坏 13 分钟。
+const SAY_BUDGET = 450;
+function enforceSayBudget(beats: TeachBeat[]): TeachBeat[] {
+  if (beats.length <= 2) return beats;
+  const total = beats.reduce((s, b) => s + b.say.length, 0);
+  if (total <= SAY_BUDGET) return beats;
+  const head = beats[0];
+  const tail = beats[beats.length - 1];
+  let remain = SAY_BUDGET - head.say.length - tail.say.length;
+  const mid: TeachBeat[] = [];
+  for (const b of beats.slice(1, -1)) {
+    if (remain - b.say.length >= -40) {
+      mid.push(b);
+      remain -= b.say.length;
+    }
+  }
+  return [head, ...mid, tail];
+}
+
 function normalizeBeats(raw: unknown): TeachBeat[] {
   if (!Array.isArray(raw)) return [];
   const beats: TeachBeat[] = [];
@@ -130,7 +159,7 @@ function normalizeBeats(raw: unknown): TeachBeat[] {
           }))
       : [];
     beats.push({
-      say: beat.say.trim(),
+      say: clampSay(beat.say.trim()),
       section: clamp(beat.section, 6),
       items,
     });
@@ -145,7 +174,7 @@ function normalizeBeats(raw: unknown): TeachBeat[] {
       merged.push(b);
     }
   }
-  return merged;
+  return enforceSayBudget(merged);
 }
 
 export async function runStartTeaching(opts: {
