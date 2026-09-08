@@ -1,0 +1,50 @@
+{
+  "id": "ml-systematic",
+  "query": "我想系统学习机器学习",
+  "title": "机器学习核心路径：从 Python 基础到算法实习面试",
+  "total": 22,
+  "maxScore": 26,
+  "machine": 5,
+  "machineDetail": {
+    "blueprintFallback": false,
+    "structure": 1,
+    "titleSpecific": 1,
+    "noBoilerTitles": 1,
+    "detailFill": 1,
+    "noBoilerSummaries": 1,
+    "machine": 5,
+    "avgTitleLen": 20.2,
+    "titleHits": 0,
+    "summaryHits": 0,
+    "defaultSummaries": 0
+  },
+  "judge": 17,
+  "judgeDetail": {
+    "scores": {
+      "specificity": 4,
+      "structure_logic": 5,
+      "audience_fit": 4,
+      "overall": 4
+    },
+    "issues": [
+      "部分课节标题仍偏泛化，如'机器学习任务地图'、'核心术语拆解'，未直接点出具体算法或场景，可进一步细化到如'用鸢尾花数据集区分监督/无监督任务'等。",
+      "第5单元'支持向量机与无监督学习'将SVM与聚类、降维并列，但SVM属于监督学习，与无监督学习混排可能造成逻辑跳跃，建议拆分为两个独立单元或调整顺序。",
+      "第7单元'神经网络与深度学习入门'仅用5节课覆盖从感知机到CNN，对目标算法实习的大三学生可能深度不足，建议增加训练技巧或模型调优的实战细节。",
+      "整体结构递进合理，但第8单元'实习冲刺'中的'简历项目包装'与'面试策略'偏软技能，与前面技术内容衔接稍显突兀，可考虑穿插在项目实战中而非独立成节。"
+    ]
+  },
+  "usage": {
+    "calls": 15,
+    "promptTokens": 15870,
+    "completionTokens": 5737
+  },
+  "costYuan": 0.078,
+  "durationMs": 63379,
+  "phaseTiming": {
+    "search": 14223,
+    "clarify": 8132,
+    "blueprint": 17148,
+    "outline": 21277
+  },
+  "error": null
+}

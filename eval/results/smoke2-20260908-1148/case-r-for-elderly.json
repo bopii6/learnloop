@@ -1,0 +1,50 @@
+{
+  "id": "r-for-elderly",
+  "query": "教我用R语言画统计图",
+  "title": "R语言统计绘图入门：从零基础到完成调研图表",
+  "total": 18,
+  "maxScore": 26,
+  "machine": 4,
+  "machineDetail": {
+    "blueprintFallback": false,
+    "structure": 1,
+    "titleSpecific": 1,
+    "noBoilerTitles": 1,
+    "detailFill": 1,
+    "noBoilerSummaries": 0,
+    "machine": 4,
+    "avgTitleLen": 20.8,
+    "titleHits": 0,
+    "summaryHits": 1,
+    "defaultSummaries": 0
+  },
+  "judge": 14,
+  "judgeDetail": {
+    "scores": {
+      "specificity": 4,
+      "structure_logic": 4,
+      "audience_fit": 3,
+      "overall": 3
+    },
+    "issues": [
+      "部分课节标题仍偏抽象，如'R语言初体验：在控制台输入命令与简单计算'，对70岁老人不够直观，建议改为'在控制台输入第一个命令：计算3+5'等更具体可操作的目标。",
+      "单元内课节数量不均衡，综合实战单元有5节课，而其他单元多为4节，可能造成学习者疲劳，建议拆分或精简。",
+      "受众适配方面，虽然整体节奏较慢，但部分内容（如'图层叠加与映射概念'）对零基础老人仍可能过于抽象，建议增加更多生活化类比和重复练习。",
+      "缺少对学习者可能遇到的技术障碍（如文件路径、中文乱码）的预防性说明，建议在导入数据单元增加专门课节。"
+    ]
+  },
+  "usage": {
+    "calls": 14,
+    "promptTokens": 14731,
+    "completionTokens": 4134
+  },
+  "costYuan": 0.063,
+  "durationMs": 38834,
+  "phaseTiming": {
+    "search": 2352,
+    "clarify": 7836,
+    "blueprint": 12817,
+    "outline": 12851
+  },
+  "error": null
+}

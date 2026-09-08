@@ -1,0 +1,49 @@
+{
+  "id": "cooking-zero",
+  "query": "零基础学做饭",
+  "title": "零基础家常菜实战：从一口炒锅到五道拿手菜",
+  "total": 24,
+  "maxScore": 26,
+  "machine": 5,
+  "machineDetail": {
+    "blueprintFallback": false,
+    "structure": 1,
+    "titleSpecific": 1,
+    "noBoilerTitles": 1,
+    "detailFill": 1,
+    "noBoilerSummaries": 1,
+    "machine": 5,
+    "avgTitleLen": 14.8,
+    "titleHits": 0,
+    "summaryHits": 0,
+    "defaultSummaries": 0
+  },
+  "judge": 19,
+  "judgeDetail": {
+    "scores": {
+      "specificity": 5,
+      "structure_logic": 5,
+      "audience_fit": 4,
+      "overall": 5
+    },
+    "issues": [
+      "第2单元'火候与油温'中'炒菜顺序'一课与第1单元'基础食材处理'中的'备料流程'有部分重叠，可考虑合并或明确边界，避免重复。",
+      "第5单元'红烧肉'对完全不会做饭的独居上班族可能难度偏高（炒糖色易失败），建议在课程中增加'失败补救'的详细说明或提供替代方案（如老抽上色）。",
+      "第8单元'综合实战'中'制定一周练习计划'一课对上班族的时间安排考虑不足，可补充'工作日快手版'与'周末精进版'的差异化建议。"
+    ]
+  },
+  "usage": {
+    "calls": 15,
+    "promptTokens": 13334,
+    "completionTokens": 4617
+  },
+  "costYuan": 0.064,
+  "durationMs": 41719,
+  "phaseTiming": {
+    "search": 1552,
+    "clarify": 7429,
+    "blueprint": 13344,
+    "outline": 17200
+  },
+  "error": null
+}
