@@ -2,7 +2,7 @@
 
 import type { CourseOutline } from "@/types";
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { uploadTextbookPdf } from "@/lib/textbook-client";
 
 interface CourseOutlineViewProps {
@@ -21,6 +21,44 @@ export function CourseOutlineView({ outline, courseId }: CourseOutlineViewProps)
   const [materialName, setMaterialName] = useState<string | null>(null);
   const [materialState, setMaterialState] = useState<"idle" | "uploading" | "done" | "error">("idle");
   const materialRef = useRef<HTMLInputElement | null>(null);
+  // 结课进度：本学员的测验通过清单 + 结课作品是否已交付（徽章来自真实记录，不是装饰）
+  const [quizPassed, setQuizPassed] = useState<Map<string, boolean>>(new Map());
+  const [capstonePassed, setCapstonePassed] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    fetch(`/api/quiz?courseId=${encodeURIComponent(courseId)}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (!alive || !Array.isArray(d?.records)) return;
+        const map = new Map<string, boolean>();
+        for (const r of d.records) map.set(r.lectureId, Boolean(r.passed));
+        setQuizPassed(map);
+      })
+      .catch(() => {});
+    fetch(`/api/capstone?courseId=${encodeURIComponent(courseId)}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (alive) setCapstonePassed(Boolean(d?.record?.passed));
+      })
+      .catch(() => {});
+    const onCoursesChanged = () => {
+      fetch(`/api/quiz?courseId=${encodeURIComponent(courseId)}`)
+        .then((r) => r.json())
+        .then((d) => {
+          if (!alive || !Array.isArray(d?.records)) return;
+          const map = new Map<string, boolean>();
+          for (const r of d.records) map.set(r.lectureId, Boolean(r.passed));
+          setQuizPassed(map);
+        })
+        .catch(() => {});
+    };
+    window.addEventListener("ll:courses-changed", onCoursesChanged);
+    return () => {
+      alive = false;
+      window.removeEventListener("ll:courses-changed", onCoursesChanged);
+    };
+  }, [courseId]);
 
   const uploadMaterial = async (file: File) => {
     setMaterialState("uploading");
@@ -49,6 +87,10 @@ export function CourseOutlineView({ outline, courseId }: CourseOutlineViewProps)
     0
   );
   const totalHours = totalMin > 0 ? (totalMin / 60).toFixed(1).replace(/\.0$/, "") : null;
+  // 课节的结课状态（徽章跟学员的真实记录走）
+  const projectLecture = outline.units
+    .flatMap((u) => u.lectures)
+    .find((l) => l.content_type === "project");
 
   const publishToMarket = async () => {
     setMarketState("saving");
@@ -101,6 +143,7 @@ export function CourseOutlineView({ outline, courseId }: CourseOutlineViewProps)
                 ⏱ 总时长约 {totalHours} 小时
               </div>
             )}
+            <div className="mt-1.5">内容由 AI 生成，可能存在错误，请以权威来源为准</div>
           </div>
           {/* 上架到课程集市 */}
           <div className="mt-3">
@@ -176,6 +219,49 @@ export function CourseOutlineView({ outline, courseId }: CourseOutlineViewProps)
 
       {/* 右栏：追加材料入口 + 单元 → 课节列表（原版的单元卡片流） */}
       <main className="flex-1 min-w-0 space-y-5">
+        {/* 结课作品横幅：这门课的终点承诺——学完你将亲手做出的东西 */}
+        {outline.capstone?.name && (
+          <div className="rounded-2xl border border-accent/30 bg-accent/5 px-5 py-4 fade-up">
+            <div className="flex items-start gap-4">
+              <div className="flex-1 min-w-0">
+                <div className="text-[11.5px] text-accent font-semibold tracking-wide mb-1">
+                  🎯 结课作品 · 学完你将亲手做出
+                </div>
+                <div className="text-[15.5px] font-semibold text-ink">{outline.capstone.name}</div>
+                {outline.capstone.description && (
+                  <div className="text-[12.5px] text-ink-soft mt-1 leading-relaxed">
+                    {outline.capstone.description}
+                  </div>
+                )}
+                {outline.capstone.criteria.length > 0 && (
+                  <div className="mt-2 text-[12px] text-ink-soft">
+                    <span className="font-medium text-ink">做成标准（对照检查）：</span>
+                    <ul className="mt-1 space-y-0.5">
+                      {outline.capstone.criteria.map((c, i) => (
+                        <li key={i} className="flex gap-1.5 leading-relaxed">
+                          <span className="text-accent shrink-0">✓</span>
+                          <span>{c}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+              {projectLecture && (
+                <button
+                  onClick={() => openLecture(projectLecture)}
+                  className={`shrink-0 self-center rounded-full px-4 py-2 text-[12px] font-medium transition-opacity flex items-center gap-1.5 ${
+                    capstonePassed
+                      ? "border border-accent/40 bg-white text-accent hover:bg-accent/5"
+                      : "bg-accent text-white hover:opacity-90"
+                  }`}
+                >
+                  {capstonePassed ? "🏆 已结课 · 再看看" : "进入结课工坊 →"}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
         {/* 上传材料，扩展这门课程（原版同款） */}
         <div className="rounded-2xl border border-[#e7e5dc] bg-white px-5 py-4 flex items-center gap-4">
           <div className="flex -space-x-2 shrink-0">
@@ -277,19 +363,29 @@ export function CourseOutlineView({ outline, courseId }: CourseOutlineViewProps)
                       <span className="text-[10px]">▶</span> 学习
                     </button>
                   ) : lec.content_type === "quiz" ? (
-                    <span
-                      title="测验环节：随堂小练已内嵌在白板课堂里，本条为课后练习入口（即将开放）"
-                      className="shrink-0 rounded-full border border-[#d3d1c7] px-4 py-1.5 text-[12px] text-ink-faint cursor-not-allowed"
+                    <button
+                      onClick={() => openLecture(lec)}
+                      title="单元测验：5 道场景题检验这个单元是否真的掌握，60% 过关，重考免费"
+                      className={`shrink-0 rounded-full px-4 py-1.5 text-[12px] font-medium transition-opacity flex items-center gap-1 ${
+                        quizPassed.get(lec.id)
+                          ? "border border-accent/40 bg-white text-accent"
+                          : "bg-accent text-white hover:opacity-90"
+                      }`}
                     >
-                      📝 课后练习
-                    </span>
+                      {quizPassed.get(lec.id) ? "✓ 已通过" : "📝 单元测验"}
+                    </button>
                   ) : (
-                    <span
-                      title="项目实践环节（即将开放），不影响本课程主线学习"
-                      className="shrink-0 rounded-full border border-[#d3d1c7] px-4 py-1.5 text-[12px] text-ink-faint cursor-not-allowed"
+                    <button
+                      onClick={() => openLecture(lec)}
+                      title="结课作品工坊：领任务书 → 动手做 → 导师对照做成标准验收，通过即结课"
+                      className={`shrink-0 rounded-full px-4 py-1.5 text-[12px] font-medium transition-opacity flex items-center gap-1 ${
+                        capstonePassed
+                          ? "border border-accent/40 bg-white text-accent"
+                          : "bg-accent text-white hover:opacity-90"
+                      }`}
                     >
-                      🧩 项目实践
-                    </span>
+                      {capstonePassed ? "🏆 已结课" : "🏆 结课作品"}
+                    </button>
                   )}
                 </div>
               ))}

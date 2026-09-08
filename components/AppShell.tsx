@@ -8,7 +8,7 @@ import type { ConversationMeta } from "@/types";
 import { Sidebar } from "./Sidebar";
 import { AuthModal } from "./AuthModal";
 
-type Mode = "course" | "chat" | "market" | "records" | "wrapped";
+type Mode = "course" | "chat" | "market" | "records";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -25,11 +25,9 @@ export function AppShell({ children }: { children: ReactNode }) {
     ? "records"
     : pathname.startsWith("/market")
       ? "market"
-      : pathname.startsWith("/wrapped")
-        ? "wrapped"
-        : pathname.startsWith("/chat")
-          ? "chat"
-          : "course";
+      : pathname.startsWith("/chat")
+        ? "chat"
+        : "course";
   const chatId = mode === "chat" && pathname.length > "/chat/".length ? pathname.slice("/chat/".length) : null;
 
   const refreshList = useCallback(async () => {
@@ -103,7 +101,6 @@ export function AppShell({ children }: { children: ReactNode }) {
         mode={mode}
         onMode={(m) => router.push(m === "course" ? "/" : `/${m}`)}
         courses={courses}
-        onOpenCourse={(id) => router.push(`/course/${id}`)}
         conversations={conversations}
         currentId={chatId}
         onSelect={(id) => router.push(`/chat/${id}`)}

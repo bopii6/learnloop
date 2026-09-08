@@ -193,7 +193,7 @@ export async function POST(req: NextRequest) {
             // 原样提取并贯穿整条建课管线，而不是被路由碾平（实测教训：英文 PDF + "弄成
             // 中文"被当成搜索关键词去搜"AI 课程 中文"）。
             const intent = await generateJson<{ mode: "course" | "answer" | "chat"; reply?: string; outputLanguage?: string; constraints?: string[] }>(
-              `你是学习助手 LearnLoop 的入口分流器。产品定位：用户输入一个主题，我们生成一门系统课程。用户只有一个输入框，输入可能是：
+              `你是学习助手 Superlearn 的入口分流器。产品定位：用户输入一个主题，我们生成一门系统课程。用户只有一个输入框，输入可能是：
 - "course"：想系统学习某个主题/技能/概念（哪怕只写了主题词，如"机器学习"、"雅思备考"、"高中函数"）
 - "answer"：一个具体的知识性疑问，期望直接得到回答而非一门课（如"1+1为什么等于2"、"RAG和微调有什么区别"、"什么是MCP协议"）
 - "chat"：问候、闲聊、与学习无关的求助（如"你好"、"你是谁"、"帮我写周报"）

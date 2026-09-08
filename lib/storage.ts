@@ -250,6 +250,22 @@ export async function readJson<T>(key: string, fallback: T): Promise<T> {
   }
 }
 
+/**
+ * 严格读取：对象损坏（截断/半截 JSON）时抛错而不是返回 fallback。
+ * 全用户集合文件（users/credits/集市登记表）必须走这条路——
+ * 否则一次坏读 + 一次例行写回 = 用一个只含单条记录的新文件覆盖全量数据（静默清空）。
+ * 拒绝服务好过丢数据：解析失败时上层接口报错，用户重试即可，原文件还在。
+ */
+export async function readJsonStrict<T>(key: string): Promise<T> {
+  const buf = await readBinary(key);
+  if (!buf) throw new Error(`storage: ${key} 不存在`);
+  try {
+    return JSON.parse(buf.toString("utf8")) as T;
+  } catch {
+    throw new Error(`storage: ${key} 内容不是合法 JSON（疑似对象损坏），已拒绝读取以防覆盖`);
+  }
+}
+
 export async function writeJson(key: string, value: unknown, opts?: { pretty?: boolean }): Promise<void> {
   const space = opts?.pretty ? 2 : 0;
   await writeBinary(key, Buffer.from(JSON.stringify(value, null, space), "utf8"));

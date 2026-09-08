@@ -10,6 +10,9 @@ import { CourseCover } from "./CourseCover";
 const fmtHours = (min?: number) =>
   min && min > 0 ? (min / 60).toFixed(1).replace(/\.0$/, "") + " 小时" : "";
 
+// 标价经 JSON 存取可能是浮点脏值（29.700000000000003），展示统一格式化
+const fmtPrice = (n: number) => `¥${n.toFixed(n % 1 === 0 ? 0 : 1)}`;
+
 export function MarketView({
   onOpenCourse,
   onGoHome,
@@ -45,6 +48,23 @@ export function MarketView({
     },
     [refresh]
   );
+
+  const [reported, setReported] = useState<Set<string>>(new Set());
+  const reportCourse = useCallback(async (courseId: string) => {
+    const reason = window.prompt("请说明举报原因（内容侵权 / 违规 / 质量造假等）");
+    if (!reason || reason.trim().length < 2) return;
+    const res = await fetch("/api/market/report", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ courseId, reason }),
+    });
+    if (res.ok) {
+      setReported((prev) => new Set(prev).add(courseId));
+    } else {
+      const d = await res.json().catch(() => ({ error: "举报失败" }));
+      setError(d.error || "举报失败");
+    }
+  }, []);
 
   const cats = useMemo(() => {
     const seen: string[] = [];
@@ -87,7 +107,9 @@ export function MarketView({
         <h1 className="text-[30px] font-bold leading-tight mb-1.5">
           发现最适合你的课程
           <br />
-          <span className="text-ink-soft text-[22px] font-semibold">专为你的学习方式打造。</span>
+          <span className="bg-[linear-gradient(transparent_62%,rgba(93,202,165,0.42)_62%)] px-0.5 text-[22px] font-semibold">
+            专为你的学习方式打造
+          </span>
         </h1>
         <div className="max-w-md mx-auto mt-6 relative">
           <input
@@ -172,8 +194,8 @@ export function MarketView({
                 onClick={() => setCat(t)}
                 className={`rounded-full px-3.5 py-1.5 text-[12px] font-medium transition-colors ${
                   cat === t
-                    ? "bg-[#2c2c2a] text-white"
-                    : "bg-white border border-[#e7e5dc] text-ink-soft hover:border-accent/50"
+                    ? "bg-accent text-white shadow-sm"
+                    : "bg-white border border-[#e7e5dc] text-ink-soft hover:border-accent/50 hover:text-accent"
                 }`}
               >
                 {t}
@@ -193,14 +215,16 @@ export function MarketView({
               onClick={() => onOpenCourse(hero.courseId)}
               className="group w-full text-left rounded-3xl border border-[#e7e5dc] bg-white overflow-hidden flex mb-5 hover:border-accent/60 hover:shadow-[0_6px_24px_rgba(0,0,0,0.07)] transition-all fade-up"
             >
-              <CourseCover seed={hero.courseId} rounded="rounded-none" className="w-[280px] shrink-0 min-h-[190px]" />
+              <div className="overflow-hidden">
+                <CourseCover seed={hero.courseId} rounded="rounded-none" className="w-[280px] shrink-0 min-h-[190px] h-full transition-transform duration-300 group-hover:scale-[1.03]" />
+              </div>
               <div className="flex-1 min-w-0 p-6 flex flex-col">
                 <div className="flex items-center gap-2 mb-2">
                   {hero.author === "official" && (
                     <span className="rounded-full bg-accent-soft text-accent px-2 py-0.5 text-[10px] font-medium">官方精选</span>
                   )}
-                  <span className={`text-[11px] font-medium ${hero.price > 0 ? "text-[#b45309]" : "text-emerald-600"}`}>
-                    {hero.price > 0 ? `¥${hero.price}` : "免费"}
+                  <span className={`text-[11.5px] font-semibold ${hero.price > 0 ? "text-[#b45309]" : "rounded-full bg-emerald-50 px-2 py-0.5 text-[10.5px] text-emerald-700"}`}>
+                    {hero.price > 0 ? fmtPrice(hero.price) : "免费"}
                   </span>
                 </div>
                 <div className="text-[20px] font-bold leading-snug mb-2 line-clamp-2">{hero.title}</div>
@@ -226,14 +250,14 @@ export function MarketView({
                   key={e.courseId}
                   className="group rounded-2xl border border-[#e7e5dc] bg-white overflow-hidden flex flex-col hover:border-accent/60 hover:shadow-[0_4px_20px_rgba(0,0,0,0.06)] transition-all fade-up"
                 >
-                  <button onClick={() => onOpenCourse(e.courseId)} className="text-left">
-                    <CourseCover seed={e.courseId} rounded="rounded-none" className="w-full h-[104px]" />
+                  <button onClick={() => onOpenCourse(e.courseId)} className="block w-full overflow-hidden text-left">
+                    <CourseCover seed={e.courseId} rounded="rounded-none" className="w-full h-[104px] transition-transform duration-300 group-hover:scale-[1.03]" />
                   </button>
                   <div className="p-4 flex flex-col flex-1">
                     <div className="flex items-center gap-2 mb-1.5">
                       <span className="text-[11px] text-ink-faint">{e.author === "official" ? "官方精选" : "学员上架"}</span>
-                      <span className={`text-[11px] font-medium ${e.price > 0 ? "text-[#b45309]" : "text-emerald-600"}`}>
-                        {e.price > 0 ? `¥${e.price}` : "免费"}
+                      <span className={`font-semibold ${e.price > 0 ? "text-[11.5px] text-[#b45309]" : "rounded-full bg-emerald-50 px-2 py-0.5 text-[10.5px] text-emerald-700"}`}>
+                        {e.price > 0 ? fmtPrice(e.price) : "免费"}
                       </span>
                     </div>
                     <button onClick={() => onOpenCourse(e.courseId)} className="text-left text-[15px] font-semibold leading-snug mb-1 line-clamp-2 hover:text-accent transition-colors">
@@ -252,13 +276,23 @@ export function MarketView({
                       >
                         ▶ 去学习
                       </button>
-                      {e.canDelete && (
+                      {e.canDelete ? (
                         <button
                           onClick={() => void removeFromMarket(e.courseId)}
                           className="text-[11.5px] text-ink-faint hover:text-red-500 transition-colors"
                           title="从集市下架（课程本身不受影响）"
                         >
                           下架
+                        </button>
+                      ) : reported.has(e.courseId) ? (
+                        <span className="text-[11.5px] text-ink-faint">已举报，待处理</span>
+                      ) : (
+                        <button
+                          onClick={() => void reportCourse(e.courseId)}
+                          className="text-[11.5px] text-ink-faint hover:text-accent transition-colors"
+                          title="内容侵权 / 违规 / 质量造假时可举报"
+                        >
+                          举报
                         </button>
                       )}
                     </div>

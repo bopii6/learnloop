@@ -10,6 +10,7 @@ import {
   setTitle,
 } from "@/lib/store";
 import { userFromCookieHeader } from "@/lib/auth";
+import { CHAT_DAILY_LIMIT, consumeDailyQuota, drainToUsage, ipSubject, logOpsError, recordUsage } from "@/lib/ops";
 import type { AgentEvent } from "@/types";
 
 export const runtime = "nodejs";
@@ -29,6 +30,19 @@ export async function POST(req: NextRequest) {
 
   // 拿会话（没有就建）；有主会话仅本人可写
   const me = await userFromCookieHeader(req.headers.get("cookie"));
+
+  // 每日软上限（登录按账号、匿名按 IP）：不收费，只防脚本党把 LLM 账单当免费算力
+  const usageSubject = me?.id || ipSubject(req);
+  const quota = await consumeDailyQuota(usageSubject, "chat", 1, CHAT_DAILY_LIMIT);
+  if (!quota.ok) {
+    return new Response(
+      JSON.stringify({
+        error: `今天的对话次数已达上限（${CHAT_DAILY_LIMIT} 次/日），明天再来。课程生成与听课不受影响。`,
+      }),
+      { status: 429, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
   let conv = body.conversationId
     ? await getConversation(body.conversationId)
     : null;
@@ -91,11 +105,14 @@ export async function POST(req: NextRequest) {
 
         await send({ type: "done", conversationId: convId, title });
       } catch (e) {
+        await logOpsError({ kind: "chat", userId: me?.id, detail: e instanceof Error ? e.message : String(e) }).catch(() => {});
         await send({
           type: "error",
           message: e instanceof Error ? e.message : String(e),
         });
       } finally {
+        // 本次请求烧掉的 LLM token 落到当日用量文件（按 token 计费的对账地基）
+        await drainToUsage(usageSubject).catch(() => {});
         try {
           controller.close();
         } catch {

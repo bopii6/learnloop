@@ -50,7 +50,8 @@ export async function GET(req: NextRequest) {
         audience: meta?.audience,
         tags: meta?.tags,
         units: meta?.units,
-        lectures: meta?.lectures,
+        // 课节数口径与课程记录页一致：只数可学的白板课节（lecs），不含测验/项目
+        lectures: meta?.lecs?.length || meta?.lectures,
         totalMin: meta?.totalMin,
       };
     })

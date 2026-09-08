@@ -2,7 +2,7 @@
 
 // 课程生成：单页滚动堆叠流（对齐 Hyperknow 原版）
 // 任务气泡悬顶 → 搜索 → 澄清 → 蓝图 → 生成 → 就绪，完成阶段保留在页面上方
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type {
@@ -15,6 +15,7 @@ import type {
 import { BlueprintEditor } from "./BlueprintEditor";
 import { consumeSse } from "@/lib/sse";
 import { uploadTextbookPdf } from "@/lib/textbook-client";
+import { resetGeneratorState, useGeneratorState } from "@/hooks/useGeneratorState";
 
 interface CourseGeneratorProps {
   onComplete?: (courseId: string, title: string, outline: CourseOutline) => void;
@@ -36,65 +37,99 @@ const TIPS = [
 const SEARCH_STATUS = ["正在筛选权威来源", "正在阅读网页正文", "正在对比学习路径", "正在剔除低质内容"];
 const CLARIFY_STATUS = ["正在构思整体框架", "翻开了书本", "正在对照资料要点", "正在推敲下一个问题"];
 
+// 输入页底部特性区：三个卖点一句话讲清产品（线性 SVG 图标，统一品牌气质）
+const HOME_FEATURES = [
+  { icon: "board", title: "白板讲师课", desc: "逐句讲解配板书，像一对一辅导" },
+  { icon: "flag", title: "先过关，再拔高", desc: "课节配练习与关卡，学完就检验" },
+  { icon: "doc", title: "用你的资料建课", desc: "上传教材 PDF，讲解对齐你的书" },
+] as const;
+
+// 线性图标：与侧栏同一套描边风格（stroke=currentColor）
+function FeatureIcon({ name }: { name: "board" | "flag" | "doc" }) {
+  const common = {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.8,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    className: "h-5 w-5",
+    "aria-hidden": true,
+  };
+  if (name === "board")
+    return (
+      <svg {...common}>
+        <rect x="3" y="4" width="18" height="12" rx="1.5" />
+        <path d="M12 16v3M8.5 21h7" />
+        <path d="M7 12c2-3.5 4-3.5 5.5-1.5S16 12 17 9" />
+      </svg>
+    );
+  if (name === "flag")
+    return (
+      <svg {...common}>
+        <path d="M5 21V4" />
+        <path d="M5 4c3-1.8 6 1.8 9 0s5 0 5 0v9c-3 1.8-6-1.8-9 0s-5 0-5 0z" />
+        <path d="m9.5 11.5 1.8 1.8 3.2-3.6" />
+      </svg>
+    );
+  return (
+    <svg {...common}>
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+      <path d="M14 3v5h5" />
+      <path d="M9 13h6M9 17h4" />
+    </svg>
+  );
+}
+
 export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
-  const [query, setQuery] = useState("");
-  const [step, setStep] = useState<
+  // 全部状态走 useGeneratorState（模块级仓库）：tab 切走组件卸载后，
+  // SSE 事件仍写入仓库，切回首页原样恢复进度
+  const [query, setQuery] = useGeneratorState("query", "");
+  const [step, setStep] = useGeneratorState<
     "input" | "search" | "clarify" | "blueprint" | "outline" | "done"
-  >("input");
-  const [sources, setSources] = useState<SourceItem[]>([]);
-  const [searchQueries, setSearchQueries] = useState<string[]>([]);
-  const [showAllSources, setShowAllSources] = useState(false);
-  const [question, setQuestion] = useState<ClarifyQuestion | null>(null);
-  const [round, setRound] = useState(1);
-  const [totalRounds, setTotalRounds] = useState(4);
-  const [answeredRounds, setAnsweredRounds] = useState<AnsweredRound[]>([]);
-  const [blueprint, setBlueprint] = useState<CourseBlueprint | null>(null);
-  const [editedBlueprint, setEditedBlueprint] = useState<CourseBlueprint | null>(null);
-  const [outline, setOutline] = useState<CourseOutline | null>(null);
-  const [courseId, setCourseId] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
-  const [customAnswer, setCustomAnswer] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [progress, setProgress] = useState<{ current: number; total: number; optimized?: number } | null>(null);
-  const [showFeedback, setShowFeedback] = useState(false);
-  const [feedback, setFeedback] = useState("");
-  const [designNotes, setDesignNotes] = useState<string[]>([]);
-  const [chatReply, setChatReply] = useState<string | null>(null);
+  >("step", "input");
+  const [sources, setSources] = useGeneratorState<SourceItem[]>("sources", []);
+  const [searchQueries, setSearchQueries] = useGeneratorState<string[]>("searchQueries", []);
+  const [showAllSources, setShowAllSources] = useGeneratorState("showAllSources", false);
+  const [question, setQuestion] = useGeneratorState<ClarifyQuestion | null>("question", null);
+  const [round, setRound] = useGeneratorState("round", 1);
+  const [totalRounds, setTotalRounds] = useGeneratorState("totalRounds", 4);
+  const [answeredRounds, setAnsweredRounds] = useGeneratorState<AnsweredRound[]>("answeredRounds", []);
+  const [blueprint, setBlueprint] = useGeneratorState<CourseBlueprint | null>("blueprint", null);
+  const [editedBlueprint, setEditedBlueprint] = useGeneratorState<CourseBlueprint | null>("editedBlueprint", null);
+  const [outline, setOutline] = useGeneratorState<CourseOutline | null>("outline", null);
+  const [courseId, setCourseId] = useGeneratorState("courseId", "");
+  const [error, setError] = useGeneratorState<string | null>("error", null);
+  const [selectedOptions, setSelectedOptions] = useGeneratorState<string[]>("selectedOptions", []);
+  const [customAnswer, setCustomAnswer] = useGeneratorState("customAnswer", "");
+  const [loading, setLoading] = useGeneratorState("loading", false);
+  const [progress, setProgress] = useGeneratorState<{ current: number; total: number; optimized?: number } | null>("progress", null);
+  const [showFeedback, setShowFeedback] = useGeneratorState("showFeedback", false);
+  const [feedback, setFeedback] = useGeneratorState("feedback", "");
+  const [designNotes, setDesignNotes] = useGeneratorState<string[]>("designNotes", []);
+  const [chatReply, setChatReply] = useGeneratorState<string | null>("chatReply", null);
   // 入口问答回路：真问题不建课，直接在输入页给出带引用的回答
-  const [qaPending, setQaPending] = useState<string | null>(null);
-  const [qaResult, setQaResult] = useState<{ reply: string; sources: SourceItem[] } | null>(null);
+  const [qaPending, setQaPending] = useGeneratorState<string | null>("qaPending", null);
+  const [qaResult, setQaResult] = useGeneratorState<{ reply: string; sources: SourceItem[] } | null>("qaResult", null);
   // 教材模式：上传 PDF 后对着课本建课（蓝图镜像目录，讲解标页码）
-  const [textbookId, setTextbookId] = useState("");
-  const [textbookTitle, setTextbookTitle] = useState("");
-  const [textbookPages, setTextbookPages] = useState(0);
-  const [textbookOcr, setTextbookOcr] = useState(false);
-  const [textbookSize, setTextbookSize] = useState(0);
-  const [textbookNotice, setTextbookNotice] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [uploadLabel, setUploadLabel] = useState<string | null>(null);
-  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [textbookId, setTextbookId] = useGeneratorState("textbookId", "");
+  const [textbookTitle, setTextbookTitle] = useGeneratorState("textbookTitle", "");
+  const [textbookPages, setTextbookPages] = useGeneratorState("textbookPages", 0);
+  const [textbookOcr, setTextbookOcr] = useGeneratorState("textbookOcr", false);
+  const [textbookSize, setTextbookSize] = useGeneratorState("textbookSize", 0);
+  const [textbookNotice, setTextbookNotice] = useGeneratorState<string | null>("textbookNotice", null);
+  const [uploading, setUploading] = useGeneratorState("uploading", false);
+  const [uploadLabel, setUploadLabel] = useGeneratorState<string | null>("uploadLabel", null);
+  const [uploadError, setUploadError] = useGeneratorState<string | null>("uploadError", null);
   const fileRef = useRef<HTMLInputElement | null>(null);
-  const [courseSource, setCourseSource] = useState<"自学" | "学校同步">("自学");
-  const [statusLine, setStatusLine] = useState(0);
+  const queryRef = useRef<HTMLTextAreaElement | null>(null);
+  const [statusLine, setStatusLine] = useGeneratorState("statusLine", 0);
   // 文档建课 5 步管线：第 1 步「正在查看你的文档」+ 蓝图确认后的行内回执
-  const [readingDoc, setReadingDoc] = useState<"idle" | "running" | "done">("idle");
-  const [confirmed, setConfirmed] = useState(false);
-  const [saveFailed, setSaveFailed] = useState(false);
+  const [readingDoc, setReadingDoc] = useGeneratorState<"idle" | "running" | "done">("readingDoc", "idle");
+  const [confirmed, setConfirmed] = useGeneratorState("confirmed", false);
+  const [saveFailed, setSaveFailed] = useGeneratorState("saveFailed", false);
 
   const abortRef = useRef<AbortController | null>(null);
-  const outlineRef = useRef<CourseOutline | null>(null);
-
-  // 学习者画像（跨课程沉淀）：首页只留一行提示，细节藏在悬停里
-  const [profile, setProfile] = useState<{ name?: string; summary: string; facts: { question: string; answer: string }[] } | null>(null);
-  useEffect(() => {
-    fetch("/api/profile")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (d?.profile) setProfile(d.profile);
-      })
-      .catch(() => {});
-  }, []);
 
   // 运行中阶段的动态状态文案（"翻开了书本"式的推理感）
   useEffect(() => {
@@ -154,7 +189,6 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
       setProgress((p) => ({ current: e.current, total: e.total, optimized: e.optimized ?? p?.optimized }));
     } else if (e.type === "outline") {
       setOutline(e.outline);
-      outlineRef.current = e.outline;
     } else if (e.type === "done") {
       setStep("done");
       setLoading(false);
@@ -233,7 +267,6 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
     setBlueprint(null);
     setEditedBlueprint(null);
     setOutline(null);
-    outlineRef.current = null;
     setAnsweredRounds([]);
     setProgress(null);
     setDesignNotes([]);
@@ -246,10 +279,9 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
     await streamRequest({
       action: "start",
       query: query.trim() || `系统学习《${textbookTitle}》教材`,
-      courseSource,
       textbookId: textbookId || undefined,
     });
-  }, [query, textbookId, textbookTitle, loading, streamRequest, courseSource]);
+  }, [query, textbookId, textbookTitle, loading, streamRequest]);
 
   const submitAnswer = useCallback(
     async (answerText: string) => {
@@ -345,204 +377,312 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
     );
   };
 
-  // ---- 输入页（原版首页：hero + 输入卡 + 来源radio + 示例chip + 继续学习） ----
+  // ---- 输入页：hero + 输入卡 + 示例主题 + 产品特性 ----
   if (step === "input") {
     return (
-      <div className="max-w-2xl mx-auto pt-16 px-6">
-        <div className="text-center mb-8">
-          <div className="text-[26px] font-semibold mb-2">一句话，生成一门 12 小时学完的系统课程</div>
-          <div className="text-[14px] text-ink-soft">把一学期的内容压缩成讲解 + 板书 + 课后练习，先过关，再拔高</div>
+      <div className="relative">
+        {/* 装饰光斑：薄荷绿主调，衬点阵背景 */}
+        <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
+          <div className="absolute -top-32 left-1/2 h-[320px] w-[620px] -translate-x-1/2 rounded-full bg-accent-border/20 blur-[110px]" />
+          <div className="absolute top-56 -left-24 h-[280px] w-[280px] rounded-full bg-accent/10 blur-[100px]" />
+          <div className="absolute top-72 -right-20 h-[260px] w-[260px] rounded-full bg-[#7fd0b6]/15 blur-[100px]" />
         </div>
-        {qaPending && (
-          <div className="mb-4 rounded-2xl border border-[#e7e5dc] bg-white px-4 py-3.5 text-[13.5px] text-ink-soft fade-up shadow-sm flex items-center gap-2">
-            <span className="stage-spinner inline-block shrink-0" style={{ width: 11, height: 11 }} />
-            {qaPending}
-          </div>
-        )}
-        {qaResult && (
-          <div className="mb-4 rounded-2xl border border-[#e7e5dc] bg-white px-4 py-3.5 text-[13.5px] text-ink leading-relaxed fade-up shadow-sm">
-            <div className="text-[10.5px] text-ink-faint mb-1 tracking-wide">LearnLoop · 直接回答</div>
-            <div className="prose-course">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{qaResult.reply}</ReactMarkdown>
+
+        <div className="relative mx-auto max-w-2xl px-6 pb-16 pt-14">
+          {/* Hero */}
+          <div className="mb-9 text-center">
+            <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-accent/20 bg-white/75 px-3.5 py-1.5 text-[12px] font-medium text-accent shadow-sm backdrop-blur">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
+              Superlearn · AI 白板讲师，把任何主题讲成一门课
             </div>
-            {qaResult.sources.length > 0 && (
-              <div className="mt-3 pt-2.5 border-t border-[#f1efe8] flex flex-wrap gap-1.5">
-                {qaResult.sources.map((s) => (
-                  <a
-                    key={s.index}
-                    href={s.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    title={s.title}
-                    className="rounded-full bg-[#f1efe8] px-2.5 py-0.5 text-[10.5px] text-ink-soft hover:text-accent transition-colors max-w-[220px] truncate"
-                  >
-                    [{s.index}] {s.domain}
-                  </a>
-                ))}
+            <h1 className="mb-3.5 text-[34px] font-bold leading-[1.32] tracking-tight">
+              一句话，生成一门
+              <br />
+              <span className="bg-[linear-gradient(transparent_62%,rgba(93,202,165,0.42)_62%)] px-0.5">
+                12 小时学完
+              </span>
+              的系统课程
+            </h1>
+            <p className="text-[14.5px] text-ink-soft">
+              讲解 + 板书 + 课后练习，像一对一辅导一样系统学完一学期的内容
+            </p>
+          </div>
+
+          {qaPending && (
+            <div className="fade-up mb-4 flex items-center gap-2 rounded-2xl border border-[#e7e5dc] bg-white px-4 py-3.5 text-[13.5px] text-ink-soft shadow-sm">
+              <span className="stage-spinner inline-block shrink-0" style={{ width: 11, height: 11 }} />
+              {qaPending}
+            </div>
+          )}
+          {qaResult && (
+            <div className="fade-up mb-4 rounded-2xl border border-[#e7e5dc] bg-white px-5 py-4 text-[13.5px] text-ink shadow-sm">
+                <div className="mb-1.5 text-[10.5px] tracking-wide text-ink-faint">Superlearn · 直接回答</div>
+              <div className="prose-course">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{qaResult.reply}</ReactMarkdown>
               </div>
-            )}
-            <div className="mt-2 flex items-center justify-between">
-              <span className="text-[11px] text-ink-faint">想系统学透？把主题输在下面，我来打造课程</span>
+              {qaResult.sources.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-1.5 border-t border-[#f1efe8] pt-2.5">
+                  {qaResult.sources.map((s) => (
+                    <a
+                      key={s.index}
+                      href={s.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={s.title}
+                      className="max-w-[220px] truncate rounded-full bg-[#f1efe8] px-2.5 py-0.5 text-[10.5px] text-ink-soft transition-colors hover:text-accent"
+                    >
+                      [{s.index}] {s.domain}
+                    </a>
+                  ))}
+                </div>
+              )}
+              <div className="mt-2 flex items-center justify-between">
+                <span className="text-[11px] text-ink-faint">想系统学透？把主题输在下面，我来打造课程</span>
+                <button
+                  onClick={() => setQaResult(null)}
+                  className="text-[11.5px] text-ink-faint transition-colors hover:text-accent"
+                >
+                  知道了
+                </button>
+              </div>
+            </div>
+          )}
+          {chatReply && (
+            <div className="fade-up mb-4 rounded-2xl border border-[#e7e5dc] bg-white px-5 py-4 text-[13.5px] leading-relaxed text-ink shadow-sm">
+              <div className="mb-1.5 text-[10.5px] tracking-wide text-ink-faint">Superlearn</div>
+              {chatReply}
               <button
-                onClick={() => setQaResult(null)}
-                className="text-[11.5px] text-ink-faint hover:text-accent"
+                onClick={() => setChatReply(null)}
+                className="ml-2 text-[11.5px] text-ink-faint transition-colors hover:text-accent"
               >
                 知道了
               </button>
             </div>
-          </div>
-        )}
-        {chatReply && (
-          <div className="mb-4 rounded-2xl border border-[#e7e5dc] bg-white px-4 py-3.5 text-[13.5px] text-ink leading-relaxed fade-up shadow-sm">
-            <div className="text-[10.5px] text-ink-faint mb-1 tracking-wide">LearnLoop</div>
-            {chatReply}
-            <button
-              onClick={() => setChatReply(null)}
-              className="ml-2 text-[11.5px] text-ink-faint hover:text-accent"
-            >
-              知道了
-            </button>
-          </div>
-        )}
-        {profile && (profile.summary || profile.facts.length > 0) && (
-          <div
-            className="mb-4 flex items-center justify-center gap-1.5 text-[12px] text-ink-faint"
-            title={profile.summary || profile.facts.map((f) => `${f.question}：${f.answer}`).join("；")}
-          >
-            <span className="text-accent">🎯</span>
-            <span>已按你的历史学习偏好定制这门课</span>
-            <span className="underline decoration-dotted underline-offset-2 cursor-help">查看依据</span>
-          </div>
-        )}
-        <div className="rounded-2xl border border-[#d3d1c7] bg-white shadow-sm p-6">
-          <textarea
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && (query.trim() || textbookId)) {
-                e.preventDefault();
-                void startGeneration();
-              }
-            }}
-            placeholder={textbookId ? `想怎么学《${textbookTitle}》？可留空直接生成，如：两周过完这本书` : "输入你想系统学习的主题，如：系统讲解 LLM Agent 的 Tool Use 设计模式"}
-            rows={3}
-            className="w-full resize-none rounded-xl border border-[#e7e5dc] px-4 py-3 text-[14px] outline-none focus:border-accent"
-          />
-          {/* 文档上传：附件卡（原版同款：图标+文件名+大小）+ 实时改价 10 → 13 */}
-          <div className="mt-3">
-            <input
-              ref={fileRef}
-              type="file"
-              accept="application/pdf,.pdf"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) void uploadTextbook(f);
-                e.target.value = "";
+          )}
+          {/* 输入卡：无边框输入区 + 分隔线 + 动作行，聚焦时整卡亮边 */}
+          <div className="rounded-3xl border border-[#e0ded3] bg-white p-5 shadow-[0_10px_44px_rgba(26,26,24,0.08)] transition-all duration-300 focus-within:border-accent/45 focus-within:shadow-[0_12px_48px_rgba(15,110,86,0.13)]">
+            <textarea
+              ref={queryRef}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && (query.trim() || textbookId)) {
+                  e.preventDefault();
+                  void startGeneration();
+                }
               }}
+              placeholder={textbookId ? `想怎么学《${textbookTitle}》？可留空直接生成，如：两周过完这本书` : "输入你想系统学习的主题，如：系统讲解 LLM Agent 的 Tool Use 设计模式"}
+              rows={3}
+              className="w-full resize-none bg-transparent px-1.5 py-1 text-[15px] leading-relaxed text-ink outline-none placeholder:text-ink-faint/80"
             />
-            {textbookId ? (
-              <div className="flex items-start gap-3">
-                <div className="inline-flex items-center gap-3 rounded-xl border border-[#e7e5dc] bg-[#f8f9fa] px-3.5 py-2.5">
-                  <span className="w-9 h-9 shrink-0 rounded-lg bg-red-500 text-white flex items-center justify-center text-[10px] font-bold">
-                    PDF
-                  </span>
-                  <span>
-                    <span className="block text-[13px] font-medium text-ink leading-snug max-w-[260px] truncate">
-                      《{textbookTitle}》
-                    </span>
-                    <span className="block text-[11px] text-ink-faint mt-0.5">
-                      PDF{textbookSize ? ` • ${(textbookSize / 1024).toFixed(1)} KB` : ""}
-                      {" · "}
-                      {textbookPages} 页文本{textbookOcr ? " · 已 OCR" : ""}
-                    </span>
-                  </span>
+            <div className="my-3 h-px bg-gradient-to-r from-transparent via-[#e7e5dc] to-transparent" />
+            <div className="flex items-center justify-between gap-3">
+              {/* 文档上传：附件卡（图标+文件名+大小）+ 实时改价 10 → 13 */}
+              <div className="min-w-0">
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept="application/pdf,.pdf"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) void uploadTextbook(f);
+                    e.target.value = "";
+                  }}
+                />
+                {textbookId ? (
+                  <div className="flex items-start gap-3">
+                    <div className="inline-flex items-center gap-3 rounded-xl border border-[#e7e5dc] bg-[#f8f9fa] px-3.5 py-2.5">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-500 text-[10px] font-bold text-white">
+                        PDF
+                      </span>
+                      <span>
+                        <span className="block max-w-[240px] truncate text-[13px] font-medium leading-snug text-ink">
+                          《{textbookTitle}》
+                        </span>
+                        <span className="mt-0.5 block text-[11px] text-ink-faint">
+                          PDF{textbookSize ? ` • ${(textbookSize / 1024).toFixed(1)} KB` : ""}
+                          {" · "}
+                          {textbookPages} 页文本{textbookOcr ? " · 已 OCR" : ""}
+                        </span>
+                      </span>
+                      <button
+                        onClick={() => {
+                          setTextbookId("");
+                          setTextbookTitle("");
+                          setTextbookPages(0);
+                          setTextbookOcr(false);
+                          setTextbookSize(0);
+                          setTextbookNotice(null);
+                        }}
+                        className="self-start leading-none text-ink-faint transition-colors hover:text-red-500"
+                        title="移除文档"
+                      >
+                        ×
+                      </button>
+                    </div>
+                    {textbookNotice && (
+                      <span className="mt-1 text-[11px] leading-snug text-ink-faint">{textbookNotice}</span>
+                    )}
+                  </div>
+                ) : (
                   <button
-                    onClick={() => {
-                      setTextbookId("");
-                      setTextbookTitle("");
-                      setTextbookPages(0);
-                      setTextbookOcr(false);
-                      setTextbookSize(0);
-                      setTextbookNotice(null);
-                    }}
-                    className="self-start text-ink-faint hover:text-red-500 leading-none"
-                    title="移除文档"
+                    onClick={() => fileRef.current?.click()}
+                    disabled={uploading}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-[#c9c7bd] px-3.5 py-1.5 text-[12.5px] text-ink-soft transition-colors hover:border-accent hover:bg-accent-soft/30 hover:text-accent disabled:opacity-50"
                   >
-                    ×
+                    {uploading ? uploadLabel || "📄 处理中…" : "📎 上传文档，围绕它生成课程"}
                   </button>
-                </div>
-                {textbookNotice && (
-                  <span className="text-[11px] text-ink-faint leading-snug mt-1">{textbookNotice}</span>
                 )}
+                {uploadError && <span className="ml-2 text-[11.5px] text-red-600">{uploadError}</span>}
               </div>
-            ) : (
-              <button
-                onClick={() => fileRef.current?.click()}
-                disabled={uploading}
-                className="rounded-full border border-[#e7e5dc] px-3 py-1 text-[12px] text-ink-soft hover:border-accent hover:text-accent transition-colors disabled:opacity-50"
-              >
-                {uploading ? uploadLabel || "📄 处理中…" : "＋ 上传文档，围绕它生成课程"}
-              </button>
-            )}
-            {uploadError && <span className="text-[11.5px] text-red-600 ml-2">{uploadError}</span>}
-          </div>
-          <div className="mt-4 flex items-center justify-between">
-            {/* 课程来源（原版同款 radio）：随任务传给澄清环节 */}
-            <div className="flex items-center gap-4">
-              {(["自学", "学校同步"] as const).map((m) => (
-                <button
-                  key={m}
-                  onClick={() => setCourseSource(m)}
-                  className="flex items-center gap-1.5 text-[12.5px] transition-colors"
+              <div className="flex shrink-0 items-center gap-3">
+                {/* 实时定价徽章：文档处理费 +3 */}
+                <span
+                  className="inline-flex cursor-help items-center gap-1 rounded-full bg-[#f1efe8] px-2.5 py-1 text-[12px] text-ink-soft"
+                  title={`生成本课程需消耗 ${textbookId ? 13 : 10} 个积分${textbookId ? "（含文档处理 3 积分）" : ""}`}
                 >
-                  <span
-                    className={`inline-flex w-3.5 h-3.5 rounded-full border-2 items-center justify-center ${
-                      courseSource === m ? "border-accent" : "border-[#d3d1c7]"
-                    }`}
-                  >
-                    {courseSource === m && <span className="w-1.5 h-1.5 rounded-full bg-accent" />}
-                  </span>
-                  <span className={courseSource === m ? "text-ink font-medium" : "text-ink-soft"}>{m}</span>
+                  ✦ {textbookId ? 13 : 10}
+                </span>
+                <button
+                  onClick={() => {
+                    // 空输入不再显示"禁用"灰态（落地页主按钮要保持可用的视觉引力），点了就聚焦输入框
+                    if (!query.trim() && !textbookId) {
+                      queryRef.current?.focus();
+                      return;
+                    }
+                    void startGeneration();
+                  }}
+                  disabled={loading}
+                  className="group inline-flex items-center gap-1.5 rounded-full bg-accent px-6 py-2.5 text-[13.5px] font-medium text-white shadow-lg shadow-accent/25 transition-all hover:bg-[#0c5f4b] hover:shadow-accent/35 disabled:opacity-60 disabled:shadow-none"
+                >
+                  {loading ? "生成中…" : "开始打造课程"}
+                  <span className="transition-transform duration-200 group-hover:translate-x-0.5">→</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* 示例主题 chip（点击直接填入） */}
+          <div className="mt-6 text-center">
+            <div className="mb-3 text-[12px] text-ink-faint">不知道从哪开始？试试这些</div>
+            <div className="flex flex-wrap justify-center gap-2">
+              {["LLM Agent 的 Tool Use 设计模式", "雅思 vs 托福备考策略", "Python 数据分析入门"].map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setQuery(`系统讲解 ${s}`)}
+                  className="rounded-full border border-[#e7e5dc] bg-white/85 px-3.5 py-1.5 text-[12px] text-ink-soft shadow-sm backdrop-blur transition-all hover:-translate-y-px hover:border-accent/50 hover:text-accent"
+                >
+                  <span className="mr-1.5 text-accent/80">✦</span>
+                  {s}
                 </button>
               ))}
             </div>
-            <div className="flex items-center gap-3">
-              {/* 实时定价（原版同款徽章）：文档处理费 +3 */}
-              <span
-                className="inline-flex items-center gap-1 rounded-full bg-[#f1efe8] px-2.5 py-1 text-[12px] text-ink-soft"
-                title={`生成本课程需消耗 ${textbookId ? 13 : 10} 个积分${textbookId ? "（含文档处理 3 积分）" : ""}`}
-              >
-                ✦ {textbookId ? 13 : 10}
+          </div>
+
+          {/* 能力信任条：只说产品真做到的事，不虚构数据 */}
+          <div className="mt-7 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[12px] text-ink-faint">
+            {["引用真实网页来源", "逐句板书讲解", "课后练习即时检验"].map((t) => (
+              <span key={t} className="inline-flex items-center gap-1.5">
+                <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 text-accent" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="m5 12.5 4.5 4.5L19 7.5" />
+                </svg>
+                {t}
               </span>
-              <button
-                onClick={() => void startGeneration()}
-                disabled={(!query.trim() && !textbookId) || loading}
-                className="rounded-full bg-accent px-6 py-2.5 text-[13.5px] text-white font-medium hover:opacity-90 disabled:opacity-40"
+            ))}
+          </div>
+
+          {/* 产品特性 */}
+          <div className="mt-9 grid gap-3 sm:grid-cols-3">
+            {HOME_FEATURES.map((f) => (
+              <div
+                key={f.title}
+                className="group rounded-2xl border border-[#e7e5dc] bg-white/80 px-4 py-5 text-center shadow-sm backdrop-blur transition-all duration-200 hover:-translate-y-0.5 hover:border-accent/40 hover:shadow-[0_10px_28px_rgba(26,26,24,0.08)]"
               >
-                {loading ? "生成中..." : "开始打造课程 →"}
-              </button>
+                <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-accent-soft/80 text-accent transition-colors group-hover:bg-accent group-hover:text-white">
+                  <FeatureIcon name={f.icon} />
+                </div>
+                <div className="text-[13px] font-semibold text-ink">{f.title}</div>
+                <div className="mt-1 text-[11.5px] leading-relaxed text-ink-faint">{f.desc}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* 课堂实景预览：一眼看懂「边讲边画」的产品形态 */}
+          <div className="mt-10 overflow-hidden rounded-3xl border border-[#e0ded3] bg-white shadow-[0_12px_40px_rgba(26,26,24,0.07)]">
+            <div className="flex items-center gap-2 border-b border-[#f1efe8] bg-[#fcfbf8] px-5 py-3">
+              <span className="h-2.5 w-2.5 rounded-full bg-[#ece9df]" />
+              <span className="h-2.5 w-2.5 rounded-full bg-[#ece9df]" />
+              <span className="h-2.5 w-2.5 rounded-full bg-[#ece9df]" />
+              <span className="ml-3 text-[11px] text-ink-faint">白板课堂 · 实景预览</span>
+            </div>
+            <div className="grid sm:grid-cols-[1.35fr_1fr]">
+              {/* 模拟白板：板书条目逐条排布 + 讲师批注 */}
+              <div className="relative border-b border-[#f1efe8] bg-[linear-gradient(160deg,#fdfdfb,#f6f8f4)] p-6 sm:border-b-0 sm:border-r">
+                <div className="space-y-3.5 text-[12.5px] leading-relaxed text-ink/85">
+                  <div className="flex items-center gap-2.5">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent text-[10px] font-bold text-white">1</span>
+                    <span>Agent = 感知 <em className="not-italic text-accent">→</em> 思考 <em className="not-italic text-accent">→</em> 行动 的循环</span>
+                  </div>
+                  <div className="flex items-center gap-2.5">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent text-[10px] font-bold text-white">2</span>
+                    <span>Tool Use：把「模型会想」变成「模型会做」</span>
+                  </div>
+                  <div className="flex items-center gap-2.5">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent text-[10px] font-bold text-white">3</span>
+                    <span className="border-b-2 border-accent-border/60 pb-0.5">Function Calling 三要素：名称 · 参数 · 结果</span>
+                  </div>
+                </div>
+                {/* 手绘感圈注 */}
+                <svg viewBox="0 0 120 40" className="absolute right-5 top-5 w-24 text-accent-border/70" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+                  <path d="M6 30 C 20 8, 60 4, 88 14 S 116 30, 108 34" />
+                  <path d="M100 26 l8 8 -11 2" />
+                </svg>
+                <div className="mt-5 inline-flex items-center gap-2 rounded-lg bg-white px-3 py-1.5 text-[10.5px] text-ink-faint shadow-sm ring-1 ring-[#eceadf]">
+                  <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-accent-soft text-[9px] font-bold text-accent">师</span>
+                  讲师正在边说边写…
+                  <span className="stage-spinner inline-block" style={{ width: 9, height: 9 }} />
+                </div>
+              </div>
+              {/* 右侧要点 */}
+              <div className="flex flex-col justify-center gap-3.5 px-6 py-6">
+                {[
+                  { t: "讲到哪，写到哪", d: "讲解逐句播报，板书同步生成，节奏完全一致" },
+                  { t: "随时打断提问", d: "停在任意一句追问，讲师先回答再从断点续讲" },
+                  { t: "学完即检验", d: "课节末尾嵌练习，答对才算过关" },
+                ].map((p) => (
+                  <div key={p.t}>
+                    <div className="text-[12.5px] font-semibold text-ink">{p.t}</div>
+                    <div className="mt-0.5 text-[11.5px] leading-relaxed text-ink-faint">{p.d}</div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
+
+          {/* 页脚：品牌 + 法务入口 */}
+          <footer className="mt-12 border-t border-[#efede4] pt-5 pb-2 text-center">
+            <div className="flex items-center justify-center gap-1.5 text-[12px] font-semibold text-ink-soft">
+              <span className="flex h-4 w-4 items-center justify-center rounded bg-accent text-[9px] font-bold text-white">
+                S
+              </span>
+              Superlearn
+            </div>
+            <div className="mt-2 flex items-center justify-center gap-3 text-[11px] text-ink-faint">
+              <a href="/privacy" className="transition-colors hover:text-accent">隐私政策</a>
+              <span className="text-[#d9d6ca]">·</span>
+              <a href="/terms" className="transition-colors hover:text-accent">服务条款</a>
+              <span className="text-[#d9d6ca]">·</span>
+              <span>课程内容由 AI 生成，请自行核实关键信息</span>
+            </div>
+          </footer>
+
+          {error && (
+            <div className="mt-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700">
+              出错了：{error}
+            </div>
+          )}
         </div>
-        {/* 示例主题 chip（点击直接填入） */}
-        <div className="mt-3 flex flex-wrap gap-2">
-          {["LLM Agent 的 Tool Use 设计模式", "雅思 vs 托福备考策略", "Python 数据分析入门"].map((s) => (
-            <button
-              key={s}
-              onClick={() => setQuery(`系统讲解 ${s}`)}
-              className="rounded-full border border-[#e7e5dc] bg-white px-3 py-1 text-[11.5px] text-ink-soft hover:border-accent hover:text-accent transition-colors"
-            >
-              <span className="text-accent mr-1">学习</span>
-              {s}
-            </button>
-          ))}
-        </div>
-        {error && (
-          <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700">
-            出错了：{error}
-          </div>
-        )}
       </div>
     );
   }
@@ -597,7 +737,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
         )}
         {sources.length > 0 && (
           <div className="space-y-1">
-            {(showAllSources ? sources : sources.slice(0, 6)).map((s) => (
+            {(showAllSources ? sources : sources.slice(0, 5)).map((s) => (
               <div key={s.index} className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-[#fafaf7] fade-up">
                 <span
                   className="w-4.5 h-4.5 shrink-0 rounded-full flex items-center justify-center text-[10px] font-bold text-white"
@@ -611,12 +751,14 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
                 </span>
               </div>
             ))}
-            {sources.length > 6 && !showAllSources && (
+            {sources.length > 5 && (
               <button
-                onClick={() => setShowAllSources(true)}
-                className="text-[12px] text-ink-faint px-2 py-1 hover:text-accent"
+                onClick={() => setShowAllSources((v) => !v)}
+                className="text-[12px] text-ink-faint px-2 py-1 hover:text-accent transition-colors"
               >
-                ⋯ 还有 {sources.length - 6} 个...
+                {showAllSources
+                  ? "⋯ 收起剩余来源"
+                  : `⋯ 还有 ${sources.length - 5} 个来源没展开，点击查看`}
               </button>
             )}
           </div>
@@ -759,6 +901,34 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
               <div className="text-[13.5px] text-ink leading-relaxed mb-4">
                 这是本课程的结构预览。可将鼠标悬停在单元或 lecture 上，删除、拆分或加深内容。
               </div>
+              {(editedBlueprint || blueprint)?.capstone?.name && (
+                <div className="mb-4 rounded-2xl border border-accent/30 bg-accent/5 p-5 fade-up">
+                  <div className="text-[12px] text-accent font-semibold tracking-wide mb-1.5">
+                    🎯 结课作品 · 学完你将亲手做出
+                  </div>
+                  <div className="text-[15px] font-semibold text-ink">
+                    {(editedBlueprint || blueprint)!.capstone!.name}
+                  </div>
+                  {(editedBlueprint || blueprint)!.capstone!.description && (
+                    <div className="text-[12.5px] text-ink-soft mt-1 leading-relaxed">
+                      {(editedBlueprint || blueprint)!.capstone!.description}
+                    </div>
+                  )}
+                  {(editedBlueprint || blueprint)!.capstone!.criteria.length > 0 && (
+                    <div className="mt-2.5 text-[12px] text-ink-soft">
+                      <span className="font-medium text-ink">做成标准（对照检查）：</span>
+                      <ul className="mt-1 space-y-0.5">
+                        {(editedBlueprint || blueprint)!.capstone!.criteria.map((c, i) => (
+                          <li key={i} className="flex gap-1.5 leading-relaxed">
+                            <span className="text-accent shrink-0">✓</span>
+                            <span>{c}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
               <BlueprintEditor
                 blueprint={editedBlueprint || blueprint || { title: "", audience: "", tags: [], units: [] }}
                 onChange={setEditedBlueprint}
@@ -927,6 +1097,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
               {courseId && (
                 <a
                   href={`/course/${courseId}`}
+                  onClick={() => resetGeneratorState()}
                   className="text-[12px] text-ink-faint hover:text-accent transition-colors underline decoration-dotted underline-offset-2"
                   title="独立链接，可刷新、可收藏、可找回"
                 >
@@ -936,6 +1107,8 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
               <button
                 onClick={() => {
                   if (onComplete && courseId) {
+                    // 交付完成：清空生成快照，下次回首页是全新输入页
+                    resetGeneratorState();
                     onComplete(courseId, outline.title, outline);
                   }
                 }}

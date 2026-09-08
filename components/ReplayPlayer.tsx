@@ -289,7 +289,7 @@ export function ReplayPlayer({ replayId }: { replayId: string }) {
           <div className="text-[17px] font-semibold mb-2">无法打开回放</div>
           <div className="text-[13px] text-ink-soft">{error}</div>
           <a href="/" className="inline-block mt-5 rounded-lg bg-accent px-5 py-2 text-[13px] text-white hover:opacity-90">
-            去 LearnLoop 上自己的课 →
+            去 Superlearn 上自己的课 →
           </a>
         </div>
       </div>
@@ -303,7 +303,7 @@ export function ReplayPlayer({ replayId }: { replayId: string }) {
       {/* 顶栏 */}
       <div className="h-14 border-b border-[#e7e5dc] flex items-center justify-between px-4 shrink-0">
         <div className="flex items-center gap-3 min-w-0">
-          <span className="w-7 h-7 rounded-lg bg-accent text-white text-[13px] font-bold flex items-center justify-center shrink-0">L</span>
+          <span className="w-7 h-7 rounded-lg bg-accent text-white text-[13px] font-bold flex items-center justify-center shrink-0">S</span>
           <div className="min-w-0">
             <div className="text-[14px] font-medium truncate leading-tight">{reel?.lectureTitle || "课程回放"}</div>
             <div className="text-[11px] text-ink-faint truncate leading-tight">{reel?.courseTitle}</div>
@@ -338,7 +338,7 @@ export function ReplayPlayer({ replayId }: { replayId: string }) {
         {(status === "ready" || status === "loading") && (
           <div className="absolute inset-0 z-40 flex items-center justify-center bg-white/70 backdrop-blur-[2px]">
             <div className="w-[400px] max-w-[88%] rounded-3xl border border-[#e7e5dc] bg-white shadow-xl p-8 text-center fade-up">
-              <div className="text-[11px] text-ink-faint uppercase tracking-[.12em] mb-2">LearnLoop 白板课回放</div>
+              <div className="text-[11px] text-ink-faint uppercase tracking-[.12em] mb-2">Superlearn 白板课回放</div>
               <div className="text-[20px] font-bold leading-snug mb-2">{reel?.lectureTitle || "加载中…"}</div>
               <div className="text-[13px] text-ink-soft leading-relaxed mb-1">{reel?.courseTitle}</div>
               <div className="text-[12px] text-ink-faint mb-6">

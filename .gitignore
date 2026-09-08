@@ -12,3 +12,6 @@ data/
 # 构建产物
 .open-next/
 .wrangler/
+
+# 本地备份的 R2 凭证，严禁入库
+.env.r2-backup

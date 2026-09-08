@@ -5,6 +5,7 @@
 // 未配置时返回 501，客户端安静回退浏览器识别。
 import { NextRequest } from "next/server";
 import { userFromCookieHeader } from "@/lib/auth";
+import { ASR_DAILY_REQUESTS, consumeDailyQuota, logOpsError } from "@/lib/ops";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,6 +35,15 @@ export async function POST(req: NextRequest) {
         hint: "云端语音识别未配置：与语音播报共用 DASHSCOPE_API_KEY，在 .env 填好后重启；未配置时自动用浏览器识别",
       },
       { status: 501 }
+    );
+  }
+
+  // 每日软上限：识别是说话才触发，真人一天到不了 200 句；超限引导回浏览器识别
+  const quota = await consumeDailyQuota(user.id, "asr", 1, ASR_DAILY_REQUESTS);
+  if (!quota.ok) {
+    return Response.json(
+      { error: "ASR_QUOTA", detail: `今天的云端识别次数已达上限（${ASR_DAILY_REQUESTS} 次/日），可改用浏览器识别或打字` },
+      { status: 429 }
     );
   }
 

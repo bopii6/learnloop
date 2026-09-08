@@ -16,6 +16,7 @@ export function AuthModal({ onClose, onLoggedIn }: AuthModalProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(0);
+  const [agreed, setAgreed] = useState(false);
   const codeRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -26,6 +27,10 @@ export function AuthModal({ onClose, onLoggedIn }: AuthModalProps) {
 
   const requestCode = async () => {
     if (busy) return;
+    if (!agreed) {
+      setError("请先阅读并同意《用户协议》和《隐私政策》");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -71,7 +76,7 @@ export function AuthModal({ onClose, onLoggedIn }: AuthModalProps) {
     <div className="fixed inset-0 z-[90] flex items-center justify-center bg-white/70 backdrop-blur-[2px]">
       <div className="w-[400px] max-w-[90%] rounded-3xl border border-[#e7e5dc] bg-white shadow-2xl p-7 fade-up">
         <div className="flex items-center justify-between mb-1">
-          <div className="text-[11px] text-accent font-semibold tracking-[.1em]">LearnLoop</div>
+          <div className="text-[11px] text-accent font-semibold tracking-[.1em]">Superlearn</div>
           <button onClick={onClose} className="text-ink-faint hover:text-ink text-[16px]" aria-label="关闭">
             ×
           </button>
@@ -91,15 +96,37 @@ export function AuthModal({ onClose, onLoggedIn }: AuthModalProps) {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.nativeEvent.isComposing && email.includes("@")) void requestCode();
+                if (e.key === "Enter" && !e.nativeEvent.isComposing && email.includes("@") && agreed) void requestCode();
               }}
               placeholder="you@example.com"
               autoFocus
               className="w-full rounded-xl border border-[#d3d1c7] px-4 py-2.5 text-[14px] outline-none focus:border-accent"
             />
+            <label className="flex items-start gap-2 text-[11.5px] text-ink-soft leading-relaxed cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={agreed}
+                onChange={(e) => {
+                  setAgreed(e.target.checked);
+                  if (e.target.checked) setError(null);
+                }}
+                className="mt-[2px] accent-[#0F6E56]"
+              />
+              <span>
+                我已阅读并同意
+                <a href="/terms" target="_blank" className="text-accent hover:underline mx-0.5">
+                  《用户协议》
+                </a>
+                与
+                <a href="/privacy" target="_blank" className="text-accent hover:underline mx-0.5">
+                  《隐私政策》
+                </a>
+                ，知悉课程内容由 AI 生成、可能存在错误。
+              </span>
+            </label>
             <button
               onClick={() => void requestCode()}
-              disabled={!email.includes("@") || busy}
+              disabled={!email.includes("@") || !agreed || busy}
               className="w-full rounded-xl bg-accent py-2.5 text-[13.5px] text-white font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
             >
               {busy ? "发送中…" : "发送验证码"}

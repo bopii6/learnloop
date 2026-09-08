@@ -113,10 +113,10 @@ export function VerticalClipModal({ open, onClose, courseTitle, lectureTitle, be
       ctx.fill();
       ctx.font = `700 24px ${FONT_STACK}`;
       ctx.fillStyle = "#fff";
-      ctx.fillText("L", M + 13, 106);
+      ctx.fillText("S", M + 13, 106);
       ctx.font = `700 24px ${FONT_STACK}`;
       ctx.fillStyle = INK;
-      ctx.fillText("LearnLoop · 60 秒速览", M + 54, 106);
+      ctx.fillText("Superlearn · 60 秒速览", M + 54, 106);
 
       const ease = (p: number) => 1 - Math.pow(1 - Math.min(1, Math.max(0, p)), 3);
 
@@ -184,7 +184,7 @@ export function VerticalClipModal({ open, onClose, courseTitle, lectureTitle, be
         ctx.fillText("这节课的完整版", M, 400);
         ctx.font = `700 52px ${FONT_STACK}`;
         ctx.fillStyle = ACCENT;
-        ctx.fillText("在 LearnLoop 上", M, 492);
+        ctx.fillText("在 Superlearn 上", M, 492);
         ctx.font = `400 27px ${FONT_STACK}`;
         ctx.fillStyle = "#8a8880";
         ctx.fillText(`${lectureTitle.slice(0, 16)} · AI 讲师边讲边画`, M, 590);

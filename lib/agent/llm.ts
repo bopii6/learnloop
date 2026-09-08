@@ -31,11 +31,13 @@ function addUsage(u?: { promptTokens?: number | null; completionTokens?: number 
   usageAcc.completionTokens += u.completionTokens || 0;
 }
 
-/** 非流式 JSON 生成：用于意图分类、搜索词规划、标题生成、课程结构生成 */
+/** 非流式 JSON 生成：用于意图分类、搜索词规划、标题生成、课程结构生成。
+ *  onError：调用方想拿真实失败原因（进 ops 日志）时给回调，不影响返回 null 的契约。 */
 export async function generateJson<T>(
   system: string,
   user: string,
-  maxTokens = 1500
+  maxTokens = 1500,
+  onError?: (e: unknown) => void
 ): Promise<T | null> {
   try {
     const { text, usage } = await generateText({
@@ -50,6 +52,7 @@ export async function generateJson<T>(
     return extractJson<T>(text);
   } catch (e) {
     console.error("generateJson failed:", e);
+    onError?.(e);
     return null;
   }
 }

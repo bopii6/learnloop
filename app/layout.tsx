@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "LearnLoop · 你的学习智能体",
-  description: "深度搜索 + 带引用的讲解，过程全程可见",
+  title: "Superlearn · AI 白板讲师",
+  description: "一句话生成一门系统课程：白板讲师逐句讲解配板书，先过关再拔高，学完交付作品",
 };
 
 export default function RootLayout({

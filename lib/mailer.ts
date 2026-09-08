@@ -24,9 +24,9 @@ export async function sendCodeEmail(email: string, code: string): Promise<{ sent
           accept: "application/json",
         },
         body: JSON.stringify({
-          sender: { name: "LearnLoop", email: process.env.MAIL_FROM },
+          sender: { name: "Superlearn", email: process.env.MAIL_FROM },
           to: [{ email }],
-          subject: `LearnLoop 登录验证码：${code}`,
+          subject: `【Superlearn】登录验证码：${code}`,
           textContent: `你的登录验证码是 ${code}，10 分钟内有效。不是你在操作请忽略这封邮件。`,
         }),
         signal: AbortSignal.timeout(12000),
@@ -58,7 +58,7 @@ export async function sendCodeEmail(email: string, code: string): Promise<{ sent
       await transport.sendMail({
         from,
         to: email,
-        subject: `LearnLoop 登录验证码：${code}`,
+        subject: `【Superlearn】登录验证码：${code}`,
         text: `你的登录验证码是 ${code}，10 分钟内有效。不是你在操作请忽略这封邮件。`,
       });
       return { sent: true };

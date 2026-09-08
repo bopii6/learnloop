@@ -4,7 +4,7 @@
 import { promises as fs } from "fs";
 import path from "path";
 import { createHash, createHmac, randomBytes, randomInt, timingSafeEqual } from "crypto";
-import { readJson, writeJson } from "@/lib/storage";
+import { readJson, readJsonStrict, writeJson } from "@/lib/storage";
 
 const USERS_KEY = "users.json";
 const CODES_KEY = "auth-codes.json";
@@ -25,6 +25,40 @@ interface CodeRecord {
 
 export function normalizeEmail(email: string): string {
   return (email || "").trim().toLowerCase();
+}
+
+/** 别名归一化：+tag 后缀与 gmail 点号视为同一邮箱（免费积分防刷：一人不能靠别名无限建号） */
+export function canonicalEmail(email: string): string {
+  const at = email.lastIndexOf("@");
+  if (at <= 0) return email;
+  const domain = email.slice(at + 1);
+  let local = email.slice(0, at);
+  const plus = local.indexOf("+");
+  if (plus > 0) local = local.slice(0, plus);
+  const isGmail = domain === "gmail.com" || domain === "googlemail.com";
+  if (isGmail) local = local.replace(/\./g, "");
+  return `${local}@${domain === "googlemail.com" ? "gmail.com" : domain}`;
+}
+
+// 常见临时/一次性邮箱域（够拦住批量薅羊毛的主流玩法，不用引第三方库）
+const DISPOSABLE_DOMAINS = new Set([
+  "mailinator.com", "10minutemail.com", "guerrillamail.com", "guerrillamailblock.com",
+  "yopmail.com", "trashmail.com", "throwawaymail.com", "sharklasers.com", "getnada.com",
+  "dispostable.com", "tempmail.plus", "temp-mail.org", "1secmail.com", "moakt.com",
+  "emailondeck.com", "fakeinbox.com", "maildrop.cc", "spamgourmet.com", "mytemp.email",
+]);
+
+export function isDisposableEmail(email: string): boolean {
+  const domain = email.slice(email.lastIndexOf("@") + 1);
+  return DISPOSABLE_DOMAINS.has(domain);
+}
+
+/** 该邮箱是否是某个已有账号的别名变体（同箱不同写法）；返回冲突的原邮箱 */
+export async function findAliasConflict(email: string): Promise<string | null> {
+  const db = await readJson<{ users: AuthUser[] }>(USERS_KEY, { users: [] });
+  const canon = canonicalEmail(email);
+  const other = db.users.find((u) => u.email !== email && canonicalEmail(u.email) === canon);
+  return other?.email || null;
 }
 
 export function isValidEmail(email: string): boolean {
@@ -90,7 +124,9 @@ export async function findUserById(id: string): Promise<AuthUser | null> {
 }
 
 export async function upsertUserByEmail(email: string): Promise<AuthUser> {
-  const db = await readJson<{ users: AuthUser[] }>(USERS_KEY, { users: [] });
+  // 严格读：users.json 是全体账号的唯一副本，解析失败必须拒写，
+  // 否则一次坏读 + 一次注册 = 用只含新用户的文件覆盖全部账号（静默清空）
+  const db = await readJsonStrict<{ users: AuthUser[] }>(USERS_KEY);
   const existing = db.users.find((u) => u.email === email);
   if (existing) return existing;
   const user: AuthUser = { id: `u-${randomBytes(5).toString("hex")}`, email, createdAt: Date.now() };

@@ -1,11 +1,14 @@
 "use client";
 
-// /learn/[courseId]/[lectureId] —— 白板课堂独立路由：可刷新、可后退。
+// /learn/[courseId]/[lectureId] —— 课节入口路由：按课节类型分流。
+// 白板课 → 白板课堂；测验课 → 单元测验；项目课 → 结课作品工坊。
 // 每次进入重新开讲（复习免费）；退出回课程详情页。
 import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { CourseOutline } from "@/types";
 import { CourseSession } from "@/components/CourseSession";
+import { CapstoneStudio } from "@/components/CapstoneStudio";
+import { QuizLesson } from "@/components/QuizLesson";
 
 export default function LecturePage({
   params,
@@ -61,6 +64,29 @@ export default function LecturePage({
       <div className="min-h-screen flex items-center justify-center">
         <span className="stage-spinner inline-block" style={{ width: 18, height: 18 }} />
       </div>
+    );
+  }
+
+  if (lecture.content_type === "project") {
+    return (
+      <CapstoneStudio
+        courseId={courseId}
+        outline={outline}
+        unitId={unit.id}
+        lecture={lecture}
+        onExit={() => router.push(`/course/${courseId}`)}
+      />
+    );
+  }
+  if (lecture.content_type === "quiz") {
+    return (
+      <QuizLesson
+        courseId={courseId}
+        outline={outline}
+        unitId={unit.id}
+        lecture={lecture}
+        onExit={() => router.push(`/course/${courseId}`)}
+      />
     );
   }
 

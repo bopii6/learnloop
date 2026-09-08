@@ -113,10 +113,10 @@ export async function exportBoardPoster(opts: PosterOptions): Promise<{ blob: Bl
   ctx.fill();
   ctx.font = `700 21px ${FONT_STACK}`;
   ctx.fillStyle = ACCENT;
-  ctx.fillText("L", MARGIN + 9, y);
+  ctx.fillText("S", MARGIN + 9, y);
   ctx.font = `600 21px ${FONT_STACK}`;
   ctx.fillStyle = INK;
-  ctx.fillText("LearnLoop · 知识海报", MARGIN + 42, y);
+  ctx.fillText("Superlearn · 知识海报", MARGIN + 42, y);
 
   // 课程归属（小字）
   y += 12;
@@ -168,7 +168,7 @@ export async function exportBoardPoster(opts: PosterOptions): Promise<{ blob: Bl
   ctx.fillStyle = INK_FAINT;
   const date = new Date();
   ctx.fillText(
-    `${date.getFullYear()} 年 ${date.getMonth() + 1} 月 ${date.getDate()} 日 · 用 LearnLoop 生成`,
+    `${date.getFullYear()} 年 ${date.getMonth() + 1} 月 ${date.getDate()} 日 · 用 Superlearn 生成`,
     MARGIN + 20,
     fy + 36
   );
@@ -348,10 +348,10 @@ export async function exportScriptPoster(opts: {
   ctx.fill();
   ctx.font = `700 21px ${FONT_STACK}`;
   ctx.fillStyle = "#fff";
-  ctx.fillText("L", M + 9, y);
+  ctx.fillText("S", M + 9, y);
   ctx.font = `600 21px ${FONT_STACK}`;
   ctx.fillStyle = INK;
-  ctx.fillText("LearnLoop · 知识海报", M + 42, y);
+  ctx.fillText("Superlearn · 知识海报", M + 42, y);
 
   // 课程名
   y += 40;
@@ -545,7 +545,7 @@ export async function exportScriptPoster(opts: {
   ctx.fillStyle = INK_FAINT;
   const d = new Date();
   ctx.fillText(
-    `${cards.length} 个片段 · ${d.getFullYear()} 年 ${d.getMonth() + 1} 月 ${d.getDate()} 日 · 用 LearnLoop 生成`,
+    `${cards.length} 个片段 · ${d.getFullYear()} 年 ${d.getMonth() + 1} 月 ${d.getDate()} 日 · 用 Superlearn 生成`,
     M + 20,
     fy + 36
   );

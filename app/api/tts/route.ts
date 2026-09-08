@@ -4,7 +4,10 @@
 // 环境变量：DASHSCOPE_API_KEY（必填）；TTS_MODEL / TTS_VOICE（可选，默认 qwen3-tts-flash / Cherry）。
 // 未配置时返回 501，客户端自动回退浏览器 speechSynthesis，功能不受影响。
 import { NextRequest } from "next/server";
+import { createHash } from "crypto";
 import { userFromCookieHeader } from "@/lib/auth";
+import { readJson, writeJson } from "@/lib/storage";
+import { TTS_DAILY_CHARS, consumeDailyQuota, logOpsError } from "@/lib/ops";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,8 +20,16 @@ const ENDPOINT =
 
 const MAX_CHUNK = 200; // qwen3-tts 对输入文本有长度限制，长句切块并行合成
 const CACHE_MAX = 300; // 进程内缓存（同文本重播不再计费），超出整体清空
+// 持久化缓存：合成结果按 (model|voice|text) 哈希落 R2/本地，跨进程跨部署都命中。
+// 没有它，"复习免费"每次重听都真金白银重合成（0.8元/万字符），重度用户持续失血。
+const PERSIST_PREFIX = "tts-cache/";
 
 const cache = new Map<string, string[]>(); // cacheKey -> base64 wav 分段
+
+function persistentKey(model: string, voice: string, text: string): string {
+  const hash = createHash("sha256").update(`${model}|${voice}|${text}`).digest("hex").slice(0, 32);
+  return `${PERSIST_PREFIX}${hash}.json`;
+}
 
 function defaults() {
   return {
@@ -104,16 +115,36 @@ export async function POST(req: NextRequest) {
 
   const { model, voice } = defaults();
   const cacheKey = `${model}|${voice}|${text}`;
-  let segments = cache.get(cacheKey);
+  let segments: string[] | null | undefined = cache.get(cacheKey);
   if (!segments) {
+    // 二级缓存：落盘的历史合成结果（跨进程/跨部署命中，重听零成本）
+    segments = await readJson<string[] | null>(persistentKey(model, voice, text), null);
+    if (segments) cache.set(cacheKey, segments);
+  }
+  if (!segments) {
+    // 只有真合成才消耗每日字符配额；缓存命中不花钱也不扣量
+    const quota = await consumeDailyQuota(user.id, "ttsChars", text.length, TTS_DAILY_CHARS);
+    if (!quota.ok) {
+      return Response.json(
+        {
+          error: "TTS_QUOTA",
+          detail: `今天的语音播报量已达上限（约 ${Math.round(TTS_DAILY_CHARS / 2)} 字/日），明天继续。已缓存的内容不受影响。`,
+        },
+        { status: 429 }
+      );
+    }
     try {
       segments = await synthesize(text);
     } catch (e) {
       const detail = e instanceof Error ? e.message : String(e);
+      await logOpsError({ kind: "tts", userId: user.id, detail }).catch(() => {});
       return Response.json({ error: "TTS_FAILED", detail }, { status: 502 });
     }
     if (cache.size >= CACHE_MAX) cache.clear();
     cache.set(cacheKey, segments);
+    await writeJson(persistentKey(model, voice, text), segments).catch(() => {
+      // 缓存落盘失败不影响本次播放，代价只是下次重合成
+    });
   }
   return Response.json({ segments });
 }

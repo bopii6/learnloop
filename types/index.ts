@@ -288,6 +288,70 @@ export interface ReplayReel {
   beats: ReplayBeat[];
 }
 
+// ---- 结课作品工坊（Capstone Studio）：project 课节的真实体验 ----
+
+/** 任务书：把"做出结课作品"拆成学员可执行的一步步 */
+export interface CapstoneBrief {
+  title: string; // 任务书标题（带学员的场景，因人而异）
+  mission: string; // 一句话说清最终交出什么（名词性的东西）
+  steps: { title: string; detail: string }[]; // 4-6 步，每步有明确产出
+  references: string[]; // 建议回看的课节标题（从大纲里选）
+  criteriaCheck: { text: string; hint: string }[]; // 做成标准的可执行化 + 自查方法
+  pitfalls: string[]; // 常见翻车点（具体到动作）
+  timeEstimate: string; // 预计投入
+}
+
+/** 验收结果：对照做成标准逐条判定，铁面无私 */
+export interface CapstoneReview {
+  passed: boolean;
+  overall: string;
+  criteria: { text: string; met: boolean; comment: string }[];
+  strengths: string[];
+  improvements: string[];
+}
+
+export interface CapstoneSubmission {
+  at: number;
+  text: string;
+  link?: string;
+  review: CapstoneReview;
+}
+
+export interface CapstoneRecord {
+  courseId: string;
+  userId: string;
+  lectureId: string;
+  capstoneName: string;
+  brief?: CapstoneBrief;
+  briefAt?: number;
+  submissions: CapstoneSubmission[];
+  passed: boolean;
+  passedAt?: number;
+  updatedAt: number;
+}
+
+// ---- 单元测验（quiz 课节的真实体验） ----
+
+/** 单元测验题：结构与课堂课后练习一致，独立成课节使用 */
+export interface UnitQuizItem {
+  question: string;
+  multi: boolean;
+  options: string[];
+  answerIndexes: number[]; // 正确选项下标（下发学员前会剥离）
+  explain: string;
+}
+
+export interface QuizRecord {
+  courseId: string;
+  userId: string;
+  lectureId: string;
+  quiz?: UnitQuizItem[];
+  attempts: { at: number; score: number; total: number }[];
+  passed: boolean;
+  bestScore?: number;
+  updatedAt: number;
+}
+
 // ---- 教材（PDF 上传）----
 
 export interface TextbookPage {

@@ -99,7 +99,11 @@ export function ChatView({
           body: JSON.stringify({ conversationId: currentId, message }),
           signal: controller.signal,
         });
-        if (!res.ok || !res.body) throw new Error(`请求失败 (${res.status})`);
+        if (!res.ok || !res.body) {
+          // 429/401 等业务拒绝带 JSON 错误说明，优先展示后端给的人话
+          const d = await res.json().catch(() => null);
+          throw new Error(d?.error || `请求失败 (${res.status})`);
+        }
 
         const handle = (e: AgentEvent) => {
           if (e.type === "stage") {
@@ -225,9 +229,9 @@ export function ChatView({
                   <button
                     key={s}
                     onClick={() => send(s)}
-                    className="group rounded-xl border border-[#e7e5dc] bg-white px-4 py-3 text-[13.5px] text-ink hover:border-accent transition-colors text-left flex items-center gap-3"
+                    className="group rounded-xl border border-[#e7e5dc] bg-white px-4 py-3 text-[13.5px] text-ink transition-all text-left flex items-center gap-3 hover:-translate-y-px hover:border-accent/50 hover:shadow-sm"
                   >
-                    <span className="text-accent opacity-60 group-hover:opacity-100 transition-opacity">▸</span>
+                    <span className="text-accent/70 group-hover:text-accent transition-colors">✦</span>
                     <span className="flex-1">{s}</span>
                     <span className="text-ink-faint opacity-0 group-hover:opacity-100 transition-opacity">→</span>
                   </button>
