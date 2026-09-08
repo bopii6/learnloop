@@ -4,10 +4,8 @@
   "main": ".open-next/worker.js",
   "compatibility_date": "2024-09-23",
   "compatibility_flags": ["nodejs_compat"],
-  // 自定义域名：绑定后国内可直连（workers.dev 在国内被墙）
-  "routes": [
-    { "pattern": "agent.hellojoy.top", "custom_domain": true }
-  ],
+  // 自定义域名 agent.hellojoy.top 已在 Cloudflare 面板绑定到本 Worker（持久生效）。
+  // 不在此声明 routes：部署令牌无 zone routes 权限，声明会导致部署报认证错误。
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
