@@ -3,6 +3,7 @@
 import type { CourseOutline } from "@/types";
 import { useRef, useState } from "react";
 import { CourseSession } from "./CourseSession";
+import { uploadTextbookPdf } from "@/lib/textbook-client";
 
 interface CourseOutlineViewProps {
   outline: CourseOutline;
@@ -29,10 +30,9 @@ export function CourseOutlineView({ outline, courseId }: CourseOutlineViewProps)
     setMaterialState("uploading");
     setMaterialName(file.name);
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      const res = await fetch("/api/textbook", { method: "POST", body: fd });
-      setMaterialState(res.ok ? "done" : "error");
+      // 与首页上传同流程：浏览器端抽取（Workers 服务端扛不动解析），扫描版回退文件上传
+      await uploadTextbookPdf(file);
+      setMaterialState("done");
     } catch {
       setMaterialState("error");
     }
