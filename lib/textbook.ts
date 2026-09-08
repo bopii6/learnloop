@@ -94,6 +94,13 @@ export function chunkTextbook(tb: TextbookLike, maxChars = 2200, maxChunks = 40)
   return chunks;
 }
 
+/** 文档体量评估：内容太薄的文档撑不起一门系统课，建课链路要相应收敛规模 */
+export function assessTextbook(tb: TextbookLike): { totalChars: number; thin: boolean } {
+  const totalChars = tb.pages.reduce((s, p) => s + p.text.trim().length, 0);
+  // 阈值：800 字约等于 1 页有效讲义；低于它按"笔记/便签"处理
+  return { totalChars, thin: totalChars < 800 };
+}
+
 /** 教材块 → 伪来源（建课链路把教材当"搜索结果"用，蓝图/澄清共用一套 excerpt 管线） */
 export function textbookToSources(tb: TextbookLike): {
   sources: SourceItem[];

@@ -5,7 +5,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { extractText, getDocumentProxy } from "unpdf";
-import { extractTocCandidates, loadTextbook, type TextbookDoc } from "@/lib/textbook";
+import { extractTocCandidates, loadTextbook, assessTextbook, type TextbookDoc } from "@/lib/textbook";
 import { ocrPdf } from "@/lib/ocr";
 import { userFromCookieHeader } from "@/lib/auth";
 import { writeJson, storageMode } from "@/lib/storage";
@@ -94,19 +94,27 @@ export async function POST(req: NextRequest) {
 
     await writeJson(`textbooks/${doc.id}.json`, doc);
 
+    // 文档体量评估：太薄的文档撑不起系统课，提前告知用户（不阻断，由用户决定）
+    const assessment = assessTextbook(doc);
+    const thinNotice = assessment.thin
+      ? `这份文档只有约 ${assessment.totalChars} 字，内容量撑不起一门长课。可以继续生成——课程会以它为纲、用联网资料扩充，但"原文精讲"的部分会比较短。`
+      : undefined;
+
     return NextResponse.json({
       id: doc.id,
       title: doc.title,
       pageCount: doc.pageCount,
       textPages: pages.length,
+      totalChars: assessment.totalChars,
+      thin: assessment.thin,
       tocCount: doc.toc.length,
       toc: doc.toc.slice(0, 40),
       ocr: ocrInfo.used,
       ocrLang: ocrInfo.lang,
       truncated: ocrInfo.truncated === true,
-      notice: ocrInfo.used
-        ? `扫描版已通过 OCR 识别（共 ${pages.length} 页有效内容）${ocrInfo.truncated ? "，超过页数上限只识别了前一部分" : ""}。识别质量取决于扫描清晰度，建议抽查课程内容。`
-        : undefined,
+      notice: [thinNotice, ocrInfo.used ? `扫描版已通过 OCR 识别（共 ${pages.length} 页有效内容）${ocrInfo.truncated ? "，超过页数上限只识别了前一部分" : ""}。识别质量取决于扫描清晰度，建议抽查课程内容。` : undefined]
+        .filter(Boolean)
+        .join(" "),
     });
   } catch (e) {
     return NextResponse.json(

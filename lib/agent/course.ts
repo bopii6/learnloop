@@ -219,6 +219,19 @@ function isLikelyOffTopic(item: SourceItem, topic: string): boolean {
   return false;
 }
 
+/** 内容农场/SEO 垃圾识别（实测：猫咪主题搜回来"猫咪TV/xx社区入口"这类站，污染澄清与蓝图） */
+const SPAMMY_TLDS = /\.(top|xyz|site|online|club|icu|cyou|buzz|shop|vip|website|space|link|fun|store)$/i;
+
+function looksLikeContentFarm(item: SourceItem): boolean {
+  const d = item.domain.toLowerCase();
+  if (SPAMMY_TLDS.test(d)) return true;
+  if ((d.match(/-/g) || []).length >= 3) return true; // 连字符堆砌的精确匹配域名
+  const text = `${item.title} ${item.snippet || ""}`;
+  const farmWords = /(高清|大全|每日更新|免费观看|在线观看|免费下载|独家资源|网址导航|最新地址|社区入口)/;
+  const knowledgeWords = /(教程|文档|笔记|课程|指南|原理|实战|源码|论文|官方|github|docs?)/i;
+  return farmWords.test(text) && !knowledgeWords.test(text);
+}
+
 export async function runSearchStep(opts: {
   query: string;
   history: HistoryMsg[];
@@ -251,7 +264,10 @@ export async function runSearchStep(opts: {
     searchQueries = plan.queries
       .map(String)
       .map((q) => q.replace(/[，。！？：:、]/g, " ").replace(/\s+/g, " ").trim())
-      .filter((q) => isRelevantQuery(q, topic))
+      .filter((q) => q.length > 0)
+      // 文档模式：文档标题 token 和中文查询对不上，主题词过滤会误杀 LLM 规划的好查询，
+      // 只留空串检查；纯文字模式保留主题词过滤
+      .filter((q) => (docContext ? true : isRelevantQuery(q, topic)))
       .slice(0, 3);
   }
   // 语言策略的代码级兜底：技术主题但 LLM 给的全是中文查询 → 用任务里的英文词干造英文查询
@@ -277,7 +293,7 @@ export async function runSearchStep(opts: {
   for (const s of settled) {
     if (s.status !== "fulfilled") continue;
     for (const item of s.value) {
-      if (seen.has(item.url) || isLikelyOffTopic(item, topic)) continue;
+      if (seen.has(item.url) || isLikelyOffTopic(item, topic) || looksLikeContentFarm(item)) continue;
       seen.add(item.url);
       sources.push({ ...item, index: sources.length + 1 });
       if (sources.length - existingCount >= webCap) break;
