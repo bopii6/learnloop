@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReplayReel } from "@/types";
 import { Whiteboard } from "./Whiteboard";
 import { createBoardWriter, type BoardWriter } from "./board-writer";
+import { createTtsPlayer, fetchTtsSegments, prefetchTts } from "@/lib/tts-client";
 
 let cachedZhVoice: SpeechSynthesisVoice | null = null;
 function pickZhVoice(): SpeechSynthesisVoice | null {
@@ -65,13 +66,14 @@ export function ReplayPlayer({ replayId }: { replayId: string }) {
       });
     return () => {
       alive = false;
+      stopSpeechRef.current?.(); // 云端音频走 <audio>，必须显式停
       if ("speechSynthesis" in window) window.speechSynthesis.cancel();
     };
   }, [replayId]);
 
   const beats = reel?.beats || [];
 
-  /** 逐句朗读；静音或不可用时按阅读节奏计时推进 */
+  /** 逐句朗读：云端 TTS 优先（音色自然），静音/未配置/失败回退浏览器系统音色或阅读节奏计时 */
   const speak = useCallback((text: string) => {
     const spd = 1;
     return new Promise<void>((resolve) => {
@@ -80,13 +82,8 @@ export function ReplayPlayer({ replayId }: { replayId: string }) {
         window.setTimeout(resolve, Math.max(minMs, (text.length * 170 + 400) / spd));
         return;
       }
-      const synth = window.speechSynthesis;
-      const u = new SpeechSynthesisUtterance(text);
-      u.lang = "zh-CN";
-      const zh = pickZhVoice();
-      if (zh) u.voice = zh;
       let settled = false;
-      let started = false;
+      let cancelled = false; // 云端合成等待期间被暂停/seek
       const finish = () => {
         if (!settled) {
           settled = true;
@@ -94,22 +91,43 @@ export function ReplayPlayer({ replayId }: { replayId: string }) {
           resolve();
         }
       };
-      u.onstart = () => (started = true);
-      u.onend = finish;
-      u.onerror = finish;
       stopSpeechRef.current = () => {
-        try {
-          synth.cancel();
-        } catch {
-          // ignore
-        }
+        cancelled = true;
         finish();
       };
-      synth.speak(u);
-      window.setTimeout(() => {
-        if (!started) finish();
-      }, 1800);
-      window.setTimeout(finish, (text.length * 320 + 6000) / spd);
+      void (async () => {
+        const segs = await fetchTtsSegments(text);
+        if (cancelled || settled) return;
+        if (segs) {
+          const player = createTtsPlayer(segs, spd);
+          stopSpeechRef.current = () => player.stop();
+          await player.promise;
+          finish();
+          return;
+        }
+        const synth = window.speechSynthesis;
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = "zh-CN";
+        const zh = pickZhVoice();
+        if (zh) u.voice = zh;
+        let started = false;
+        u.onstart = () => (started = true);
+        u.onend = finish;
+        u.onerror = finish;
+        stopSpeechRef.current = () => {
+          try {
+            synth.cancel();
+          } catch {
+            // ignore
+          }
+          finish();
+        };
+        synth.speak(u);
+        window.setTimeout(() => {
+          if (!started) finish();
+        }, 1800);
+        window.setTimeout(finish, (text.length * 320 + 6000) / spd);
+      })();
     });
   }, []);
 
@@ -146,6 +164,7 @@ export function ReplayPlayer({ replayId }: { replayId: string }) {
           await writer.beginSegment(b.segmentTitle);
         }
         await writer.write(b.section, b.items || []);
+        prefetchTts(beats[i + 1]?.say); // 播放本句期间预取下一句云端音频
         await speak(b.say);
         if (cancelRef.current !== gen) return;
       }

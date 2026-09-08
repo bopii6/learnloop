@@ -203,11 +203,11 @@ export function CourseOutlineView({ outline, courseId }: CourseOutlineViewProps)
           <div className="flex-1 min-w-0">
             <div className="text-[13.5px] font-medium text-ink">上传材料，扩展这门课程</div>
             <div className="text-[12px] text-ink-soft mt-0.5">
-              上传新的 PDF，或直接描述你想添加的内容——新材料会融入接下来的课节讲解
+              上传新的 PDF 给讲师备课参考（自动融入课节讲解的能力开发中）
             </div>
             {materialState === "done" && (
               <div className="text-[11.5px] text-emerald-700 mt-1">
-                ✓ 已收到《{materialName}》，讲师会在接下来的课节中引用它
+                ✓ 已解析入库《{materialName}》（纳入讲解的能力开发中，先帮你存好了）
               </div>
             )}
             {materialState === "uploading" && (

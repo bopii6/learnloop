@@ -8,6 +8,7 @@ import { LectureQuizPanel } from "./LectureQuizPanel";
 import { useClassroomSocket, type ClassroomState } from "@/hooks/useClassroomSocket";
 import { startVoiceCapture, type VoiceCapture } from "./voice-capture";
 import { consumeSse } from "@/lib/sse";
+import { createTtsPlayer, fetchTtsSegments, prefetchTts } from "@/lib/tts-client";
 import { exportBoardPoster, exportScriptPoster, downloadBlob, copyImageToClipboard, safeFilename } from "@/lib/board-poster";
 import { VerticalClipModal, type ClipBeat } from "./VerticalClipModal";
 
@@ -81,6 +82,42 @@ if (typeof window !== "undefined" && "speechSynthesis" in window) {
 // Chromium 已知问题：SpeechSynthesisUtterance 没有外部强引用时可能被 GC，
 // 表现为朗读中途静音且 onend 永不触发。持有"最近一次"的 utterance 保活即可。
 let keepAliveUtterance: SpeechSynthesisUtterance | null = null;
+
+// 浏览器系统音色兜底（云端 TTS 未配置/失败时）：onend / 兜底超时 / 主动取消 三路收敛
+function speakWithBrowser(
+  text: string,
+  rate: number,
+  registerStop: (stop: () => void) => void,
+  finish: () => void
+) {
+  const synth = window.speechSynthesis;
+  const u = new SpeechSynthesisUtterance(text);
+  keepAliveUtterance = u; // 防止 utterance 被 GC 导致 onend 丢失
+  u.lang = "zh-CN";
+  u.rate = rate;
+  const zh = pickZhVoice();
+  if (zh) u.voice = zh;
+  let started = false;
+  u.onstart = () => {
+    started = true;
+  };
+  u.onend = finish;
+  u.onerror = finish;
+  registerStop(() => {
+    try {
+      synth.cancel();
+    } catch {
+      // ignore
+    }
+    finish();
+  });
+  synth.speak(u);
+  // 浏览器静默失败（无声卡/无语音包）时不要卡死课堂
+  window.setTimeout(() => {
+    if (!started) finish();
+  }, 1800);
+  window.setTimeout(finish, (text.length * 320 + 6000) / rate);
+}
 
 export function CourseSession({
   courseId,
@@ -353,7 +390,8 @@ export function CourseSession({
     }
   }, [startListening, stopListening, stopCloudCapture]);
 
-  // ---- 语音：逐句朗读，onend / 兜底超时 / 主动取消 三路收敛为一个 Promise ----
+  // ---- 语音：逐句朗读。云端 TTS 优先（音色自然），未配置/失败回退浏览器系统音色；
+  // onend / 兜底超时 / 主动取消 三路收敛为一个 Promise ----
   const speak = useCallback((text: string) => {
     spokenRef.current = text; // 供语音模式的回声过滤比对
     spokenAtRef.current = Date.now();
@@ -367,16 +405,8 @@ export function CourseSession({
         window.setTimeout(resolve, Math.max(minMs, (text.length * 170 + 400) / spd));
         return;
       }
-      const synth = window.speechSynthesis;
-      const u = new SpeechSynthesisUtterance(text);
-      keepAliveUtterance = u; // 防止 utterance 被 GC 导致 onend 丢失
-      u.lang = "zh-CN";
-      u.rate = spd;
-      const zh = pickZhVoice();
-      if (zh) u.voice = zh;
-
       let settled = false;
-      let started = false;
+      let cancelled = false; // 云端合成等待期间被暂停/退出
       const finish = () => {
         if (!settled) {
           settled = true;
@@ -384,25 +414,24 @@ export function CourseSession({
           resolve();
         }
       };
-      u.onstart = () => {
-        started = true;
-      };
-      u.onend = finish;
-      u.onerror = finish;
       speechStopRef.current = () => {
-        try {
-          synth.cancel();
-        } catch {
-          // ignore
-        }
+        cancelled = true;
         finish();
       };
-      synth.speak(u);
-      // 浏览器静默失败（无声卡/无语音包）时不要卡死课堂
-      window.setTimeout(() => {
-        if (!started) finish();
-      }, 1800);
-      window.setTimeout(finish, (text.length * 320 + 6000) / spd);
+      void (async () => {
+        const segs = await fetchTtsSegments(text);
+        if (cancelled || settled) return;
+        if (segs) {
+          const player = createTtsPlayer(segs, spd);
+          speechStopRef.current = () => player.stop();
+          await player.promise;
+          finish();
+        } else {
+          speakWithBrowser(text, spd, (stop) => {
+            speechStopRef.current = stop;
+          }, finish);
+        }
+      })();
     });
   }, []);
 
@@ -463,7 +492,8 @@ export function CourseSession({
       window.setTimeout(() => setBoardPulse(false), 900);
       if (item.lastOfSegment) writerRef.current?.removePencil();
 
-      // 朗读本句（或静音节奏计时）
+      // 朗读本句（或静音节奏计时）；先预取下一句的云端音频，播放期不空等
+      prefetchTts(queueRef.current[0]?.beat.say);
       await speak(item.beat.say);
 
       // 片段收尾：轨道打勾；有课堂练习则停下来，选项内嵌在字幕区等学员作答
@@ -809,6 +839,7 @@ export function CourseSession({
     exitedRef.current = false; // StrictMode 二次挂载时复位，不能只在 cleanup 置位
     return () => {
       exitedRef.current = true; // 卸载后 pump/speak/续播全部短路，杜绝幽灵朗读
+      speechStopRef.current?.(); // 云端音频走 <audio>，必须显式停
       if ("speechSynthesis" in window) window.speechSynthesis.cancel();
     };
   }, []);
@@ -825,6 +856,7 @@ export function CourseSession({
     pausedRef.current = true;
     stopListening();
     stopCloudCapture();
+    speechStopRef.current?.(); // 云端音频走 <audio>，必须显式停
     if ("speechSynthesis" in window) window.speechSynthesis.cancel();
     onExit?.();
   };
@@ -869,12 +901,6 @@ export function CourseSession({
           studentName: profileNameRef.current || undefined,
         }));
       }
-      // DEBUG-POSTER: 验证用钩子，上线前移除
-      try {
-        const fr = new FileReader();
-        fr.onload = () => ((window as any).__llPosterUrl = String(fr.result || ""));
-        fr.readAsDataURL(blob);
-      } catch {}
       downloadBlob(blob, `learnloop_poster_${safeFilename(lectureTitle)}.png`);
       const copied = await copyImageToClipboard(blob);
       setPosterMsg(copied ? "已下载并复制到剪贴板" : "海报已下载");

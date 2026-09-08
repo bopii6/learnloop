@@ -78,6 +78,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
   // 文档建课 5 步管线：第 1 步「正在查看你的文档」+ 蓝图确认后的行内回执
   const [readingDoc, setReadingDoc] = useState<"idle" | "running" | "done">("idle");
   const [confirmed, setConfirmed] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const outlineRef = useRef<CourseOutline | null>(null);
@@ -156,6 +157,9 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
       setStep("done");
       setLoading(false);
       setProgress(null);
+      setSaveFailed(Boolean(e.saveFailed));
+    } else if (e.type === "save_ok") {
+      setSaveFailed(false);
     } else if (e.type === "error") {
       setError(e.message);
       setLoading(false);
@@ -231,6 +235,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
     setQaResult(null);
     setReadingDoc(textbookId ? "running" : "idle");
     setConfirmed(false);
+    setSaveFailed(false);
     await streamRequest({
       action: "start",
       query: query.trim() || `系统学习《${textbookTitle}》教材`,
@@ -277,6 +282,13 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
     setFeedback("");
   }, [courseId, loading, feedback, streamRequest]);
 
+  const retrySave = useCallback(async () => {
+    if (!courseId || loading) return;
+    setLoading(true);
+    await streamRequest({ action: "save_course", courseId });
+    setLoading(false);
+  }, [courseId, loading, streamRequest]);
+
   const cancelGeneration = useCallback(() => {
     abortRef.current?.abort();
     setStep("input");
@@ -285,6 +297,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
     setProgress(null);
     setReadingDoc("idle");
     setConfirmed(false);
+    setSaveFailed(false);
   }, []);
 
   const toggleOption = (label: string) => {
@@ -850,6 +863,20 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
               ✓ 课程已就绪
             </div>
             <div className="text-[22px] font-bold mb-2">{outline.title}</div>
+          {saveFailed && (
+            <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 flex items-center gap-3">
+              <span className="text-[12.5px] text-amber-800 flex-1 leading-relaxed">
+                ⚠ 课程保存时网络连续失败，目前只在当前页面可见。课程已生成本地副本，可随时重试保存。
+              </span>
+              <button
+                onClick={() => void retrySave()}
+                disabled={loading}
+                className="shrink-0 rounded-full bg-amber-500 px-4 py-1.5 text-[12px] text-white font-medium hover:opacity-90 disabled:opacity-50"
+              >
+                {loading ? "保存中…" : "重试保存"}
+              </button>
+            </div>
+          )}
             <div className="text-[13.5px] text-ink-soft mb-3 leading-relaxed">{outline.audience}</div>
             <div className="flex gap-2 flex-wrap mb-4">
               {outline.tags.map((tag) => (
@@ -889,7 +916,16 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
                 </ol>
               </div>
             )}
-            <div className="mt-5 flex justify-end">
+            <div className="mt-5 flex justify-end gap-3 items-center">
+              {courseId && (
+                <a
+                  href={`/course/${courseId}`}
+                  className="text-[12px] text-ink-faint hover:text-accent transition-colors underline decoration-dotted underline-offset-2"
+                  title="独立链接，可刷新、可收藏、可找回"
+                >
+                  用链接打开这门课 ↗
+                </a>
+              )}
               <button
                 onClick={() => {
                   if (onComplete && courseId) {

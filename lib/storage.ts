@@ -91,12 +91,42 @@ async function r2Get(key: string): Promise<Buffer | null> {
 
 async function r2Put(key: string, data: Buffer): Promise<void> {
   const client = await getR2();
-  const res = await client.fetch(r2Url(key), {
-    method: "PUT",
-    body: new Uint8Array(data),
-    headers: { "Content-Type": "application/octet-stream" },
-  });
-  if (!res.ok) throw new Error(`R2 PUT ${key} -> ${res.status}`);
+  const doPut = async (): Promise<number | null> => {
+    try {
+      const res = await client.fetch(r2Url(key), {
+        method: "PUT",
+        body: new Uint8Array(data),
+        // 必须显式给 Content-Length：undici 对 >64KB 的 body 会退回 chunked 传输，
+        // 而 R2 的 S3 API 对 chunked PUT 一律返回 411 MissingContentLength
+        headers: { "Content-Type": "application/octet-stream", "Content-Length": String(data.byteLength) },
+      });
+      return res.status;
+    } catch {
+      return null; // 网络异常（连接重置 / 代理 / TUN 抖动）
+    }
+  };
+
+  // 网络间歇会偶发 411/5xx/断连：同写重试两次，间隔递增。
+  // 教训：一次 3 分钟的课程生成可以毁在最后一次存档上，写路径必须抗压。
+  let lastStatus: number | null = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const status = await doPut();
+    if (status !== null && status < 300) return;
+    if (status !== null && status !== 411 && status !== 429 && status < 500) {
+      throw new Error(`R2 PUT ${key} -> ${status}`); // 403/404 等不可重试
+    }
+    lastStatus = status;
+    await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+  }
+  // 重试耗尽：落本地影子副本（读路径在 R2 拿不到时会回退到这里），然后照常抛错让上层感知
+  try {
+    const p = path.join(LOCAL_ROOT, "shadow", safeKey(key));
+    await fs.mkdir(path.dirname(p), { recursive: true });
+    await fs.writeFile(p, data);
+  } catch {
+    // 影子也写不进去（磁盘满等）就只能真丢了
+  }
+  throw new Error(`R2 PUT ${key} -> ${lastStatus ?? "network error"} (已重试 3 次，本地影子已存)`);
 }
 
 async function r2Delete(key: string): Promise<void> {
@@ -146,7 +176,30 @@ export async function readBinary(key: string): Promise<Buffer | null> {
       return null;
     }
   }
-  return r2Get(k);
+  try {
+    const buf = await r2Get(k);
+    if (buf) return buf;
+  } catch (e) {
+    // R2 网络失败：先查影子副本（上次写入可能走了影子兜底），影子也没有才抛错
+    const shadow = await readShadow(k);
+    if (shadow) return shadow;
+    throw e;
+  }
+  // R2 正常响应 404：也可能是上次写入走了影子兜底，再查一次影子
+  return readShadow(k);
+}
+
+/** 影子副本读写（data/shadow/ 下，与本地模式数据隔离） */
+function shadowPath(key: string): string {
+  return path.join(LOCAL_ROOT, "shadow", safeKey(key));
+}
+
+async function readShadow(key: string): Promise<Buffer | null> {
+  try {
+    return await fs.readFile(shadowPath(key));
+  } catch {
+    return null;
+  }
 }
 
 export async function writeBinary(key: string, data: Buffer): Promise<void> {
@@ -225,7 +278,22 @@ export async function listKeys(prefix: string): Promise<StorageListItem[]> {
       return [];
     }
   }
-  return r2List(p);
+  // R2 列表合并本地影子副本：影子兜底写入的键（R2 上不存在）不能在列表里隐身
+  const items = await r2List(p);
+  const seen = new Set(items.map((i) => i.key));
+  try {
+    const dir = shadowPath(p);
+    const entries = await fs.readdir(dir);
+    for (const name of entries) {
+      const key = `${p}${name}`;
+      if (seen.has(key)) continue;
+      const st = await fs.stat(path.join(dir, name));
+      if (st.isFile()) items.push({ key, lastModified: st.mtimeMs });
+    }
+  } catch {
+    // 影子目录不存在 = 没有兜底键
+  }
+  return items;
 }
 
 /** 存储自检（/api/storage-check 用）：一次读写删的往返 */

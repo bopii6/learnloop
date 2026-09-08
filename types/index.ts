@@ -168,7 +168,8 @@ export type CourseEvent =
   | { type: "blueprint"; data: CourseBlueprint }
   | { type: "outline_progress"; current: number; total: number; unitTitle: string; optimized?: number } // optimized = 已填充完细节的课节累计数（"已优化 N 个课节"）
   | { type: "outline"; outline: CourseOutline }
-  | { type: "done"; courseId: string; title: string }
+  | { type: "done"; courseId: string; title: string; saveFailed?: boolean } // saveFailed = 最终存档重试耗尽；大纲已在前端，可"重试保存"补写
+  | { type: "save_ok" } // save_course 动作：补存成功
   | { type: "error"; message: string };
 
 // ---- 白板教学：beat 脚本（生成与播放分离） ----

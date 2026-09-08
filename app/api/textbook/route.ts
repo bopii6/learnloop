@@ -48,6 +48,13 @@ export async function POST(req: NextRequest) {
     // ---- 扫描版检测：有效文字页占比过低 → 走 OCR ----
     let ocrInfo: { used: boolean; lang?: string; truncated?: boolean } = { used: false };
     const textRatio = pages.length / Math.max(1, pageTexts.length);
+    if (textRatio < 0.6 && process.env.RUNTIME === "workers") {
+      // Workers 上没有本地位图渲染（原生 canvas），OCR 暂不可用；方案是把 OCR 移到浏览器端
+      return NextResponse.json(
+        { error: "检测到扫描版 PDF（无文字层）。云端部署暂不支持 OCR 识别，请使用文字版 PDF，或在本地版本上传。" },
+        { status: 422 }
+      );
+    }
     if (textRatio < 0.6) {
       // 注意传已解析的 pdf 文档：buffer 经 pdf.js transfer 后已 detach，不能二次解析
       const ocr = await ocrPdf(pdf, {

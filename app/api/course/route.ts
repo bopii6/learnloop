@@ -384,7 +384,14 @@ chat 时用 reply 字段给一句 60 字内的自然回复，友好地把话题�
           state.step = "done";
           state.outline = outline;
           state.title = title;
-          await setCourseState(courseId, state);
+          // 最后一次存档失败不能吞掉整门课：大纲已经推给前端了，标记 saveFailed 让用户可补存
+          // （存储层内部已带 3 次重试 + 本地影子兜底，走到这里还失败就是真挂了）
+          let saveFailed = false;
+          try {
+            await setCourseState(courseId, state);
+          } catch {
+            saveFailed = true;
+          }
 
           // 课程沉淀进学习者画像（澄清问答 + 课程标题），蒸馏失败不阻塞
           try {
@@ -393,7 +400,22 @@ chat 时用 reply 字段给一句 60 字内的自然回复，友好地把话题�
             // 画像写入失败不影响课程交付
           }
 
-          await send({ type: "done", courseId, title });
+          await send({ type: "done", courseId, title, saveFailed });
+        } else if (action === "save_course") {
+          // 存档失败后的手动补存：状态在生成过程中已多次落盘，重写一次完整状态
+          const courseId = body.courseId || "";
+          const state = await getCourseState(courseId);
+          if (!state?.outline) {
+            await send({ type: "error", message: "course not found" });
+            controller.close();
+            return;
+          }
+          try {
+            await setCourseState(courseId, state);
+            await send({ type: "save_ok" });
+          } catch (e) {
+            await send({ type: "error", message: `补存仍失败：${e instanceof Error ? e.message : String(e)}` });
+          }
         } else {
           await send({ type: "error", message: `unknown action: ${action}` });
         }

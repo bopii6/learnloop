@@ -31,16 +31,23 @@ export function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-/** 会话签名密钥：.env 的 AUTH_SECRET 优先，否则本地生成并持久化 */
+let ephemeralSecret: string | null = null; // Workers 等无文件系统环境的兜底（进程生命周期内有效）
+
+/** 会话签名密钥：.env 的 AUTH_SECRET 优先 → 本地文件 → 内存兜底（部署时务必设置 AUTH_SECRET） */
 async function getSecret(): Promise<string> {
   if (process.env.AUTH_SECRET) return process.env.AUTH_SECRET;
   try {
     return (await fs.readFile(SECRET_FILE, "utf8")).trim();
   } catch {
-    const secret = randomBytes(32).toString("hex");
-    await fs.mkdir(path.dirname(SECRET_FILE), { recursive: true });
-    await fs.writeFile(SECRET_FILE, secret, "utf8");
-    return secret;
+    if (ephemeralSecret) return ephemeralSecret;
+    ephemeralSecret = randomBytes(32).toString("hex");
+    try {
+      await fs.mkdir(path.dirname(SECRET_FILE), { recursive: true });
+      await fs.writeFile(SECRET_FILE, ephemeralSecret, "utf8");
+    } catch {
+      // 无文件系统（Workers）：用内存密钥，重启后旧会话失效
+    }
+    return ephemeralSecret;
   }
 }
 

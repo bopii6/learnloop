@@ -527,6 +527,9 @@ export async function exportScriptPoster(opts: {
       });
       cy += qh;
     }
+
+    // 推进到下一张卡片的位置
+    y += ch + GAP;
   });
 
   // ---- 底部 ----
