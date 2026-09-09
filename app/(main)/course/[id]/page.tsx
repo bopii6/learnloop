@@ -9,6 +9,7 @@ import { CourseOutlineView } from "@/components/CourseOutlineView";
 
 export default function CourseDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const [outline, setOutline] = useState<CourseOutline | null>(null);
+  const [visited, setVisited] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const id = use(params).id;
@@ -21,7 +22,9 @@ export default function CourseDetailPage({ params }: { params: Promise<{ id: str
         return r.json();
       })
       .then((d) => {
-        if (alive) setOutline(d.course.outline);
+        if (!alive) return;
+        setOutline(d.course.outline);
+        setVisited(new Set<string>(d.visited || []));
       })
       .catch((e) => {
         if (alive) setError(e instanceof Error ? e.message : String(e));
@@ -57,7 +60,7 @@ export default function CourseDetailPage({ params }: { params: Promise<{ id: str
 
   return (
     <div className="flex-1 overflow-y-auto">
-      <CourseOutlineView outline={outline} courseId={id} />
+      <CourseOutlineView outline={outline} courseId={id} visited={visited} />
     </div>
   );
 }

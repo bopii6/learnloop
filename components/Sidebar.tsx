@@ -4,6 +4,7 @@
 // 图标统一用内联 SVG 线性图标（stroke=currentColor），选中态走品牌绿。
 import { useState } from "react";
 import type { ConversationMeta } from "@/types";
+import { RedeemModal } from "./RedeemModal";
 
 export interface SidebarCourse {
   id: string;
@@ -233,71 +234,15 @@ export function Sidebar({
               登录 / 注册
             </button>
           )}
-          {redeemOpen && user && <RedeemPanel onClose={() => setRedeemOpen(false)} />}
+          {redeemOpen && user && (
+            <RedeemModal
+              balance={typeof credits === "number" ? credits : null}
+              onClose={() => setRedeemOpen(false)}
+              onRedeemed={() => window.dispatchEvent(new CustomEvent("ll:credits-changed"))}
+            />
+          )}
         </div>
       </div>
     </aside>
-  );
-}
-
-/** 兑换码换积分：支付链路接通前的充值入口（码从运营侧购买后发放） */
-function RedeemPanel({ onClose }: { onClose: () => void }) {
-  const [code, setCode] = useState("");
-  const [state, setState] = useState<"idle" | "submitting" | "done" | "error">("idle");
-  const [msg, setMsg] = useState<string | null>(null);
-
-  const submit = async () => {
-    if (!code.trim()) return;
-    setState("submitting");
-    setMsg(null);
-    try {
-      const res = await fetch("/api/redeem", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: code.trim() }),
-      });
-      const d = await res.json();
-      if (!res.ok) {
-        setMsg(d?.error || "兑换失败，稍后再试");
-        setState("error");
-        return;
-      }
-      setState("done");
-      setMsg(`✓ 兑换成功，+${d.credits} 积分（余额 ${d.balance}）`);
-      window.dispatchEvent(new CustomEvent("ll:credits-changed"));
-      setTimeout(onClose, 1600);
-    } catch {
-      setMsg("网络异常，稍后再试");
-      setState("error");
-    }
-  };
-
-  return (
-    <div className="mt-2.5 rounded-xl border border-accent/30 bg-accent/5 p-2.5 space-y-1.5">
-      <div className="text-[10.5px] font-semibold text-accent">兑换积分</div>
-      <div className="text-[10px] leading-relaxed text-ink-soft">
-        1 积分 = ¥1 · 生成一门课 10 积分 · 首次听课 1 积分 · 复习免费
-        <br />
-        兑换码向管理员购买（私下转账后发放），输入即到账
-      </div>
-      <div className="flex items-center gap-1.5">
-        <input
-          value={code}
-          onChange={(e) => setCode(e.target.value.toUpperCase())}
-          onKeyDown={(e) => e.key === "Enter" && void submit()}
-          placeholder="SL-XXXXX-XXXXX"
-          autoFocus
-          className="flex-1 min-w-0 rounded-lg border border-accent/30 bg-white px-2 py-1.5 text-[11px] outline-none focus:border-accent"
-        />
-        <button
-          onClick={() => void submit()}
-          disabled={state === "submitting" || !code.trim()}
-          className="shrink-0 rounded-lg bg-accent px-2.5 py-1.5 text-[11px] text-white font-medium hover:opacity-90 disabled:opacity-40"
-        >
-          {state === "submitting" ? "…" : "兑换"}
-        </button>
-      </div>
-      {msg && <div className={`text-[10.5px] ${state === "error" ? "text-red-600" : "text-emerald-700"}`}>{msg}</div>}
-    </div>
   );
 }
