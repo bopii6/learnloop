@@ -27,6 +27,8 @@ const COURSE_CLARIFY_SYSTEM = `你是课程设计师。用户想系统学习某�
 维度（每轮选一个，优先问没覆盖过的）：
 1. 前置经验 2. 关注的实现语境/方向 3. 学完的目标水平 4. 课程体量 5. 结课作品
 
+去重铁律：出题前先逐条核对用户消息里的「已收集信息」——凡已问过的问题，禁止再出同维度或换措辞的重复题（例：已问过"内容按什么逻辑组织"，就禁止再问任何关于组织方式/排序/结构的问题），也禁止把用户已选的答案改成新选项再端出来。已覆盖的维度宁可问浅偏好（节奏/口径/案例风格），也绝不重复。
+
 【结课作品一问：必须有，且整轮澄清只问一次】
 以终为始：学员必须带着一个亲手做出的东西离开，而不是带走一堆"懂了"。所以这 4 轮里必须恰有一轮问结课作品，规则如下：
 - 优先放在第 4 轮（最后一轮）问；前 3 轮从维度 1-4 里挑。
@@ -437,6 +439,31 @@ export async function runSearchStep(opts: {
   return { sources, pageContents };
 }
 
+// ---- 澄清问题去重兜底 ----
+// 四轮澄清各自独立生成，低温度下模型偶尔把同一维度换个措辞再问一遍（实测：手册建课
+// 的 Q2/Q3 都在问"内容怎么组织"）。提示词铁律之外，这里对新问题与每个已问问题做字符
+// 2-gram 相似度（对中文短句够用，不上向量）；超阈值就带着"重复"的意见重生成一次，
+// 仍重复也放行——兜底不能卡死主流程。
+function questionBigrams(s: string): Set<string> {
+  const t = s.replace(/[，。？！、：；\s？!.,'"（）()「」《》-]/g, "");
+  const out = new Set<string>();
+  for (let i = 0; i < t.length - 1; i++) out.add(t.slice(i, i + 2));
+  return out;
+}
+
+function questionSimilarity(a: string, b: string): number {
+  const A = questionBigrams(a);
+  const B = questionBigrams(b);
+  if (A.size === 0 || B.size === 0) return 0;
+  let inter = 0;
+  for (const g of A) if (B.has(g)) inter++;
+  return inter / Math.min(A.size, B.size);
+}
+
+// 阈值 0.45：实测"同题换措辞"在 0.5 上下（"内容怎么组织"vs"术语按什么方式组织排列"），
+// 完全不同维度接近 0；误触发只多一次带意见重试，代价便宜，宁紧勿松。
+const DUPLICATE_THRESHOLD = 0.45;
+
 export async function runClarifyStep(opts: {
   query: string;
   history: HistoryMsg[];
@@ -478,17 +505,16 @@ export async function runClarifyStep(opts: {
     ? `${opts.constraintsText}（其中输出语言等要求同样适用于你出的澄清题；用户已明确表达的要求不要再问）\n\n`
     : "";
 
-  const question = await generateJson<ClarifyQuestion>(
-    COURSE_CLARIFY_SYSTEM,
-    `${constraintsContext}${context}${prevAnswers}${sourceContext}${excerptsContext}${profileContext}用户想学习：${query}\n\n请生成第 ${round} 个澄清问题。`
-  );
+  const userMsg = `${constraintsContext}${context}${prevAnswers}${sourceContext}${excerptsContext}${profileContext}用户想学习：${query}\n\n请生成第 ${round} 个澄清问题。`;
+
+  let question = await generateJson<ClarifyQuestion>(COURSE_CLARIFY_SYSTEM, userMsg);
 
   if (!question || !question.question || !question.options || question.options.length < 2) {
     await emit({ type: "stage", name: "clarify_round", label: "构思初步思路", status: "end", detail: "澄清完成" });
     return { done: true };
   }
 
-  const normalized: ClarifyQuestion = {
+  let normalized: ClarifyQuestion = {
     id: `q${round}`,
     question: String(question.question),
     reason: typeof question.reason === "string" ? String(question.reason).slice(0, 60) : undefined,
@@ -499,6 +525,30 @@ export async function runClarifyStep(opts: {
       desc: o.desc ? String(o.desc) : undefined,
     })),
   };
+
+  // 去重兜底：与已问过的问题撞车就带着意见重生成一次（仍重复则放行，不卡流程）
+  const dupHit = clarifyAnswers
+    .map((a) => a.question)
+    .find((q) => questionSimilarity(q, normalized.question) >= DUPLICATE_THRESHOLD);
+  if (dupHit) {
+    const retry = await generateJson<ClarifyQuestion>(
+      COURSE_CLARIFY_SYSTEM,
+      `${userMsg}\n\n⚠ 你刚才出的问题「${normalized.question}」与已收集信息里的问题「${dupHit}」是同一个维度，属于重复出题。请换一个完全不同的、尚未覆盖的维度重新出题，禁止与任何已问问题同义。`
+    );
+    if (retry?.question && retry.options?.length >= 2) {
+      normalized = {
+        id: `q${round}`,
+        question: String(retry.question),
+        reason: typeof retry.reason === "string" ? String(retry.reason).slice(0, 60) : undefined,
+        multi: Boolean(retry.multi),
+        skippable: retry.skippable !== false,
+        options: retry.options.slice(0, 4).map((o) => ({
+          label: String(o.label || ""),
+          desc: o.desc ? String(o.desc) : undefined,
+        })),
+      };
+    }
+  }
 
   await emit({
     type: "clarify_round",

@@ -65,6 +65,7 @@ export function Sidebar({
   onSelect,
   onDelete,
   user,
+  isAdmin,
   onLogin,
   onLogout,
   credits,
@@ -77,6 +78,7 @@ export function Sidebar({
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
   user: { id: string; email: string } | null;
+  isAdmin?: boolean;
   onLogin: () => void;
   onLogout: () => void;
   credits?: number | null;
@@ -125,6 +127,15 @@ export function Sidebar({
               </button>
             );
           })}
+          {isAdmin && (
+            <a
+              href="/admin"
+              className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] text-ink-soft hover:bg-[#f6f5ef] hover:text-ink transition-colors"
+            >
+              <span className="text-ink-faint">⚙</span>
+              运营后台
+            </a>
+          )}
         </nav>
 
         {/* 历史对话 */}
@@ -264,12 +275,17 @@ function RedeemPanel({ onClose }: { onClose: () => void }) {
   return (
     <div className="mt-2.5 rounded-xl border border-accent/30 bg-accent/5 p-2.5 space-y-1.5">
       <div className="text-[10.5px] font-semibold text-accent">兑换积分</div>
+      <div className="text-[10px] leading-relaxed text-ink-soft">
+        1 积分 = ¥1 · 生成一门课 10 积分 · 首次听课 1 积分 · 复习免费
+        <br />
+        兑换码向管理员购买（私下转账后发放），输入即到账
+      </div>
       <div className="flex items-center gap-1.5">
         <input
           value={code}
           onChange={(e) => setCode(e.target.value.toUpperCase())}
           onKeyDown={(e) => e.key === "Enter" && void submit()}
-          placeholder="LL-XXXXX-XXXXX"
+          placeholder="SL-XXXXX-XXXXX"
           autoFocus
           className="flex-1 min-w-0 rounded-lg border border-accent/30 bg-white px-2 py-1.5 text-[11px] outline-none focus:border-accent"
         />

@@ -1,8 +1,8 @@
 // POST /api/admin/mint-codes —— 造兑换码（founders 收款后发码用，见 lib/redeem.ts）
-// 浏览器直接调：先在响应里拿码，发给已收款的用户。附 GET 说明用法。
+// GET  /api/admin/mint-codes —— 全量码列表（/admin 后台的「兑换码记录」用）
 import { NextResponse } from "next/server";
 import { isAdminUser, userFromCookieHeader } from "@/lib/auth";
-import { mintCodes } from "@/lib/redeem";
+import { listCodes, mintCodes } from "@/lib/redeem";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,8 +27,13 @@ export async function GET(req: Request) {
   if (!isAdminUser(me?.email)) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
+  const codes = await listCodes();
   return NextResponse.json({
-    usage: `POST /api/admin/mint-codes  {"count": 5, "credits": 20, "note": "0910 收款"}`,
-    hint: "count 1-50，credits 1-10000；返回的 codes 复制发给用户，用户在侧栏「兑换」输入即可到账",
+    codes,
+    summary: {
+      total: codes.length,
+      unused: codes.filter((c) => !c.redeemedBy).length,
+      unusedCredits: codes.filter((c) => !c.redeemedBy).reduce((s, c) => s + c.credits, 0),
+    },
   });
 }

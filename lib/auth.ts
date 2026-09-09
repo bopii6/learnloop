@@ -126,7 +126,14 @@ export async function findUserById(id: string): Promise<AuthUser | null> {
 export async function upsertUserByEmail(email: string): Promise<AuthUser> {
   // 严格读：users.json 是全体账号的唯一副本，解析失败必须拒写，
   // 否则一次坏读 + 一次注册 = 用只含新用户的文件覆盖全部账号（静默清空）
-  const db = await readJsonStrict<{ users: AuthUser[] }>(USERS_KEY);
+  let db: { users: AuthUser[] };
+  try {
+    db = await readJsonStrict<{ users: AuthUser[] }>(USERS_KEY);
+  } catch (e) {
+    // 全新部署还没有 users.json 属正常空态，允许首用户建账；真损坏（半截 JSON）仍拒写
+    if (e instanceof Error && e.message.includes("不存在")) db = { users: [] };
+    else throw e;
+  }
   const existing = db.users.find((u) => u.email === email);
   if (existing) return existing;
   const user: AuthUser = { id: `u-${randomBytes(5).toString("hex")}`, email, createdAt: Date.now() };

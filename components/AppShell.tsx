@@ -18,6 +18,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [conversations, setConversations] = useState<ConversationMeta[]>([]);
   const [user, setUser] = useState<{ id: string; email: string } | null>(null);
   const [credits, setCredits] = useState<number | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
 
   // / 与 /course/* 都算「首页」态（课程详情是首页入口的延伸，侧栏点亮首页）
@@ -54,6 +55,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       .then((d) => {
         setUser(d?.user || null);
         setCredits(typeof d?.credits === "number" ? d.credits : null);
+        setIsAdmin(Boolean(d?.isAdmin));
       })
       .catch(() => {});
   }, []);
@@ -106,6 +108,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         onSelect={(id) => router.push(`/chat/${id}`)}
         onDelete={(id) => void deleteConv(id)}
         user={user}
+        isAdmin={isAdmin}
         onLogin={() => setAuthOpen(true)}
         onLogout={() => void logout()}
         credits={credits}
