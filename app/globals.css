@@ -190,63 +190,8 @@ select:focus-visible {
   .card-fade-up { animation: none !important; }
 }
 
-.lesson-rail {
-  position: absolute;
-  right: 16px;
-  top: 50%;
-  transform: translateY(-50%);
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 16px;
-  padding: 12px 14px;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, .88);
-  border: 1px solid #e7e5dc;
-  box-shadow: 0 4px 16px rgba(26, 26, 24, .06);
-  color: #8a8880;
-  font-size: 12.5px;
-  max-width: 200px;
-  z-index: 20;
-  pointer-events: none;
-}
-.lesson-rail-title { font-size: 10px; letter-spacing: .06em; color: #a3a19a; margin-bottom: 2px; }
-.lesson-rail-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  writing-mode: horizontal-tb;
-  opacity: .75;
-  text-align: right;
-  line-height: 1.4;
-  transition: opacity .25s, color .25s;
-  max-width: 170px;
-}
-.lesson-rail-item.is-active { color: #0f6e56; opacity: 1; font-weight: 600; }
-.lesson-rail-dot {
-  display: inline-flex;
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  border: 1.5px solid #c9c7bd;
-  border-radius: 999px;
-  background: #fff;
-  writing-mode: horizontal-tb;
-  font-size: 10px;
-  color: inherit;
-}
-.lesson-rail-item.is-active .lesson-rail-dot {
-  border-color: #0f6e56;
-  box-shadow: inset 0 0 0 3.5px #fff, inset 0 0 0 10px #0f6e56;
-  color: transparent;
-}
-.lesson-rail-item.is-done .lesson-rail-dot { border-color: #9fd8c5; color: #0f6e56; background: #e1f5ee; }
-.lesson-rail.is-pulsing .lesson-rail-dot { animation: agent-pulse 1s ease-out; }
 .lesson-message { animation: stage-enter .25s ease-out both; }
 .lesson-message-label { margin-bottom: 4px; color: #7b7971; font-size: 10px; letter-spacing: .03em; }
-@media (max-width: 900px) { .lesson-rail { right: 8px; max-width: 150px; } .lesson-rail-item { font-size: 11px; max-width: 130px; } }
 
 /* 白板底部悬浮字幕条：讲师"正在说的这句话" */
 .board-subtitle {
@@ -368,3 +313,4 @@ select:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .skeleton::after { animation: none; }
 }
+

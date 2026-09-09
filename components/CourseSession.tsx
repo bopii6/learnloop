@@ -57,7 +57,6 @@ interface PlayItem {
 }
 
 type PlaybackStatus = "idle" | "playing" | "paused" | "done";
-type RailStatus = "queued" | "active" | "done";
 
 // 中文语音偏好：优先 Natural/Online 神经语音（最接近真人），再退到知名语音，最后交给浏览器默认
 let cachedZhVoice: SpeechSynthesisVoice | null = null;
@@ -138,11 +137,7 @@ export function CourseSession({
   const [docPages, setDocPages] = useState<{ docTitle: string; pages: { page: number; text: string }[] } | null>(null);
   const [docOpen, setDocOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [rail, setRail] = useState<{ id: string; title: string; status: RailStatus }[]>([]);
-  const [points, setPoints] = useState<string[]>([]);
-  const [activePoint, setActivePoint] = useState(0);
   const [voiceOn, setVoiceOn] = useState(true);
-  const [boardPulse, setBoardPulse] = useState(false);
   const [subtitle, setSubtitle] = useState("");
   const [playback, setPlayback] = useState<PlaybackStatus>("idle");
   const [preparing, setPreparing] = useState(true);
@@ -198,7 +193,6 @@ export function CourseSession({
   playbackRef.current = playback;
   const currentSegmentRef = useRef<string | null>(null);
   const segBeatIndexRef = useRef(0); // 当前片段内第几句（对话区逐句分段用）
-  const segPointIndexRef = useRef<Map<string, number>>(new Map()); // 片段 → 课堂步骤序号
   const segCheckpointRef = useRef<Map<string, { question: string; options: string[] }>>(new Map());
   const speechStopRef = useRef<(() => void) | null>(null);
   const voiceOnRef = useRef(voiceOn);
@@ -474,13 +468,10 @@ export function CourseSession({
     // checkpoint 处会停在原句等作答：游标不跨过这一拍，断线恢复时才能重放并重新出题
     let cursorAdvance = 1;
     try {
-      // 进入新片段：白板另起一行、轨道点亮、对话区重置句计数
+      // 进入新片段：白板另起一行、对话区重置句计数
       if (currentSegmentRef.current !== item.segmentId) {
         currentSegmentRef.current = item.segmentId;
         segBeatIndexRef.current = 0;
-        const pi = segPointIndexRef.current.get(item.segmentId);
-        if (typeof pi === "number") setActivePoint(pi);
-        setRail((prev) => prev.map((r) => (r.id === item.segmentId ? { ...r, status: "active" } : r)));
         // 断线恢复只跳过落点片段的胶囊（画面快照已含）；之后的片段照常另起模块起纸，
         // restoredRef 必须在此消费掉——不清会导致恢复后整节课都不再画纸和页眉
         const skipCapsule = restoredRef.current && resumeSegmentRef.current === item.segmentId;
@@ -513,8 +504,6 @@ export function CourseSession({
       // 白板逐条书写（每句话都有板书动作，镜头以模块为单位切换）
       const boardItems = item.beat.items || [];
       await writerRef.current?.write(item.beat.section, boardItems);
-      setBoardPulse(true);
-      window.setTimeout(() => setBoardPulse(false), 900);
       if (item.lastOfSegment) writerRef.current?.removePencil();
 
       // 逐行朗读（或静音节奏计时）；播放本行期间预取下一行的云端音频，不空等
@@ -526,9 +515,8 @@ export function CourseSession({
         await speak(speechLines[li]);
       }
 
-      // 片段收尾：轨道打勾；有课堂练习则停下来，选项内嵌在字幕区等学员作答
+      // 片段收尾：有课堂练习则停下来，选项内嵌在字幕区等学员作答
       if (item.lastOfSegment) {
-        setRail((prev) => prev.map((r) => (r.id === item.segmentId ? { ...r, status: "done" } : r)));
         const cp = segCheckpointRef.current.get(item.segmentId);
         if (cp && cp.question && cp.options.length > 0) {
           setCheckpoint({ id: item.segmentId, question: cp.question, options: cp.options });
@@ -553,8 +541,7 @@ export function CourseSession({
       if (now - lastSaveRef.current > 2500) {
         lastSaveRef.current = now;
         try {
-          const elements =
-            (excalidrawApiRef.current?.getSceneElements?.() || []).filter((el: any) => !el.isDeleted);
+          const elements = (excalidrawApiRef.current?.getSceneElements?.() || []).filter((el: any) => !el.isDeleted);
           wsSend({
             type: "progress",
             cursor: item.ordinal + cursorAdvance,
@@ -598,18 +585,8 @@ export function CourseSession({
       // 同一片段重发只更新登记信息，不重复入队（否则同样内容会播两遍）
       const firstDelivery = !sseSegmentsRef.current.has(e.segmentId);
       sseSegmentsRef.current.add(e.segmentId);
-      setRail((prev) =>
-        prev.some((r) => r.id === e.segmentId)
-          ? prev
-          : [...prev, { id: e.segmentId, title: e.title, status: "queued" as RailStatus }]
-      );
       if (e.checkpoint?.question && e.checkpoint.options?.length) {
         segCheckpointRef.current.set(e.segmentId, { question: e.checkpoint.question, options: e.checkpoint.options });
-      }
-      if (Array.isArray(e.points) && e.points.length > 0) setPoints(e.points);
-      if (typeof e.pointIndex === "number") {
-        // 记录每个片段所属的步骤，播放器真正播到该片段时才点亮（轨跟随播放而非生成进度）
-        segPointIndexRef.current.set(e.segmentId, e.pointIndex);
       }
       if (firstDelivery) {
         e.beats.forEach((beat, bi) => {
@@ -830,19 +807,16 @@ export function CourseSession({
       } catch {
         // 画面恢复失败也不阻塞续播
       }
-      setPoints(saved.points || []);
       setMessages((saved.messages || []) as WhiteboardMessage[]);
 
       // 重建队列：只重播 cursor 之后的 beat（画面已包含 cursor 之前的内容）
       let ordinal = 0;
       const segs = [...(saved.script || [])].sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
       for (const seg of segs) {
-        const start = ordinal;
         segCheckpointRef.current.set(
           seg.segmentId,
           seg.checkpoint ? { question: seg.checkpoint.question || "", options: seg.checkpoint.options || [] } : { question: "", options: [] }
         );
-        if (typeof seg.pointIndex === "number") segPointIndexRef.current.set(seg.segmentId, seg.pointIndex);
         (seg.beats || []).forEach((beat: TeachBeat, bi: number) => {
           const ord = ordinal++;
           if (ord < (saved.cursor || 0)) return;
@@ -857,10 +831,6 @@ export function CourseSession({
             ordinal: ord,
           });
         });
-        // 轨道状态
-        const end = ordinal - 1;
-        const status: RailStatus = end < (saved.cursor || 0) ? "done" : start <= (saved.cursor || 0) - 1 ? "active" : "queued";
-        setRail((prev) => (prev.some((r) => r.id === seg.segmentId) ? prev : [...prev, { id: seg.segmentId, title: seg.title, status }]));
       }
       wsScriptRef.current = segs;
       wsPointsRef.current = saved.points || [];
@@ -1009,19 +979,27 @@ export function CourseSession({
 
   const copyReplayLink = async () => {
     let url = replayUrl;
-    if (!url) url = await saveReplay();
-    if (!url) {
-      setPosterMsg("回放还没准备好，讲师讲完就有了");
-      window.setTimeout(() => setPosterMsg(""), 2600);
-      return;
+    // window.open 必须在 await 前同步调用（放 await 后会被弹窗拦截）：已生成 → 直接开回放页；
+    // 未生成 → 先开空白标签，生成成功后导向过去（失败就关掉）
+    const existing = Boolean(url);
+    const win = window.open(existing ? url : "about:blank", "_blank");
+    if (!existing) {
+      url = await saveReplay();
+      if (!url) {
+        win?.close();
+        setPosterMsg("回放还没准备好，讲师讲完就有了");
+        window.setTimeout(() => setPosterMsg(""), 2600);
+        return;
+      }
+      if (win) win.location.href = url;
     }
     try {
       await navigator.clipboard.writeText(url);
-      setPosterMsg("回放链接已复制，发给朋友就能看");
+      setPosterMsg("回放已在新的标签页打开（自己随时回看），链接也复制好了，发给朋友看同一条");
     } catch {
       setPosterMsg(url);
     }
-    window.setTimeout(() => setPosterMsg(""), 3000);
+    window.setTimeout(() => setPosterMsg(""), 3200);
   };
 
   // 讲完自动保存回放（一次）
@@ -1254,7 +1232,7 @@ export function CourseSession({
             className={`rounded-lg border px-3 py-1.5 text-[12px] transition-colors ${
               replayUrl ? "border-accent text-accent" : "border-[#d3d1c7] text-ink-soft hover:border-accent hover:text-accent"
             }`}
-            title="生成只读回放链接，发给朋友就能重看这节课"
+            title="打开只读回放页（自己回看 / 复制链接发给朋友）"
           >
             🔗 回放
           </button>
@@ -1416,25 +1394,6 @@ export function CourseSession({
             ) : (
               <span className="board-subtitle-idle">{preparing ? "AI 讲师正在备课…" : "白板课堂"}</span>
             )}
-          </div>
-          <div className={`lesson-rail ${boardPulse ? "is-pulsing" : ""}`} aria-label="课堂步骤进度">
-            <span className="lesson-rail-title">课堂步骤</span>
-            {points.length > 0
-              ? points.map((point, pi) => (
-                  <div
-                    key={point + pi}
-                    className={`lesson-rail-item ${pi === activePoint ? "is-active" : ""} ${pi < activePoint ? "is-done" : ""}`}
-                  >
-                    <span>{point}</span>
-                    <span className="lesson-rail-dot">{pi < activePoint ? "✓" : pi + 1}</span>
-                  </div>
-                ))
-              : rail.map((segment, index) => (
-                  <div key={segment.id} className={`lesson-rail-item ${segment.status === "active" ? "is-active" : ""} ${segment.status === "done" ? "is-done" : ""}`}>
-                    <span>{segment.title}</span>
-                    <span className="lesson-rail-dot">{segment.status === "done" ? "✓" : String(index + 1).padStart(2, "0")}</span>
-                  </div>
-                ))}
           </div>
         </div>
 

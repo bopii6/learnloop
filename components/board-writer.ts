@@ -6,17 +6,35 @@
 //   板内单列流式排版——要点带编号直排纸面，注释缩进为灰色副行，判断行贴内容细墨框，
 //   结构图元（小节标题/流程图/表格/趋势图/对比/分支树/金句）独占整行；
 //   片段讲完 → 板间画衔接箭头，镜头右移到下一页。整节课的板书连成一条学习路径。
-//   镜头跟随书写进度：页首先推近标题区，随内容增多平滑后拉——手写在哪、镜头看哪。
+//   镜头跟随书写进度：页首推近标题区，整页装得下时随内容平滑后拉；
+//   装不下后不再拉远，保持可读缩放、底边跟随书写位——手写在哪、镜头看哪，字不再变小。
 //   turbo 模式（回放重建用）：跳过动画与延时，瞬间把板书写到位。
 import type { BoardItem } from "@/types";
 
-const INK = "#1e1e1e"; // 板书正文与标题
-const ACCENT = "#0f6e56"; // 唯一强调色：页眉线/小节引线/重点圈画/图表主线/金句
-const MUTE = "#8a8880"; // 次要文字：页码/编号/注释/坐标轴
-const FAINT = "#b4b2a9"; // 发丝线：板间箭头/树杈/中性边框
-const SEM_GOOD = "#047857"; // 语义色：判断行「推荐做法」
-const SEM_BAD = "#b91c1c"; // 语义色：判断行「常见错误」与警示标记
-const FILL_NEUTRAL = "#e6e2d4"; // 结构图元的排线填充（hachure 暖灰，白纸上的手绘阴影）
+// 主题取色：paper = v2.1 草稿纸上线版原值，逐像素不许动
+const T = {
+  boardBg: "#faf9f6",
+  boardDot: "#d3d1c7",
+  ink: "#1e1e1e",
+  accent: "#0f6e56",
+  mute: "#8a8880",
+  faint: "#b4b2a9",
+  semGood: "#047857",
+  semBad: "#b91c1c",
+  fillNeutral: "#e6e2d4",
+  diagramStroke: "#57534e",
+  chartAxis: "#8a8880",
+  backdropBg: "#ffffff",
+  backdropStroke: "#1e1e1e1f",
+  judgeStroke: "#1e1e1e2b",
+  tableHeadBg: "#f1efe8",
+  tableHeadStroke: "#d3d1c7",
+  tableRowStroke: "#e7e5dc",
+  quoteBg: "#0f6e560f",
+  vsBadgeBg: "#1e1e1e08",
+  vsBadgeStroke: "#a3a19a",
+  vsBadgeText: "#a3a19a",
+};
 const START_X = 60;
 const START_Y = 60;
 const MODULE_W = 660; // 模块板总宽（收窄让内容占满版面，密度优先）
@@ -26,6 +44,8 @@ const ROW_GAP = 14;
 const MODULE_X_GAP = 230; // 两块模块板的间距
 const ITEM_DELAY_MS = 280; // 每条板书出现间隔，模拟手写节奏
 const WRITE_MAX_ZOOM = 1.45; // 书写镜头最大推近（字别放得过大）
+const WRITE_MIN_ZOOM = 0.8; // 书写镜头最远：再远板书就看不清，改为平移跟拍、不再拉远
+const FOLLOW_BOTTOM_PAD = 100; // 跟拍时画面底边到最新板书的留白（避开暂停条浮层）
 const CAM_PAD = { x: 70, top: 64, bottom: 56 };
 const ANCHOR_ID = "camera-anchor";
 
@@ -221,11 +241,25 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
     return contentBottom;
   }
 
-  /** 书写镜头：框住本模块从标题到当前书写行，随内容增多自然后拉 */
+  /** 书写镜头：可读度优先——整页装得下就整页入画（随内容平滑后拉）；
+   *  装不下后固定在可读缩放，底边跟随书写位（新写的行永远在画面里），页眉自然滚出画面上方 */
   async function focusWriting() {
     const w = MODULE_W + CAM_PAD.x * 2;
-    const h = writingBottom() - my + CAM_PAD.top + CAM_PAD.bottom;
-    await focusRegion(mx - CAM_PAD.x, my - CAM_PAD.top, w, h, 0.97, WRITE_MAX_ZOOM);
+    const contentH = writingBottom() - my;
+    const frameH = contentH + CAM_PAD.top + CAM_PAD.bottom;
+    const api = await waitForApi();
+    if (!api) return;
+    const st = api.getAppState();
+    const vpW = st.width || 1100;
+    const vpH = st.height || 620;
+    if (Math.min(vpW / w, vpH / frameH) * 0.97 >= WRITE_MIN_ZOOM) {
+      await focusRegion(mx - CAM_PAD.x, my - CAM_PAD.top, w, frameH, 0.97, WRITE_MAX_ZOOM);
+      return;
+    }
+    // 页面已长高：不再拉远，取景窗底边贴最新板书
+    const winH = vpH / WRITE_MIN_ZOOM;
+    const top = Math.max(my - CAM_PAD.top, my + contentH + FOLLOW_BOTTOM_PAD - winH);
+    await focusRegion(mx - CAM_PAD.x, top, w, winH, 1);
   }
 
   /** 纸随写随撑：每写一行就把底卡撑到当前内容高度（不等翻页收尾，避免内容溢出纸外） */
@@ -264,7 +298,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
           [Math.round(g * 0.5), -12],
           [g, 0],
         ],
-        strokeColor: "#b4b2a9",
+        strokeColor: T.faint,
         strokeWidth: 2,
         roughness: 1,
       },
@@ -283,7 +317,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
         text: badgeText,
         fontSize: 15,
         fontFamily: 5,
-        strokeColor: MUTE,
+        strokeColor: T.mute,
       },
       {
         type: "text",
@@ -292,7 +326,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
         text: shown,
         fontSize: 25,
         fontFamily: 5,
-        strokeColor: INK,
+        strokeColor: T.ink,
       },
       {
         type: "line",
@@ -302,7 +336,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
           [0, 0],
           [Math.min(shown.length * 27 + 34, MODULE_W - 24), 0],
         ],
-        strokeColor: ACCENT,
+        strokeColor: T.accent,
         strokeWidth: 2,
         roughness: 1,
       },
@@ -321,7 +355,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
           [0, 0],
           [18, 0],
         ],
-        strokeColor: ACCENT,
+        strokeColor: T.accent,
         strokeWidth: 2.5,
         roughness: 1,
       },
@@ -332,7 +366,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
         text,
         fontSize: 20,
         fontFamily: 5,
-        strokeColor: INK,
+        strokeColor: T.ink,
       },
     ]);
     lastItemBox = { x: mx, y: rowY, w: CONTENT_W, h: 40 };
@@ -366,7 +400,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
           width: Math.min(b.w + 28, CONTENT_W + 20),
           height: b.h + 14,
           backgroundColor: "transparent",
-          strokeColor: ACCENT,
+          strokeColor: T.accent,
           strokeWidth: 1.5,
           roughness: 1,
         },
@@ -379,7 +413,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
           x: b.x + 2,
           y: b.y + b.h + 5,
           points: [[0, 0], [Math.min(b.w - 4, CONTENT_W - 8), 0]],
-          strokeColor: ACCENT,
+          strokeColor: T.accent,
           strokeWidth: 2,
           roughness: 1,
         },
@@ -399,7 +433,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
         x: cx + Math.cos(rad) * r1,
         y: cy + Math.sin(rad) * r1,
         points: [[0, 0], [Math.cos(rad) * (r2 - r1), Math.sin(rad) * (r2 - r1)]],
-        strokeColor: ACCENT,
+        strokeColor: T.accent,
         strokeWidth: 1.5,
         roughness: 1,
       });
@@ -435,8 +469,8 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
           y: my - 24,
           width: MODULE_W + 36,
           height: 220,
-          backgroundColor: "#ffffff",
-          strokeColor: "#1e1e1e1f",
+          backgroundColor: T.backdropBg,
+          strokeColor: T.backdropStroke,
           strokeWidth: 1,
           roughness: 1,
           roundness: { type: 3 },
@@ -455,7 +489,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
             width: w,
             height: 66,
             backgroundColor: "transparent",
-            strokeColor: ACCENT,
+            strokeColor: T.accent,
             strokeWidth: 2,
             roughness: 1,
           },
@@ -466,7 +500,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
             text: anchorWord,
             fontSize: 40,
             fontFamily: 5,
-            strokeColor: INK,
+            strokeColor: T.ink,
           },
         ]);
       }
@@ -507,7 +541,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 text: `${no}.`,
                 fontSize: 15,
                 fontFamily: 5,
-                strokeColor: MUTE,
+                strokeColor: T.mute,
               },
               {
                 type: "text",
@@ -516,7 +550,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 text,
                 fontSize: 17,
                 fontFamily: 5,
-                strokeColor: INK,
+                strokeColor: T.ink,
               },
             ],
             h: 34,
@@ -539,7 +573,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 text: `— ${text}`,
                 fontSize: 14,
                 fontFamily: 5,
-                strokeColor: MUTE,
+                strokeColor: T.mute,
               },
             ],
             h: 28,
@@ -566,7 +600,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                   width: boxW,
                   height: 42,
                   backgroundColor: "transparent",
-                  strokeColor: "#1e1e1e2b",
+                  strokeColor: T.judgeStroke,
                   strokeWidth: 1,
                   roughness: 1,
                 },
@@ -577,7 +611,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                   text: good ? "✓" : "✗",
                   fontSize: 16,
                   fontFamily: 2,
-                  strokeColor: good ? SEM_GOOD : SEM_BAD,
+                  strokeColor: good ? T.semGood : T.semBad,
                 },
                 {
                   type: "text",
@@ -586,7 +620,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                   text,
                   fontSize: 15,
                   fontFamily: 5,
-                  strokeColor: INK,
+                  strokeColor: T.ink,
                 },
               ],
               h: 42,
@@ -615,9 +649,9 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 y: rowY + 6,
                 width: boxW,
                 height: boxH,
-                backgroundColor: FILL_NEUTRAL,
+                backgroundColor: T.fillNeutral,
                 fillStyle: "hachure",
-                strokeColor: "#57534e",
+                strokeColor: T.diagramStroke,
                 strokeWidth: 1.2,
                 roughness: 1,
               });
@@ -628,7 +662,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 text: nodes[ni],
                 fontSize: 15,
                 fontFamily: 5,
-                strokeColor: INK,
+                strokeColor: T.ink,
               });
               if (ni < n - 1) {
                 sk.push({
@@ -640,7 +674,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                     [Math.round((gap - 10) / 2), -6],
                     [gap - 10, 0],
                   ],
-                  strokeColor: MUTE,
+                  strokeColor: T.mute,
                   strokeWidth: 1.5,
                   roughness: 1,
                 });
@@ -663,8 +697,8 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 y: rowY,
                 width: cellW,
                 height: headH,
-                backgroundColor: "#f1efe8",
-                strokeColor: "#d3d1c7",
+                backgroundColor: T.tableHeadBg,
+                strokeColor: T.tableHeadStroke,
                 strokeWidth: 1,
                 roughness: 1,
               });
@@ -675,7 +709,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 text: (item.headers?.[ci] || "").slice(0, 8),
                 fontSize: 15,
                 fontFamily: 5,
-                strokeColor: "#1e1e1e",
+                strokeColor: T.ink,
               });
             }
             let ty = rowY + headH;
@@ -688,7 +722,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                   width: cellW,
                   height: rowH,
                   backgroundColor: "transparent",
-                  strokeColor: "#e7e5dc",
+                  strokeColor: T.tableRowStroke,
                   strokeWidth: 1,
                   roughness: 1,
                 });
@@ -699,7 +733,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                   text: (row?.[ci] || "").slice(0, 8),
                   fontSize: 13,
                   fontFamily: 5,
-                  strokeColor: "#1e1e1e",
+                  strokeColor: T.ink,
                 });
               }
               ty += rowH;
@@ -716,14 +750,14 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
             const minV = Math.min(...vals, 0);
             const baseY = rowY + chh;
             const sk: any[] = [
-              { type: "line", x: mx, y: baseY, points: [[0, 0], [0, -chh]], strokeColor: "#8a8880", strokeWidth: 1.2 },
-              { type: "line", x: mx, y: baseY, points: [[0, 0], [cw + 12, 0]], strokeColor: "#8a8880", strokeWidth: 1.2 },
+              { type: "line", x: mx, y: baseY, points: [[0, 0], [0, -chh]], strokeColor: T.chartAxis, strokeWidth: 1.2 },
+              { type: "line", x: mx, y: baseY, points: [[0, 0], [cw + 12, 0]], strokeColor: T.chartAxis, strokeWidth: 1.2 },
             ];
             const pts: number[][] = vals.map((v, i) => [
               Math.round((cw / (vals.length - 1)) * i),
               Math.round(-10 - ((v - minV) / (maxV - minV || 1)) * (chh - 26)),
             ]);
-            sk.push({ type: "line", x: mx, y: baseY, points: pts, strokeColor: ACCENT, strokeWidth: 2, roughness: 1 });
+            sk.push({ type: "line", x: mx, y: baseY, points: pts, strokeColor: T.accent, strokeWidth: 2, roughness: 1 });
             for (let pi = 0; pi < pts.length; pi++) {
               sk.push({
                 type: "ellipse",
@@ -731,8 +765,8 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 y: baseY + pts[pi][1] - 4,
                 width: 8,
                 height: 8,
-                backgroundColor: ACCENT,
-                strokeColor: ACCENT,
+                backgroundColor: T.accent,
+                strokeColor: T.accent,
                 strokeWidth: 1,
               });
               sk.push({
@@ -742,7 +776,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 text: String(vals[pi]),
                 fontSize: 12,
                 fontFamily: 5,
-                strokeColor: "#57534e",
+                strokeColor: T.diagramStroke,
               });
             }
             return { skeleton: sk, h: chh + 14 };
@@ -762,7 +796,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 width: halfW,
                 height: boxH,
                 backgroundColor: "transparent",
-                strokeColor: FAINT,
+                strokeColor: T.faint,
                 strokeWidth: 1,
                 roughness: 1,
               },
@@ -773,7 +807,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 text: l || "A",
                 fontSize: 17,
                 fontFamily: 5,
-                strokeColor: INK,
+                strokeColor: T.ink,
               },
               {
                 type: "rectangle",
@@ -782,7 +816,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 width: halfW,
                 height: boxH,
                 backgroundColor: "transparent",
-                strokeColor: FAINT,
+                strokeColor: T.faint,
                 strokeWidth: 1,
                 roughness: 1,
               },
@@ -793,7 +827,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 text: r || "B",
                 fontSize: 17,
                 fontFamily: 5,
-                strokeColor: INK,
+                strokeColor: T.ink,
               },
               {
                 type: "ellipse",
@@ -801,8 +835,8 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 y: rowY + 11,
                 width: 36,
                 height: 36,
-                backgroundColor: "#1e1e1e08",
-                strokeColor: "#a3a19a",
+                backgroundColor: T.vsBadgeBg,
+                strokeColor: T.vsBadgeStroke,
                 strokeWidth: 1,
                 roughness: 1,
               },
@@ -813,7 +847,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 text: "vs",
                 fontSize: 13,
                 fontFamily: 5,
-                strokeColor: "#a3a19a",
+                strokeColor: T.vsBadgeText,
               },
             ];
             return { skeleton: sk, h: boxH + 8 };
@@ -837,9 +871,9 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 y: rowY,
                 width: parentW,
                 height: parentH,
-                backgroundColor: FILL_NEUTRAL,
+                backgroundColor: T.fillNeutral,
                 fillStyle: "hachure",
-                strokeColor: "#57534e",
+                strokeColor: T.diagramStroke,
                 strokeWidth: 1.2,
                 roughness: 1,
               },
@@ -850,7 +884,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 text: nodes[0],
                 fontSize: 16,
                 fontFamily: 5,
-                strokeColor: INK,
+                strokeColor: T.ink,
               },
             ];
             for (let ci = 1; ci < nodes.length; ci++) {
@@ -860,7 +894,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 x: parentX + parentW / 2,
                 y: rowY + parentH,
                 points: [[0, 0], [cx + childW / 2 - (parentX + parentW / 2), 26]],
-                strokeColor: "#b4b2a9",
+                strokeColor: T.faint,
                 strokeWidth: 1.2,
                 roughness: 1,
               });
@@ -871,7 +905,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 width: childW,
                 height: 42,
                 backgroundColor: "transparent",
-                strokeColor: MUTE,
+                strokeColor: T.mute,
                 strokeWidth: 1.2,
                 roughness: 1,
               });
@@ -882,7 +916,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 text: nodes[ci],
                 fontSize: 15,
                 fontFamily: 5,
-                strokeColor: INK,
+                strokeColor: T.ink,
               });
             }
             return { skeleton: sk, h: parentH + 26 + 42 + 6 };
@@ -898,20 +932,20 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
             const myp = wide ? b.y + b.h + 12 : b.y + Math.max(4, (b.h - 26) / 2);
             if (item.style === "alert") {
               await append([
-                { type: "line", x: mxp, y: myp, points: [[0, 0], [0, 15]], strokeColor: SEM_BAD, strokeWidth: 2.4, roughness: 1 },
-                { type: "line", x: mxp, y: myp + 21, points: [[0, 0], [0, 2.5]], strokeColor: SEM_BAD, strokeWidth: 2.8, roughness: 1 },
+                { type: "line", x: mxp, y: myp, points: [[0, 0], [0, 15]], strokeColor: T.semBad, strokeWidth: 2.4, roughness: 1 },
+                { type: "line", x: mxp, y: myp + 21, points: [[0, 0], [0, 2.5]], strokeColor: T.semBad, strokeWidth: 2.8, roughness: 1 },
               ]);
             } else if (item.style === "question") {
-              await append([{ type: "text", x: mxp, y: myp - 5, text: "?", fontSize: 22, fontFamily: 5, strokeColor: ACCENT }]);
+              await append([{ type: "text", x: mxp, y: myp - 5, text: "?", fontSize: 22, fontFamily: 5, strokeColor: T.accent }]);
             } else {
               // star：四芒星（两长两短交叉线）
               const cx = mxp + 9;
               const cy = myp + 13;
               await append([
-                { type: "line", x: cx, y: cy, points: [[-8, 8], [8, -8]], strokeColor: ACCENT, strokeWidth: 1.8, roughness: 1 },
-                { type: "line", x: cx, y: cy, points: [[-8, -8], [8, 8]], strokeColor: ACCENT, strokeWidth: 1.8, roughness: 1 },
-                { type: "line", x: cx, y: cy, points: [[-13, 0], [13, 0]], strokeColor: ACCENT, strokeWidth: 1.4, roughness: 1 },
-                { type: "line", x: cx, y: cy, points: [[0, -13], [0, 13]], strokeColor: ACCENT, strokeWidth: 1.4, roughness: 1 },
+                { type: "line", x: cx, y: cy, points: [[-8, 8], [8, -8]], strokeColor: T.accent, strokeWidth: 1.8, roughness: 1 },
+                { type: "line", x: cx, y: cy, points: [[-8, -8], [8, 8]], strokeColor: T.accent, strokeWidth: 1.8, roughness: 1 },
+                { type: "line", x: cx, y: cy, points: [[-13, 0], [13, 0]], strokeColor: T.accent, strokeWidth: 1.4, roughness: 1 },
+                { type: "line", x: cx, y: cy, points: [[0, -13], [0, 13]], strokeColor: T.accent, strokeWidth: 1.4, roughness: 1 },
               ]);
             }
             if (wide) {
@@ -935,8 +969,8 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                   y: rowY - 2,
                   width: qw,
                   height: 60,
-                  backgroundColor: "#0f6e560f",
-                  strokeColor: ACCENT,
+                  backgroundColor: T.quoteBg,
+                  strokeColor: T.accent,
                   strokeWidth: 1.6,
                   roughness: 1,
                 },
@@ -947,7 +981,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                   text: q,
                   fontSize: 19,
                   fontFamily: 5,
-                  strokeColor: INK,
+                  strokeColor: T.ink,
                 },
               ],
               h: 66,
@@ -967,14 +1001,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
     removePencil,
 
     focusCurrent() {
-      const bottom = Math.max(writingBottom() + 40, my + 220);
-      void focusRegion(
-        mx - CAM_PAD.x,
-        my - CAM_PAD.top,
-        MODULE_W + CAM_PAD.x * 2,
-        bottom - my + CAM_PAD.top + CAM_PAD.bottom,
-        0.9
-      );
+      void focusWriting();
     },
 
     setTurbo(on: boolean) {

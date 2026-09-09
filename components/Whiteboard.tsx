@@ -107,15 +107,15 @@ export function Whiteboard({
           --ws-dot-r1: 1.7px;
         }
         .excalidraw-host[data-board-dots="on"] {
-          background-color: #faf9f6;
+          background-color: var(--board-bg, #faf9f6);
           background-image:
-            radial-gradient(circle at 1px 1px, #d3d1c7 var(--ws-dot-r0), transparent 0),
-            radial-gradient(circle at 14px 14px, #d3d1c7 var(--ws-dot-r1), transparent 0);
+            radial-gradient(circle at 1px 1px, var(--board-dot, #d3d1c7) var(--ws-dot-r0), transparent 0),
+            radial-gradient(circle at 14px 14px, var(--board-dot, #d3d1c7) var(--ws-dot-r1), transparent 0);
           background-size: var(--ws-bg-size) var(--ws-bg-size);
           background-position: var(--ws-bg-x) var(--ws-bg-y);
         }
         .excalidraw-host[data-board-dots="off"] {
-          background-color: #faf9f6;
+          background-color: var(--board-bg, #faf9f6);
         }
       `}</style>
     </div>
