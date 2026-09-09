@@ -454,7 +454,7 @@ export function CapstoneStudio({ courseId, outline, lecture, onExit }: CapstoneS
 
         <div className="text-center text-[11px] text-ink-faint pb-4">
           {passed
-            ? "这门课到这里就是「做出」而不是「听完」。去课程集市把这门课分享给同样需要它的人。"
+            ? "这门课到这里就是「做出」而不是「听完」。去精品课程把这门课分享给同样需要它的人。"
             : "验收是真实世界的交付：拿证据说话，不过就改，改过为止。"}
         </div>
       </div>

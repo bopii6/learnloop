@@ -1,7 +1,7 @@
 "use client";
 
 // /course/[id] —— 课程详情独立路由（挂在外壳组里，带侧栏）。
-// 可刷新、可收藏、可分享找回；侧栏「打开课程」、集市、课程记录都跳到这里。
+// 可刷新、可收藏、可分享找回；侧栏「打开课程」、精品课程、课程记录都跳到这里。
 import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { CourseOutline } from "@/types";

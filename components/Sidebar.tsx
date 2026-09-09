@@ -88,7 +88,7 @@ export function Sidebar({
   const navItems = [
     { key: "course", label: "首页", icon: "home" as const },
     { key: "records", label: "课程记录", icon: "library" as const },
-    { key: "market", label: "课程集市", icon: "market" as const },
+    { key: "market", label: "精品课程", icon: "market" as const },
   ];
 
   return (

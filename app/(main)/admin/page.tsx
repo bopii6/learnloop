@@ -342,7 +342,7 @@ export default function AdminPage() {
                       : "-",
                 },
                 { label: "今日 TTS 字符", value: overview.todayUsage?.ttsChars ?? "-" },
-                { label: "集市举报", value: overview.marketReports ?? "-" },
+                { label: "举报记录", value: overview.marketReports ?? "-" },
               ].map((s) => (
                 <div key={s.label} className="rounded-xl border border-[#f1efe8] bg-[#fafaf7] px-3 py-2.5">
                   <div className="text-[11px] text-ink-faint">{s.label}</div>

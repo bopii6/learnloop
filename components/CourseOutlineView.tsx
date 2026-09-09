@@ -21,7 +21,7 @@ const isLearnable = (l: LectureLike) => l.content_type === "whiteboard" || !l.co
 
 export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineViewProps) {
   const router = useRouter();
-  // 上架到课程集市：好课标个价放进集市，别人点开就能学
+  // 上架到精品课程：好课标个价放进精品课，别人点开就能学
   const [marketOpen, setMarketOpen] = useState(false);
   const [marketPrice, setMarketPrice] = useState("");
   const [marketNote, setMarketNote] = useState("");
@@ -200,7 +200,7 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
               }}
               className="text-[12px] text-ink-faint hover:text-accent transition-colors"
             >
-              🛍 上架集市
+              🛍 上架到精品课程
             </button>
           )}
         </div>
@@ -220,7 +220,7 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
             {materialState === "done" && <div className="text-emerald-700">✓ 已解析入库《{materialName}》（纳入讲解的能力开发中，先帮你存好了）</div>}
             {materialState === "uploading" && <div className="text-ink-faint">正在解析《{materialName}》…</div>}
             {materialState === "error" && <div className="text-red-600">《{materialName}》解析失败，换个文件试试</div>}
-            {marketState === "done" && <div className="text-emerald-700">✓ 已上架课程集市，所有访客都能看到</div>}
+            {marketState === "done" && <div className="text-emerald-700">✓ 已上架精品课程，所有访客都能看到</div>}
           </div>
         )}
         {marketOpen && marketState !== "done" && (

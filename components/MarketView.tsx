@@ -1,7 +1,7 @@
 "use client";
 
-// 课程集市：官方精选 + 用户上架的课程。点开直接学；本机自用阶段，上架/下架即管理动作。
-// 版式对标 Hyperknow 集市：居中大标题 + 搜索、首条 hero 大卡、徽标（课节/时长/价格）、
+// 精品课程：官方精选 + 用户上架的课程。点开直接学；本机自用阶段，上架/下架即管理动作。
+// 版式对标 Hyperknow 精品课程：居中大标题 + 搜索、首条 hero 大卡、徽标（课节/时长/价格）、
 // 标签分类筛选条。评分/报名人数没有真实数据，不虚构。
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { MarketEntry } from "@/types";
@@ -31,7 +31,7 @@ export function MarketView({
       const d = await res.json();
       setEntries(d.entries || []);
     } catch {
-      setError("集市加载失败");
+      setError("精品课程加载失败");
       setEntries([]);
     }
   }, []);
@@ -115,7 +115,7 @@ export function MarketView({
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="在课程集市中搜索课程"
+            placeholder="在精品课程中搜索课程"
             className="w-full rounded-full border border-[#e7e5dc] bg-white pl-10 pr-4 py-2.5 text-[13px] outline-none focus:border-accent/60 shadow-sm"
           />
           <svg viewBox="0 0 24 24" className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-faint" fill="none" stroke="currentColor" strokeWidth="2">
@@ -170,9 +170,9 @@ export function MarketView({
       {entries && entries.length === 0 && (
         <div className="max-w-2xl mx-auto px-6">
           <div className="rounded-2xl border border-dashed border-[#d3d1c7] bg-white px-6 py-12 text-center">
-            <div className="text-[14px] font-medium mb-1.5">集市还空着</div>
+            <div className="text-[14px] font-medium mb-1.5">精品课程还空着</div>
             <div className="text-[12.5px] text-ink-soft mb-5 leading-relaxed">
-              去「课程记录」打开一门好课，在课程页左侧的课程卡里点「上架到课程集市」，它就会公开出现在这里。
+              去「课程记录」打开一门好课，在课程页点「上架到精品课程」，它就会公开出现在这里。
             </div>
             <button
               onClick={onGoHome}
@@ -280,7 +280,7 @@ export function MarketView({
                         <button
                           onClick={() => void removeFromMarket(e.courseId)}
                           className="text-[11.5px] text-ink-faint hover:text-red-500 transition-colors"
-                          title="从集市下架（课程本身不受影响）"
+                          title="从精品课程下架（课程本身不受影响）"
                         >
                           下架
                         </button>
