@@ -106,3 +106,9 @@ POST /api/teach (SSE)
 - `@opennextjs/cloudflare` 适配 Next.js；课堂 WebSocket（server.mjs）重写为 Durable Object
 - OCR 移到浏览器端：tesseract.js 是 WASM 可直接在浏览器跑（服务端原生 canvas 上不了 Workers）；渲染 + OCR 在用户浏览器完成，服务器只收文本，还省服务器算力
 - 届时需要：Cloudflare API Token（Workers / D1 部署权限）
+
+### 部署操作注意（本机实测踩坑，已多次复发）
+
+- **dev server 与 deploy 共写 `.next` 会构建失败**：`next build` 报 `Cannot find module for page: ...` 或 `Failed to collect page data for ...`，是缓存冲突不是代码问题。正确顺序：先停 dev（`netstat -ano | findstr :3000` 找 PID，PowerShell `Stop-Process -Id <pid> -Force`）→ `rm -rf .next` → `npm run deploy` → 重启 `npm run dev`。
+- **管道会吃掉真实退出码**：`npm run deploy 2>&1 | tail` 这类写法失败也显示成功（退出码取的是 tail 的）。判断部署结果要看日志里的 `Deployed learnloop triggers` 和 `Current Version ID`。
+- **Worker 版本上传偶发 Cloudflare API 瞬时错误**（如 `Completion token has already been consumed [code: 100312]`）：静态资源已去重上传，直接重跑 `npx opennextjs-cloudflare deploy`（跳过重新构建）补传 Worker 即可，实测重试一次就过。
