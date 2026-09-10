@@ -215,7 +215,7 @@ select:focus-visible {
   z-index: 30;
   pointer-events: none;
 }
-.board-subtitle-label { flex-shrink: 0; color: #0f6e56; font-weight: 600; font-size: 12px; letter-spacing: .04em; }
+.board-subtitle-label { flex-shrink: 0; color: var(--accent); font-weight: 600; font-size: 12px; letter-spacing: .04em; }
 .board-subtitle-idle { color: #a3a19a; font-size: 13px; }
 
 /* 字幕区内的课堂练习（原版 Hyperknow 打法：问题+选项直接嵌在字幕位置） */
@@ -223,7 +223,7 @@ select:focus-visible {
 .board-quiz-q { font-weight: 600; font-size: 14.5px; margin-bottom: 10px; }
 .board-quiz-options { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
 .board-quiz-option {
-  border: 1px solid #d3d1c7;
+  border: 1px solid #e0d6c2;
   background: #fff;
   border-radius: 999px;
   padding: 6px 18px;
@@ -231,19 +231,19 @@ select:focus-visible {
   color: #1a1a18;
   transition: border-color .2s, color .2s, background .2s;
 }
-.board-quiz-option:hover { border-color: #0f6e56; color: #0f6e56; background: #f0f7f4; }
+.board-quiz-option:hover { border-color: var(--accent); color: var(--accent); background: rgb(var(--accent-soft-rgb) / .6); }
 
 /* 字幕区内的语音聆听反馈 */
 .board-voice-heard { text-align: center; width: 100%; }
-.board-voice-heard-label { color: #0f6e56; font-weight: 600; font-size: 11px; letter-spacing: .04em; margin-right: 6px; }
+.board-voice-heard-label { color: var(--accent); font-weight: 600; font-size: 11px; letter-spacing: .04em; margin-right: 6px; }
 .board-voice-heard-text { color: #1a1a18; }
 .board-voice-heard-note { color: #a3a19a; font-size: 11px; margin-left: 6px; }
 
 .board-resume-btn {
   pointer-events: auto;
   flex-shrink: 0;
-  border: 1px solid #0f6e56;
-  color: #0f6e56;
+  border: 1px solid var(--accent);
+  color: var(--accent);
   background: #fff;
   border-radius: 999px;
   padding: 3px 12px;
@@ -251,7 +251,7 @@ select:focus-visible {
   font-weight: 500;
   transition: background .2s, color .2s;
 }
-.board-resume-btn:hover { background: #0f6e56; color: #fff; }
+.board-resume-btn:hover { background: var(--accent); color: #fff; }
 
 /* 白板课堂互动提问卡片 */
 .checkpoint-card {
@@ -263,7 +263,7 @@ select:focus-visible {
   line-height: 1.6;
 }
 .checkpoint-option {
-  border: 1px solid #d3d1c7;
+  border: 1px solid #e0d6c2;
   background: #fff;
   border-radius: 999px;
   padding: 4px 12px;
@@ -271,7 +271,20 @@ select:focus-visible {
   color: #1a1a18;
   transition: border-color .2s, color .2s;
 }
-.checkpoint-option:hover { border-color: #0f6e56; color: #0f6e56; }
+.checkpoint-option:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ---- 主题 accent（Tailwind accent 系列经这些变量取色，带透明度写法依然可用） ----
+   全站默认墨绿；课堂/回放等 .classroom-sunny 作用域内整体切换暖阳手账色 */
+:root {
+  --accent-rgb: 15 110 86;
+  --accent-soft-rgb: 225 245 238;
+  --accent-border-rgb: 93 202 165;
+}
+.classroom-sunny {
+  --accent-rgb: 232 89 12;
+  --accent-soft-rgb: 253 235 212;
+  --accent-border-rgb: 236 199 148;
+}
 
 /* 滚动条 */
 ::-webkit-scrollbar { width: 8px; height: 8px; }

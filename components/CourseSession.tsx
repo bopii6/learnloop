@@ -9,6 +9,7 @@ import { useClassroomSocket, type ClassroomState } from "@/hooks/useClassroomSoc
 import { startVoiceCapture, type VoiceCapture } from "./voice-capture";
 import { consumeSse } from "@/lib/sse";
 import { splitSpeechLines } from "@/lib/speech-lines";
+import { boardCssVars, CHROME_VARS } from "@/lib/board-themes";
 import { createTtsPlayer, fetchTtsSegments, prefetchTts, ttsUnavailable } from "@/lib/tts-client";
 import { exportBoardPoster, exportScriptPoster, downloadBlob, copyImageToClipboard, safeFilename } from "@/lib/board-poster";
 import { VerticalClipModal, type ClipBeat } from "./VerticalClipModal";
@@ -141,6 +142,9 @@ export function CourseSession({
   const [subtitle, setSubtitle] = useState("");
   const [playback, setPlayback] = useState<PlaybackStatus>("idle");
   const [preparing, setPreparing] = useState(true);
+  // 白板就绪：Excalidraw 动态加载（含手写字体）可能比开讲慢——就绪前不开讲/不恢复，
+  // 否则写板器等画布超时后前几拍板书静默丢弃（讲师在讲、白板是空的）
+  const [boardReady, setBoardReady] = useState(false);
   const [introCard, setIntroCard] = useState(true); // 本节预告卡：点"开始学习"才开讲
   const [chatMode, setChatMode] = useState<"text" | "voice">("text");
   // 学员称呼：只在第一次（画像里还没有名字时）在预告卡顺口问一次，之后自动记住
@@ -506,12 +510,14 @@ export function CourseSession({
       await writerRef.current?.write(item.beat.section, boardItems);
       if (item.lastOfSegment) writerRef.current?.removePencil();
 
-      // 逐行朗读（或静音节奏计时）；播放本行期间预取下一行的云端音频，不空等
+      // 逐行朗读（或静音节奏计时）；播放本行期间预取下一行的云端音频，不空等。
+      // 静音时不预取：TTS 占首听成本八成，为永远不会播的句子付合成费是纯浪费；
+      // 取消静音后下一拍恢复预取，当拍首句改为即时合成（多等一两秒）
       const nextBeatLines = queueRef.current[0] ? splitSpeechLines(queueRef.current[0].beat.say) : [];
       for (let li = 0; li < speechLines.length; li++) {
         if (pausedRef.current || exitedRef.current) break;
         setSubtitle(speechLines[li]);
-        prefetchTts(speechLines[li + 1] ?? nextBeatLines[0]);
+        if (voiceOnRef.current) prefetchTts(speechLines[li + 1] ?? nextBeatLines[0]);
         await speak(speechLines[li]);
       }
 
@@ -759,49 +765,27 @@ export function CourseSession({
   );
   sendChatRef.current = sendChat;
 
-  // 进入课节：点过"开始学习"才拉取脚本开讲（预告卡是课堂的仪式入口）
-  // 恢复路径（restoredRef）由 beginLecture 接管，不走 SSE。
+  // 进入课节：点过"开始学习"且白板就绪才真正启动（预告卡是课堂的仪式入口，也正好给
+  // Excalidraw 首次加载留时间；未就绪就开讲，前几拍板书会写进空气）。恢复路径同样等就绪。
   // React 18 StrictMode 会双挂载：cleanup 时复位 startedRef，二次挂载可重新开始。
   useEffect(() => {
-    if (startedRef.current || introCard || restoredRef.current) return;
+    if (startedRef.current || introCard || restoredRef.current || !boardReady) return;
     startedRef.current = true;
-    void startLecture();
-    return () => {
+    const cleanup = () => {
       abortLectureRef.current?.abort();
       startedRef.current = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [courseId, unitId, lectureId, introCard]);
 
-  const beginLecture = async () => {
-    // 第一次进课堂填了称呼 → 记住，之后不再问（登录后此值从账号自动同步）
-    const name = introName.trim();
-    if (profileName === "" && name) {
-      setProfileName(name);
-      try {
-        await fetch("/api/profile", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name }),
-        });
-      } catch {
-        // 保存失败不阻塞开课
-      }
-    }
-    setIntroCard(false);
-
-    // 有已保存的课堂状态（播放过）→ 走恢复：还原白板画面 + 断点续播。
+    // 有已保存的课堂状态（播放过）→ 走恢复：还原白板画面 + 断点续播，不走 SSE。
     // 画面元素可能为空（如断线前白板还没就绪）：只要剧本在，就恢复游标继续，别从头重播
     const saved = savedStateRef.current;
     if (saved && (saved.cursor || 0) > 0 && (saved.script?.length || 0) > 0) {
       restoredRef.current = true;
-      // 恢复模式必须挡住 startLecture：pump 会同步消费 restoredRef，等 introCard 卸载触发
-      // effect 时三个守卫全空，开讲流会整份再排一遍队列（表现为"讲过的内容重播"）
-      startedRef.current = true;
       resumeSegmentRef.current = typeof saved.writer?.lastSegmentKey === "string" ? saved.writer.lastSegmentKey : null;
       try {
         excalidrawApiRef.current?.updateScene({ elements: saved.elements || [] });
         writerRef.current?.restore(saved.writer || {});
+        writerRef.current?.recolor(); // 恢复出的旧板书按当前配色重着色
         // 镜头对准恢复出的黑板（否则 Excalidraw 停在默认原点，画面空一块）
         window.setTimeout(() => writerRef.current?.focusCurrent(), 200);
       } catch {
@@ -842,7 +826,7 @@ export function CourseSession({
       pausedRef.current = false;
       setPlayback("playing");
       void pump();
-      return;
+      return cleanup;
     }
 
     // 全新开课
@@ -850,6 +834,29 @@ export function CourseSession({
     if (chatMode === "voice") {
       window.setTimeout(() => startListening(), 1200);
     }
+    void startLecture();
+    return cleanup;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [courseId, unitId, lectureId, introCard, boardReady]);
+
+  const beginLecture = async () => {
+    // 第一次进课堂填了称呼 → 记住，之后不再问（登录后此值从账号自动同步）
+    const name = introName.trim();
+    if (profileName === "" && name) {
+      setProfileName(name);
+      try {
+        await fetch("/api/profile", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name }),
+        });
+      } catch {
+        // 保存失败不阻塞开课
+      }
+    }
+    // 开讲/恢复都交给上面的 effect：introCard 翻 false 且白板就绪才启动；
+    // 未就绪时字幕区会显示"正在准备白板…"，就绪后自动续上
+    setIntroCard(false);
   };
 
   useEffect(() => {
@@ -1113,9 +1120,12 @@ export function CourseSession({
   };
 
   return (
-    <div className="fixed inset-0 bg-white flex flex-col z-50">
+    <div
+      className="classroom-sunny fixed inset-0 bg-[#fffcf4] flex flex-col z-50"
+      style={{ ...boardCssVars(), ...CHROME_VARS } as React.CSSProperties}
+    >
       {/* 顶部栏（Hyperknow 风格：标题 + 播放控制 + 缩放 + 操作） */}
-      <div className="h-14 border-b border-[#e7e5dc] flex items-center justify-between px-4 shrink-0">
+      <div className="h-14 border-b border-[#eadfc8] flex items-center justify-between px-4 shrink-0">
         <div className="flex items-center gap-3">
           <button
             onClick={exitAndClear}
@@ -1126,7 +1136,7 @@ export function CourseSession({
           </button>
           <div className="text-[14px] font-medium truncate max-w-md">{lectureTitle}</div>
           <span
-            className="hidden md:inline-block rounded-full bg-[#f1efe8] px-2 py-0.5 text-[10px] text-ink-soft shrink-0"
+            className="hidden md:inline-block rounded-full bg-[#f7edda] px-2 py-0.5 text-[10px] text-ink-soft shrink-0"
             title="AI 生成内容可能存在错误，请以权威来源为准"
           >
             AI 生成
@@ -1137,7 +1147,7 @@ export function CourseSession({
             <button
               onClick={playback === "playing" ? pausePlayback : resumePlayback}
               className={`rounded-lg border px-3 py-1.5 text-[12px] transition-colors ${
-                playback === "paused" ? "border-accent text-accent" : "border-[#d3d1c7] text-ink-soft"
+                playback === "paused" ? "border-accent text-accent" : "border-[#e0d6c2] text-ink-soft"
               }`}
             >
               {playback === "playing" ? "⏸ 暂停" : "▶ 播放"}
@@ -1145,7 +1155,7 @@ export function CourseSession({
           )}
           <button
             onClick={toggleVoice}
-            className={`rounded-lg border px-3 py-1.5 text-[12px] transition-colors ${voiceOn ? "border-accent text-accent" : "border-[#d3d1c7] text-ink-soft"}`}
+            className={`rounded-lg border px-3 py-1.5 text-[12px] transition-colors ${voiceOn ? "border-accent text-accent" : "border-[#e0d6c2] text-ink-soft"}`}
             aria-pressed={voiceOn}
             title={voiceOn ? "关闭语音讲解" : "开启语音讲解"}
           >
@@ -1154,7 +1164,7 @@ export function CourseSession({
           {/* 语速：嫌节奏慢就提速 */}
           <button
             onClick={() => setRate((r) => (r >= 2 ? 1 : Math.round((r + 0.25) * 100) / 100))}
-            className="rounded-lg border border-[#d3d1c7] px-3 py-1.5 text-[12px] text-ink-soft hover:border-accent hover:text-accent transition-colors"
+            className="rounded-lg border border-[#e0d6c2] px-3 py-1.5 text-[12px] text-ink-soft hover:border-accent hover:text-accent transition-colors"
             title="讲解语速（点击切换）"
           >
             ⏩ {rate}x
@@ -1162,7 +1172,7 @@ export function CourseSession({
           <button
             onClick={toggleAutoListen}
             className={`rounded-lg border px-3 py-1.5 text-[12px] transition-colors ${
-              micArmed ? "border-accent text-accent animate-pulse" : "border-[#d3d1c7] text-ink-soft"
+              micArmed ? "border-accent text-accent animate-pulse" : "border-[#e0d6c2] text-ink-soft"
             }`}
             aria-pressed={micArmed}
             title={micArmed ? "自动聆听中：开口即打断 · 点击暂停聆听" : "开启自动聆听：开口说话即打断老师"}
@@ -1170,22 +1180,22 @@ export function CourseSession({
             {micArmed ? "🎙 聆听中" : "🎙 聆听"}
           </button>
           {/* 缩放控制 */}
-          <div className="flex items-center border border-[#d3d1c7] rounded-lg overflow-hidden">
+          <div className="flex items-center border border-[#e0d6c2] rounded-lg overflow-hidden">
             <button
               onClick={() => excalidrawApiRef.current?.updateScene({ appState: { ...excalidrawApiRef.current.getAppState(), zoom: { value: Math.max(0.2, (excalidrawApiRef.current.getAppState().zoom?.value || 1) - 0.1) } } })}
-              className="px-2.5 py-1.5 text-[13px] text-ink-soft hover:bg-[#f1efe8]"
+              className="px-2.5 py-1.5 text-[13px] text-ink-soft hover:bg-[#f7edda]"
             >
               −
             </button>
             <button
               onClick={() => excalidrawApiRef.current?.updateScene({ appState: { ...excalidrawApiRef.current.getAppState(), zoom: { value: 1 } } })}
-              className="px-2 py-1.5 text-[11px] text-ink-soft hover:bg-[#f1efe8] min-w-[3rem] text-center border-x border-[#d3d1c7]"
+              className="px-2 py-1.5 text-[11px] text-ink-soft hover:bg-[#f7edda] min-w-[3rem] text-center border-x border-[#e0d6c2]"
             >
               {Math.round((excalidrawApiRef.current?.getAppState?.()?.zoom?.value || 1) * 100)}%
             </button>
             <button
               onClick={() => excalidrawApiRef.current?.updateScene({ appState: { ...excalidrawApiRef.current.getAppState(), zoom: { value: Math.min(3, (excalidrawApiRef.current.getAppState().zoom?.value || 1) + 0.1) } } })}
-              className="px-2.5 py-1.5 text-[13px] text-ink-soft hover:bg-[#f1efe8]"
+              className="px-2.5 py-1.5 text-[13px] text-ink-soft hover:bg-[#f7edda]"
             >
               +
             </button>
@@ -1193,7 +1203,7 @@ export function CourseSession({
           {/* 适应内容 */}
           <button
             onClick={fitAll}
-            className="rounded-lg border border-[#d3d1c7] px-3 py-1.5 text-[12px] text-ink-soft hover:border-accent"
+            className="rounded-lg border border-[#e0d6c2] px-3 py-1.5 text-[12px] text-ink-soft hover:border-accent"
             title="适应内容"
           >
             ⛶
@@ -1203,7 +1213,7 @@ export function CourseSession({
             <button
               onClick={() => setDocOpen((v) => !v)}
               className={`rounded-lg border px-3 py-1.5 text-[12px] transition-colors ${
-                docOpen ? "border-accent text-accent" : "border-[#d3d1c7] text-ink-soft hover:border-accent hover:text-accent"
+                docOpen ? "border-accent text-accent" : "border-[#e0d6c2] text-ink-soft hover:border-accent hover:text-accent"
               }`}
               title="查看讲师本节课引用的上传文档原文"
             >
@@ -1214,7 +1224,7 @@ export function CourseSession({
           <button
             onClick={() => void generatePoster()}
             disabled={posterBusy || playback !== "done"}
-            className="rounded-lg border border-[#d3d1c7] px-3 py-1.5 text-[12px] text-ink-soft hover:border-accent hover:text-accent transition-colors disabled:opacity-50 disabled:hover:border-[#d3d1c7] disabled:hover:text-ink-soft"
+            className="rounded-lg border border-[#e0d6c2] px-3 py-1.5 text-[12px] text-ink-soft hover:border-accent hover:text-accent transition-colors disabled:opacity-50 disabled:hover:border-[#e0d6c2] disabled:hover:text-ink-soft"
             title={playback === "done" ? "把整节讲义生成竖版知识海报" : "讲完本节后可生成（内容为整节讲义，和板书终态一致）"}
           >
             {posterBusy ? "生成中…" : "🖼 海报"}
@@ -1222,7 +1232,7 @@ export function CourseSession({
           <button
             onClick={() => setClipOpen(true)}
             disabled={wsScriptRef.current.length === 0}
-            className="rounded-lg border border-[#d3d1c7] px-3 py-1.5 text-[12px] text-ink-soft hover:border-accent hover:text-accent transition-colors disabled:opacity-50"
+            className="rounded-lg border border-[#e0d6c2] px-3 py-1.5 text-[12px] text-ink-soft hover:border-accent hover:text-accent transition-colors disabled:opacity-50"
             title="录一条 60 秒竖屏速览视频，直接发抖音/小红书"
           >
             🎬 竖屏速览
@@ -1230,7 +1240,7 @@ export function CourseSession({
           <button
             onClick={() => void copyReplayLink()}
             className={`rounded-lg border px-3 py-1.5 text-[12px] transition-colors ${
-              replayUrl ? "border-accent text-accent" : "border-[#d3d1c7] text-ink-soft hover:border-accent hover:text-accent"
+              replayUrl ? "border-accent text-accent" : "border-[#e0d6c2] text-ink-soft hover:border-accent hover:text-accent"
             }`}
             title="打开只读回放页（自己回看 / 复制链接发给朋友）"
           >
@@ -1248,7 +1258,7 @@ export function CourseSession({
         {/* 成就徽章弹窗（原版同款激励闭环） */}
         {achievement && (
           <div className="absolute inset-0 z-[70] flex items-center justify-center bg-white/75 backdrop-blur-[2px]">
-            <div className="w-[430px] max-w-[88%] rounded-3xl border border-[#e7e5dc] bg-white shadow-2xl p-7 flex items-start gap-5 fade-up">
+            <div className="w-[430px] max-w-[88%] rounded-3xl border border-[#eadfc8] bg-white shadow-2xl p-7 flex items-start gap-5 fade-up">
               <div className="text-[52px] leading-none select-none">🏅</div>
               <div className="flex-1">
                 <div className="text-[11px] text-accent font-semibold tracking-[.1em] mb-1">你获得了奖励</div>
@@ -1269,7 +1279,7 @@ export function CourseSession({
         <div className="flex-1 flex flex-col min-w-0 relative">
           {introCard && (
             <div className="absolute inset-0 z-40 flex items-center justify-center bg-white/70 backdrop-blur-[2px]">
-              <div className="w-[420px] max-w-[90%] rounded-3xl border border-[#e7e5dc] bg-white shadow-xl p-8 fade-up">
+              <div className="w-[420px] max-w-[90%] rounded-3xl border border-[#eadfc8] bg-white shadow-xl p-8 fade-up">
                 <div className="text-[11px] text-ink-faint uppercase tracking-[.12em] mb-2">本节学习内容</div>
                 <div className="text-[21px] font-bold leading-snug mb-3">{lectureTitle}</div>
                 <div className="text-[13px] text-ink-soft leading-relaxed mb-5">
@@ -1278,7 +1288,7 @@ export function CourseSession({
                 </div>
                 <div className="flex items-center gap-2 mb-5">
                   {(unit?.lectures.find((l) => l.id === lectureId)?.depth_tags || []).map((tag) => (
-                    <span key={tag} className="rounded-full bg-[#f1efe8] px-2.5 py-0.5 text-[11px] text-ink-soft">
+                    <span key={tag} className="rounded-full bg-[#f7edda] px-2.5 py-0.5 text-[11px] text-ink-soft">
                       {tag}
                     </span>
                   ))}
@@ -1298,7 +1308,7 @@ export function CourseSession({
                         key={opt.key}
                         onClick={() => setChatMode(opt.key)}
                         className={`w-full text-left rounded-xl border px-3.5 py-2.5 transition-colors ${
-                          chatMode === opt.key ? "border-accent bg-accent/5" : "border-[#e7e5dc] bg-white hover:border-accent/60"
+                          chatMode === opt.key ? "border-accent bg-accent/5" : "border-[#eadfc8] bg-white hover:border-accent/60"
                         }`}
                       >
                         <div className="flex items-center gap-2 text-[13px] font-medium text-ink">
@@ -1325,7 +1335,7 @@ export function CourseSession({
                       value={introName}
                       onChange={(e) => setIntroName(e.target.value)}
                       placeholder="昵称"
-                      className="flex-1 min-w-0 rounded-lg border border-[#e7e5dc] px-3 py-1.5 text-[13px] outline-none focus:border-accent"
+                      className="flex-1 min-w-0 rounded-lg border border-[#eadfc8] px-3 py-1.5 text-[13px] outline-none focus:border-accent"
                     />
                   </div>
                 )}
@@ -1341,6 +1351,7 @@ export function CourseSession({
           <Whiteboard
             onReady={(api) => {
               excalidrawApiRef.current = api;
+              setBoardReady(true);
             }}
           />
           <div className="board-subtitle" aria-live="polite">
@@ -1392,15 +1403,15 @@ export function CourseSession({
                 </button>
               </span>
             ) : (
-              <span className="board-subtitle-idle">{preparing ? "AI 讲师正在备课…" : "白板课堂"}</span>
+              <span className="board-subtitle-idle">{!boardReady ? "正在准备白板…" : preparing ? "AI 讲师正在备课…" : "白板课堂"}</span>
             )}
           </div>
         </div>
 
         {/* 对照原文面板（文档建课模式）：讲师本节课引用的上传文档页 */}
         {docOpen && docPages && (
-          <div className="w-80 border-l border-[#e7e5dc] bg-[#faf9f6] flex flex-col shrink-0">
-            <div className="p-3 border-b border-[#e7e5dc] flex items-center justify-between">
+          <div className="w-80 border-l border-[#eadfc8] bg-[#faf9f6] flex flex-col shrink-0">
+            <div className="p-3 border-b border-[#eadfc8] flex items-center justify-between">
               <span className="text-[13px] font-medium">对照原文</span>
               <button onClick={() => setDocOpen(false)} className="text-ink-soft hover:text-ink text-[14px]">
                 ×
@@ -1411,7 +1422,7 @@ export function CourseSession({
             </div>
             <div className="flex-1 overflow-y-auto p-3 space-y-3">
               {docPages.pages.map((p) => (
-                <div key={p.page} className="rounded-xl border border-[#e7e5dc] bg-white p-3">
+                <div key={p.page} className="rounded-xl border border-[#eadfc8] bg-white p-3">
                   <div className="text-[11px] text-accent font-medium mb-1.5">第 {p.page} 页</div>
                   <div className="text-[12px] text-ink-soft leading-relaxed whitespace-pre-wrap max-h-72 overflow-y-auto">
                     {p.text}
@@ -1424,8 +1435,8 @@ export function CourseSession({
 
         {/* 右侧聊天 */}
         {chatOpen && (
-          <div className="w-80 border-l border-[#e7e5dc] bg-white flex flex-col shrink-0">
-            <div className="p-3 border-b border-[#e7e5dc] flex items-center justify-between">
+          <div className="w-80 border-l border-[#eadfc8] bg-white flex flex-col shrink-0">
+            <div className="p-3 border-b border-[#eadfc8] flex items-center justify-between">
               <span className="text-[13px] font-medium">对话记录</span>
               <button
                 onClick={() => setChatOpen(false)}
@@ -1444,7 +1455,7 @@ export function CourseSession({
                   <div
                     key={m.id}
                     className={`lesson-message rounded-xl px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap ${
-                      m.role === "user" ? "bg-accent text-white ml-8" : m.kind === "highlight" ? "bg-[#fff7d6] text-ink mr-8" : m.kind === "board" ? "bg-[#eaf6f1] text-ink mr-8" : "bg-[#f1efe8] text-ink mr-8"
+                      m.role === "user" ? "bg-accent text-white ml-8" : m.kind === "highlight" ? "bg-[#fff7d6] text-ink mr-8" : m.kind === "board" ? "bg-[#eaf6f1] text-ink mr-8" : "bg-[#f7edda] text-ink mr-8"
                     }`}
                   >
                     {m.role === "assistant" && <div className="lesson-message-label">{m.label || (m.kind === "board" ? "白板动作" : m.kind === "highlight" ? "互动提问" : "课程讲解")}</div>}
@@ -1453,12 +1464,12 @@ export function CourseSession({
                 ))
               )}
               {draft && (
-                <div className="bg-[#f1efe8] text-ink rounded-xl px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap mr-8">
+                <div className="bg-[#f7edda] text-ink rounded-xl px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap mr-8">
                   <LessonMarkdown text={draft} />
                 </div>
               )}
               {chatStreaming && !draft && (
-                <div className="bg-[#f1efe8] text-ink rounded-xl px-3 py-2 text-[13px] mr-8">
+                <div className="bg-[#f7edda] text-ink rounded-xl px-3 py-2 text-[13px] mr-8">
                   <span className="animate-pulse">AI 讲师正在思考...</span>
                 </div>
               )}
@@ -1468,7 +1479,7 @@ export function CourseSession({
                 </div>
               )}
             </div>
-            <div className="p-3 border-t border-[#e7e5dc]">
+            <div className="p-3 border-t border-[#eadfc8]">
               <div className="flex gap-2">
                 <textarea
                   value={input}
@@ -1481,14 +1492,14 @@ export function CourseSession({
                   }}
                   placeholder="输入问题，打断讲师..."
                   rows={1}
-                  className="flex-1 resize-none rounded-lg border border-[#d3d1c7] px-3 py-2 text-[13px] outline-none focus:border-accent"
+                  className="flex-1 resize-none rounded-lg border border-[#e0d6c2] px-3 py-2 text-[13px] outline-none focus:border-accent"
                 />
                 <button
                   onClick={toggleMic}
                   title="语音输入（说完自动填入）"
                   aria-pressed={listening}
                   className={`rounded-lg border px-3 py-2 text-[13px] transition-colors ${
-                    listening ? "border-red-400 text-red-600 bg-red-50 animate-pulse" : "border-[#d3d1c7] text-ink-soft hover:border-accent hover:text-accent"
+                    listening ? "border-red-400 text-red-600 bg-red-50 animate-pulse" : "border-[#e0d6c2] text-ink-soft hover:border-accent hover:text-accent"
                   }`}
                 >
                   {listening ? "●" : "🎙"}
@@ -1507,12 +1518,12 @@ export function CourseSession({
       </div>
 
       {/* 底部控制栏 */}
-      <div className="h-12 border-t border-[#e7e5dc] flex items-center justify-end px-4 shrink-0">
+      <div className="h-12 border-t border-[#eadfc8] flex items-center justify-end px-4 shrink-0">
         <div className="flex items-center gap-2">
           {!chatOpen && (
             <button
               onClick={() => setChatOpen(true)}
-              className="rounded-lg border border-[#d3d1c7] px-3 py-1.5 text-[12px] text-ink-soft"
+              className="rounded-lg border border-[#e0d6c2] px-3 py-1.5 text-[12px] text-ink-soft"
             >
               打开对话
             </button>

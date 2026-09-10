@@ -10,31 +10,12 @@
 //   装不下后不再拉远，保持可读缩放、底边跟随书写位——手写在哪、镜头看哪，字不再变小。
 //   turbo 模式（回放重建用）：跳过动画与延时，瞬间把板书写到位。
 import type { BoardItem } from "@/types";
+import { classicToSunnyMaps, getBoardTheme, type BoardColors } from "@/lib/board-themes";
 
-// 主题取色：paper = v2.1 草稿纸上线版原值，逐像素不许动
-const T = {
-  boardBg: "#faf9f6",
-  boardDot: "#d3d1c7",
-  ink: "#1e1e1e",
-  accent: "#0f6e56",
-  mute: "#8a8880",
-  faint: "#b4b2a9",
-  semGood: "#047857",
-  semBad: "#b91c1c",
-  fillNeutral: "#e6e2d4",
-  diagramStroke: "#57534e",
-  chartAxis: "#8a8880",
-  backdropBg: "#ffffff",
-  backdropStroke: "#1e1e1e1f",
-  judgeStroke: "#1e1e1e2b",
-  tableHeadBg: "#f1efe8",
-  tableHeadStroke: "#d3d1c7",
-  tableRowStroke: "#e7e5dc",
-  quoteBg: "#0f6e560f",
-  vsBadgeBg: "#1e1e1e08",
-  vsBadgeStroke: "#a3a19a",
-  vsBadgeText: "#a3a19a",
-};
+// 配色：暖阳手账（定稿，见 lib/board-themes.ts）。accents 按模块轮换（T.accent = 当前模块强调色）；
+// 旧课堂的经典墨绿板书经 classicToSunnyMaps 重着色（recolorExisting，恢复路径会调用）。
+let T: BoardColors = getBoardTheme("sunny").colors;
+let recolorMaps = classicToSunnyMaps();
 const START_X = 60;
 const START_Y = 60;
 const MODULE_W = 660; // 模块板总宽（收窄让内容占满版面，密度优先）
@@ -74,6 +55,8 @@ export interface BoardWriter {
   focusCurrent(): void;
   /** turbo 模式：跳过手写动画与延时（回放重建瞬间到位） */
   setTurbo(on: boolean): void;
+  /** 给已有板书按"经典 → 暖阳"映射重着色（断线恢复出的旧板书用） */
+  recolor(): void;
   /** 序列化布局游标（课堂状态恢复用） */
   snapshot(): Record<string, unknown>;
   /** 恢复布局游标 */
@@ -441,6 +424,33 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
     return rays;
   }
 
+  /** 按最近一次 setTheme 的映射给已有板书重着色（换主题即时生效；恢复出的旧板书也走这里） */
+  function recolorExisting(): void {
+    const api = getApi();
+    if (!api || !recolorMaps) return;
+    const { stroke, bg, solidify } = recolorMaps;
+    if (stroke.size === 0 && bg.size === 0) return;
+    try {
+      const els = api
+        .getSceneElements()
+        .filter((el: any) => !el.isDeleted)
+        .map((el: any) => {
+          const s = stroke.get(el.strokeColor);
+          const b = bg.get(el.backgroundColor);
+          if (!s && !b) return el;
+          return {
+            ...el,
+            ...(s ? { strokeColor: s } : null),
+            ...(b ? { backgroundColor: b } : null),
+            ...(b && solidify.has(el.backgroundColor) ? { fillStyle: "solid" as const } : null),
+          };
+        });
+      api.updateScene({ elements: els });
+    } catch {
+      // 场景未就绪时忽略
+    }
+  }
+
   return {
     async beginSegment(title: string, progress?: { index: number; total: number }, anchor?: string, segmentKey?: string) {
       // 上一块模块收尾：底卡撑高 → 板间箭头 → 右移开新板
@@ -450,6 +460,8 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
         mx += MODULE_W + MODULE_X_GAP;
       }
       moduleIndex += 1;
+      // 模块强调色按页轮换（经典主题 accents 只有一颗，等于恒定墨绿）
+      T.accent = T.accents[(moduleIndex - 1) % T.accents.length];
       bulletNo = 0;
       currentSection = null;
       lastItemBox = null;
@@ -488,7 +500,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
             y: my + 64,
             width: w,
             height: 66,
-            backgroundColor: "transparent",
+            backgroundColor: T.anchorFill === "auto" ? `${T.accent}1a` : T.anchorFill,
             strokeColor: T.accent,
             strokeWidth: 2,
             roughness: 1,
@@ -599,7 +611,8 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                   y: rowY,
                   width: boxW,
                   height: 42,
-                  backgroundColor: "transparent",
+                  backgroundColor: good ? T.judgeGoodBg : T.judgeBadBg,
+                  fillStyle: "solid",
                   strokeColor: T.judgeStroke,
                   strokeWidth: 1,
                   roughness: 1,
@@ -649,8 +662,8 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 y: rowY + 6,
                 width: boxW,
                 height: boxH,
-                backgroundColor: T.fillNeutral,
-                fillStyle: "hachure",
+                backgroundColor: T.nodeFills[ni % T.nodeFills.length],
+                fillStyle: "solid",
                 strokeColor: T.diagramStroke,
                 strokeWidth: 1.2,
                 roughness: 1,
@@ -847,7 +860,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 text: "vs",
                 fontSize: 13,
                 fontFamily: 5,
-                strokeColor: T.vsBadgeText,
+                strokeColor: T.vsText,
               },
             ];
             return { skeleton: sk, h: boxH + 8 };
@@ -871,8 +884,8 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 y: rowY,
                 width: parentW,
                 height: parentH,
-                backgroundColor: T.fillNeutral,
-                fillStyle: "hachure",
+                backgroundColor: T.nodeFills[0],
+                fillStyle: "solid",
                 strokeColor: T.diagramStroke,
                 strokeWidth: 1.2,
                 roughness: 1,
@@ -904,7 +917,8 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                 y: childY,
                 width: childW,
                 height: 42,
-                backgroundColor: "transparent",
+                backgroundColor: T.nodeFills[ci % T.nodeFills.length],
+                fillStyle: "solid",
                 strokeColor: T.mute,
                 strokeWidth: 1.2,
                 roughness: 1,
@@ -970,7 +984,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
                   width: qw,
                   height: 60,
                   backgroundColor: T.quoteBg,
-                  strokeColor: T.accent,
+                  strokeColor: T.quoteStroke,
                   strokeWidth: 1.6,
                   roughness: 1,
                 },
@@ -1007,6 +1021,8 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
     setTurbo(on: boolean) {
       turbo = on;
     },
+
+    recolor: recolorExisting,
 
     snapshot() {
       return {

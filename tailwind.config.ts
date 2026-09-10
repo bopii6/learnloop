@@ -9,9 +9,11 @@ const config: Config = {
     extend: {
       colors: {
         accent: {
-          DEFAULT: "#0F6E56",
-          soft: "#E1F5EE",
-          border: "#5DCAA5",
+          // 走 CSS 变量（空格分隔 RGB）：全站默认墨绿，课堂作用域（.classroom-sunny）内整体切换暖阳色，
+          // 带 <alpha-value> 让 accent/25 这类透明度写法继续可用
+          DEFAULT: "rgb(var(--accent-rgb) / <alpha-value>)",
+          soft: "rgb(var(--accent-soft-rgb) / <alpha-value>)",
+          border: "rgb(var(--accent-border-rgb) / <alpha-value>)",
         },
         ink: {
           DEFAULT: "#1a1a18",

@@ -9,6 +9,7 @@ import { Whiteboard } from "./Whiteboard";
 import { createBoardWriter, type BoardWriter } from "./board-writer";
 import { createTtsPlayer, fetchTtsSegments, prefetchTts, ttsUnavailable } from "@/lib/tts-client";
 import { splitSpeechLines } from "@/lib/speech-lines";
+import { boardCssVars, CHROME_VARS } from "@/lib/board-themes";
 
 let cachedZhVoice: SpeechSynthesisVoice | null = null;
 function pickZhVoice(): SpeechSynthesisVoice | null {
@@ -299,7 +300,10 @@ export function ReplayPlayer({ replayId }: { replayId: string }) {
   const progress = beats.length ? ((idx + 1) / beats.length) * 100 : 0;
 
   return (
-    <div className="fixed inset-0 bg-white flex flex-col z-50">
+    <div
+      className="classroom-sunny fixed inset-0 bg-[#fffcf4] flex flex-col z-50"
+      style={{ ...boardCssVars(), ...CHROME_VARS } as React.CSSProperties}
+    >
       {/* 顶栏 */}
       <div className="h-14 border-b border-[#e7e5dc] flex items-center justify-between px-4 shrink-0">
         <div className="flex items-center gap-3 min-w-0">
@@ -313,11 +317,11 @@ export function ReplayPlayer({ replayId }: { replayId: string }) {
         <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={toggleVoice}
-            className={`rounded-lg border px-3 py-1.5 text-[12px] transition-colors ${voiceOn ? "border-accent text-accent" : "border-[#d3d1c7] text-ink-soft"}`}
+            className={`rounded-lg border px-3 py-1.5 text-[12px] transition-colors ${voiceOn ? "border-accent text-accent" : "border-[#e0d6c2] text-ink-soft"}`}
           >
             {voiceOn ? "◖ 语音" : "◌ 静音"}
           </button>
-          <button onClick={copyLink} className="rounded-lg border border-[#d3d1c7] px-3 py-1.5 text-[12px] text-ink-soft hover:border-accent hover:text-accent">
+          <button onClick={copyLink} className="rounded-lg border border-[#e0d6c2] px-3 py-1.5 text-[12px] text-ink-soft hover:border-accent hover:text-accent">
             {copied ? "✓ 已复制" : "🔗 复制链接"}
           </button>
           <a href="/" className="rounded-lg bg-accent px-3.5 py-1.5 text-[12px] text-white font-medium hover:opacity-90">
@@ -385,7 +389,7 @@ export function ReplayPlayer({ replayId }: { replayId: string }) {
           {beats.map((_, i) => (
             <span
               key={i}
-              className={`absolute top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full ${i <= idx ? "bg-white" : "bg-[#d3d1c7]"}`}
+              className={`absolute top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full ${i <= idx ? "bg-white" : "bg-[#e0d6c2]"}`}
               style={{ left: `calc(${((i + 0.5) / beats.length) * 100}% - 3px)` }}
             />
           ))}

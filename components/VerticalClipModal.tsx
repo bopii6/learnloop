@@ -24,9 +24,9 @@ const H = 1280;
 const DURATION_MS = 60000;
 const INTRO_MS = 4200;
 const OUTRO_MS = 5200;
-const PAPER = "#fafaf7";
-const INK = "#1a1a18";
-const ACCENT = "#0f6e56";
+const PAPER = "#fffcf4";
+const INK = "#43301f";
+const ACCENT = "#e8590c";
 const FONT_STACK = '"PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Segoe UI", sans-serif';
 
 function wrap(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, maxLines: number): string[] {
@@ -53,7 +53,7 @@ function wrap(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, max
 function drawPaper(ctx: CanvasRenderingContext2D) {
   ctx.fillStyle = PAPER;
   ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = "rgba(93, 202, 165, 0.20)";
+  ctx.fillStyle = "rgba(232, 89, 12, 0.14)";
   for (let y = 18; y < H; y += 26) {
     for (let x = 18; x < W; x += 26) {
       ctx.beginPath();
@@ -94,7 +94,7 @@ export function VerticalClipModal({ open, onClose, courseTitle, lectureTitle, be
         const segStart = i === 0 ? 0 : i === segs - 1 ? INTRO_MS + slides.length * slideMs : INTRO_MS + (i - 1) * slideMs;
         const segDur = i === 0 ? INTRO_MS : i === segs - 1 ? OUTRO_MS : slideMs;
         const fill = Math.max(0, Math.min(1, (t - segStart) / segDur));
-        ctx.fillStyle = i === segs - 1 ? "rgba(15,110,86,.25)" : "#e3e1d8";
+        ctx.fillStyle = i === segs - 1 ? "rgba(232,89,12,.25)" : "#eadfc8";
         ctx.beginPath();
         ctx.roundRect(M + i * (segW + 10), 44, segW, 7, 4);
         ctx.fill();

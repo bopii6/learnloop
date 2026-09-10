@@ -2,11 +2,11 @@
 // 纯客户端：Excalidraw exportToBlob 出板书位图 → 2D canvas 排版合成海报。
 // 复用 @napi-rs/canvas 的服务端渲染没有必要——课堂场景里板书本来就在浏览器里。
 
-const PAPER = "#fafaf7";
-const INK = "#1a1a18";
-const INK_SOFT = "#5f5e5a";
-const INK_FAINT = "#a3a19a";
-const ACCENT = "#0f6e56";
+const PAPER = "#fffcf4";
+const INK = "#43301f";
+const INK_SOFT = "#6b5644";
+const INK_FAINT = "#c9b394";
+const ACCENT = "#e8590c";
 const FONT_STACK = '"PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Segoe UI", sans-serif';
 
 export interface PosterOptions {
@@ -96,7 +96,7 @@ export async function exportBoardPoster(opts: PosterOptions): Promise<{ blob: Bl
   // 纸面 + 点阵（与产品白板同款质感）
   ctx.fillStyle = PAPER;
   ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = "rgba(93, 202, 165, 0.22)";
+  ctx.fillStyle = "rgba(232, 89, 12, 0.16)";
   for (let y = 16; y < H; y += 24) {
     for (let x = 16; x < W; x += 24) {
       ctx.beginPath();
@@ -143,7 +143,7 @@ export async function exportBoardPoster(opts: PosterOptions): Promise<{ blob: Bl
   ctx.roundRect(bx, y, bw, bh, 20);
   ctx.fillStyle = "#ffffff";
   ctx.fill();
-  ctx.strokeStyle = "#e7e5dc";
+  ctx.strokeStyle = "#eadfc8";
   ctx.lineWidth = 2;
   ctx.stroke();
   ctx.clip();
@@ -331,7 +331,7 @@ export async function exportScriptPoster(opts: {
   // 纸面 + 点阵
   ctx.fillStyle = PAPER;
   ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = "rgba(93, 202, 165, 0.20)";
+  ctx.fillStyle = "rgba(232, 89, 12, 0.14)";
   for (let y = 16; y < H; y += 24) {
     for (let x = 16; x < W; x += 24) {
       ctx.beginPath();
@@ -385,7 +385,7 @@ export async function exportScriptPoster(opts: {
   // 开场钩子
   if (hookText) {
     y += 48;
-    ctx.fillStyle = "rgba(15,110,86,.07)";
+    ctx.fillStyle = "rgba(232,89,12,.07)";
     ctx.beginPath();
     ctx.roundRect(M, y - 24, W - M * 2, 44, 12);
     ctx.fill();
@@ -404,7 +404,7 @@ export async function exportScriptPoster(opts: {
     ctx.beginPath();
     ctx.roundRect(M, y, CARD_W, ch, 20);
     ctx.fill();
-    ctx.strokeStyle = "#e7e5dc";
+    ctx.strokeStyle = "#eadfc8";
     ctx.lineWidth = 2;
     ctx.stroke();
     // 左色条
@@ -459,7 +459,7 @@ export async function exportScriptPoster(opts: {
         const tw = ctx.measureText(label).width;
         ctx.fillText(label, bx + (bw - tw) / 2, by + 26);
         if (i < n - 1) {
-          ctx.fillStyle = "#b4b2a9";
+          ctx.fillStyle = "#c9b394";
           const ax = bx + bw + 3;
           ctx.beginPath();
           ctx.moveTo(ax, by + 14);
@@ -499,7 +499,7 @@ export async function exportScriptPoster(opts: {
     if (c.quote) {
       const qLines = wrapLines(c.quote, `400 22px ${FONT_STACK}`, CONTENT_W - 36);
       const qh = qLines * 32 + 22;
-      ctx.fillStyle = "#faf8f0";
+      ctx.fillStyle = "#fdf6e9";
       ctx.beginPath();
       ctx.roundRect(tx + 4, cy, CONTENT_W - 30, qh, 12);
       ctx.fill();
