@@ -652,25 +652,28 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
   if (step === "input") {
     return (
       <div className="relative">
-        {/* 装饰光斑：薄荷绿主调，衬点阵背景 */}
+        {/* 装饰光斑：暖阳主调，衬沙色点阵背景 */}
         <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
-          <div className="absolute -top-32 left-1/2 h-[320px] w-[620px] -translate-x-1/2 rounded-full bg-accent-border/20 blur-[110px]" />
+          <div className="absolute -top-32 left-1/2 h-[320px] w-[620px] -translate-x-1/2 rounded-full bg-accent-border/25 blur-[110px]" />
           <div className="absolute top-56 -left-24 h-[280px] w-[280px] rounded-full bg-accent/10 blur-[100px]" />
-          <div className="absolute top-72 -right-20 h-[260px] w-[260px] rounded-full bg-[#7fd0b6]/15 blur-[100px]" />
+          <div className="absolute top-72 -right-20 h-[260px] w-[260px] rounded-full bg-[#f3d9ae]/40 blur-[100px]" />
         </div>
 
         <div className="relative mx-auto max-w-3xl px-6 pb-16 pt-14">
-          {/* Hero */}
+          {/* Hero：贴纸徽章 + 课堂同款手绘圈划 */}
           <div className="mb-9 text-center">
-            <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-accent/20 bg-white/75 px-3.5 py-1.5 text-[12px] font-medium text-accent shadow-sm backdrop-blur">
+            <div className="mb-5 inline-flex rotate-[-1.2deg] items-center gap-2 rounded-full border-[1.5px] border-[#ecc794] bg-[#fdf3e3] px-3.5 py-1.5 text-[12px] font-semibold text-accent shadow-[0_2px_0_#ecc794]">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
               Superlearn · AI 白板讲师，把任何主题讲成一门课
             </div>
-            <h1 className="mb-3.5 text-[34px] font-bold leading-[1.32] tracking-tight">
+            <h1 className="mb-3.5 text-[38px] font-black leading-[1.3] tracking-tight text-ink">
               一句话，生成一门
               <br />
-              <span className="bg-[linear-gradient(transparent_62%,rgba(93,202,165,0.42)_62%)] px-0.5">
+              <span className="relative inline-block px-2">
                 12 小时学完
+                <svg viewBox="0 0 220 40" preserveAspectRatio="none" className="absolute -inset-x-3 -inset-y-1 h-[calc(100%+8px)] w-[calc(100%+24px)]" fill="none" aria-hidden>
+                  <path d="M14 21 C 36 5, 86 2, 126 6 C 170 10, 208 13, 209 22 C 210 32, 162 37, 106 36 C 54 35, 11 33, 14 21 Z" stroke="rgb(var(--accent-rgb))" strokeWidth="3" strokeLinecap="round" opacity="0.62" />
+                </svg>
               </span>
               的系统课程
             </h1>
@@ -841,8 +844,9 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
               {cancelNotice}
             </div>
           )}
-          {/* 输入卡：无边框输入区 + 分隔线 + 动作行，聚焦时整卡亮边 */}
-          <div className="rounded-3xl border border-[#e0ded3] bg-white p-5 shadow-[0_10px_44px_rgba(26,26,24,0.08)] transition-all duration-300 focus-within:border-accent/45 focus-within:shadow-[0_12px_48px_rgba(15,110,86,0.13)]">
+          {/* 输入卡：一张便签纸——顶部胶带、聚焦亮边、暖影 */}
+          <div className="relative rounded-[26px] border border-[#eadfc8] bg-white p-5 pt-6 shadow-[0_16px_50px_rgba(96,66,22,0.10)] transition-all duration-300 focus-within:border-accent/50 focus-within:shadow-[0_18px_54px_rgba(232,89,12,0.13)]">
+            <div className="pointer-events-none absolute -top-2.5 left-1/2 h-5 w-24 -translate-x-1/2 rotate-[-2deg] rounded-sm bg-accent-soft/95 shadow-sm ring-1 ring-[#ecc794]/60" aria-hidden />
             <textarea
               ref={queryRef}
               value={query}
@@ -857,7 +861,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
               rows={3}
               className="w-full resize-none bg-transparent px-1.5 py-1 text-[15px] leading-relaxed text-ink outline-none placeholder:text-ink-faint/80"
             />
-            <div className="my-3 h-px bg-gradient-to-r from-transparent via-[#e7e5dc] to-transparent" />
+            <div className="my-3 h-px bg-gradient-to-r from-transparent via-[#eadfc8] to-transparent" />
             <div className="flex items-center justify-between gap-3">
               {/* 文档上传：附件卡（图标+文件名+大小）+ 实时改价 10 → 13 */}
               <div className="min-w-0">
@@ -911,7 +915,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
                   <button
                     onClick={() => fileRef.current?.click()}
                     disabled={uploading}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-[#c9c7bd] px-3.5 py-1.5 text-[12.5px] text-ink-soft transition-colors hover:border-accent hover:bg-accent-soft/30 hover:text-accent disabled:opacity-50"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-[#d8c49a] bg-[#fdf8ec] px-3.5 py-1.5 text-[12.5px] text-ink-soft transition-colors hover:border-accent hover:bg-accent-soft/40 hover:text-accent disabled:opacity-50"
                   >
                     <span className="inline-flex items-center gap-1.5"><Icon name="paperclip" className="h-[13px] w-[13px]" />{uploading ? uploadLabel || "处理中…" : "上传文档，围绕它生成课程"}</span>
                   </button>
@@ -936,7 +940,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
                     void startGeneration();
                   }}
                   disabled={loading}
-                  className="group inline-flex items-center gap-1.5 rounded-full bg-accent px-6 py-2.5 text-[13.5px] font-medium text-white shadow-lg shadow-accent/25 transition-all hover:bg-[#0c5f4b] hover:shadow-accent/35 disabled:opacity-60 disabled:shadow-none"
+                  className="group inline-flex items-center gap-1.5 rounded-full bg-accent px-6 py-2.5 text-[13.5px] font-medium text-white shadow-lg shadow-accent/25 transition-all hover:bg-[#c24e08] hover:shadow-accent/35 disabled:opacity-60 disabled:shadow-none"
                 >
                   {loading ? "生成中…" : "开始打造课程"}
                   <span className="transition-transform duration-200 group-hover:translate-x-0.5">→</span>
@@ -949,11 +953,11 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
           <div className="mt-6 text-center">
             <div className="mb-3 text-[12px] text-ink-faint">不知道从哪开始？试试这些</div>
             <div className="flex flex-wrap justify-center gap-2">
-              {["LLM Agent 的 Tool Use 设计模式", "雅思 vs 托福备考策略", "Python 数据分析入门"].map((s) => (
+              {["LLM Agent 的 Tool Use 设计模式", "雅思 vs 托福备考策略", "Python 数据分析入门"].map((s, i) => (
                 <button
                   key={s}
                   onClick={() => setQuery(`系统讲解 ${s}`)}
-                  className="rounded-full border border-[#e7e5dc] bg-white/85 px-3.5 py-1.5 text-[12px] text-ink-soft shadow-sm backdrop-blur transition-all hover:-translate-y-px hover:border-accent/50 hover:text-accent"
+                  className={`rounded-full border border-[#eadfc8] bg-white px-3.5 py-1.5 text-[12px] text-ink-soft shadow-[0_2px_0_#eadfc8] transition-all hover:-translate-y-0.5 hover:border-accent/60 hover:text-accent hover:shadow-[0_4px_10px_rgb(var(--accent-border-rgb)/0.5)] ${["rotate-[-1deg]", "rotate-[0.8deg]", "rotate-[-0.6deg]"][i]}`}
                 >
                   <span className="mr-1.5 text-accent/80">✦</span>
                   {s}
@@ -979,9 +983,9 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
             {HOME_FEATURES.map((f) => (
               <div
                 key={f.title}
-                className="group rounded-2xl border border-[#e7e5dc] bg-white/80 px-4 py-5 text-center shadow-sm backdrop-blur transition-all duration-200 hover:-translate-y-0.5 hover:border-accent/40 hover:shadow-[0_10px_28px_rgba(26,26,24,0.08)]"
+                className="group rounded-2xl border border-dashed border-[#e2cfa8] bg-[#fdf8ec] px-4 py-5 text-center transition-all duration-200 hover:-translate-y-0.5 hover:border-accent/50 hover:bg-white hover:shadow-[0_10px_28px_rgba(96,66,22,0.09)]"
               >
-                <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-accent-soft/80 text-accent transition-colors group-hover:bg-accent group-hover:text-white">
+                <div className="mx-auto mb-3 flex h-10 w-10 rotate-[-3deg] items-center justify-center rounded-xl bg-accent-soft text-accent ring-1 ring-[#ecc794]/70 transition-all group-hover:rotate-0 group-hover:bg-accent group-hover:text-white">
                   <FeatureIcon name={f.icon} />
                 </div>
                 <div className="text-[13px] font-semibold text-ink">{f.title}</div>
@@ -991,11 +995,11 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
           </div>
 
           {/* 课堂演示：动画演示「边讲边画」的真实节奏，不再是挂着假文案的静态截图 */}
-          <div className="mt-10 overflow-hidden rounded-3xl border border-[#e0ded3] bg-white shadow-[0_12px_40px_rgba(26,26,24,0.07)]">
-            <div className="flex items-center gap-2 border-b border-[#f1efe8] bg-[#fcfbf8] px-5 py-3">
-              <span className="h-2.5 w-2.5 rounded-full bg-[#ece9df]" />
-              <span className="h-2.5 w-2.5 rounded-full bg-[#ece9df]" />
-              <span className="h-2.5 w-2.5 rounded-full bg-[#ece9df]" />
+          <div className="mt-10 overflow-hidden rounded-3xl border border-[#eadfc8] bg-white shadow-[0_12px_40px_rgba(96,66,22,0.09)]">
+            <div className="flex items-center gap-2 border-b border-dashed border-[#eadfc8] bg-[#fdf8ec] px-5 py-3">
+              <span className="h-2.5 w-2.5 rounded-full bg-[#ecd9b4]" />
+              <span className="h-2.5 w-2.5 rounded-full bg-[#ecd9b4]" />
+              <span className="h-2.5 w-2.5 rounded-full bg-[#ecd9b4]" />
               <span className="ml-3 text-[11px] text-ink-faint">白板课堂 · 交互演示</span>
             </div>
             <div className="grid sm:grid-cols-[1.35fr_1fr]">
@@ -1017,11 +1021,13 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
           </div>
 
           {/* 页脚：品牌 + 法务入口 */}
-          <footer className="mt-12 border-t border-[#efede4] pt-5 pb-2 text-center">
+          <footer className="mt-12 border-t border-dashed border-[#eadfc8] pt-5 pb-2 text-center">
             <div className="flex items-center justify-center gap-1.5 text-[12px] font-semibold text-ink-soft">
-              <span className="flex h-4 w-4 items-center justify-center rounded bg-accent text-[9px] font-bold text-white">
-                S
-              </span>
+              {/* 简笔小人：课堂讲师来页脚打个招呼 */}
+              <svg viewBox="0 0 24 24" className="h-5 w-5 text-accent" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden>
+                <circle cx="12" cy="5.5" r="2.6" />
+                <path d="M12 8.5v6M12 11l-3.5 2M12 11l3.5 2M12 14.5l-2.5 5M12 14.5l2.5 5" />
+              </svg>
               Superlearn
             </div>
             <div className="mt-2 flex items-center justify-center gap-3 text-[11px] text-ink-faint">

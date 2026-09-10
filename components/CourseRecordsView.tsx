@@ -75,7 +75,7 @@ function ProgressBlock({ c }: { c: RecordCourse }) {
         </div>
         <div className="h-2 rounded-full bg-[#f1efe8] overflow-hidden">
           <div
-            className="h-full rounded-full bg-gradient-to-r from-accent to-[#3aa981] transition-all duration-500"
+            className="h-full rounded-full bg-gradient-to-r from-accent to-[#f0a04a] transition-all duration-500"
             style={{ width: `${Math.max(pct, 5)}%` }}
           />
         </div>
@@ -108,7 +108,7 @@ function CardProgress({ c }: { c: RecordCourse }) {
         </div>
         <div className="h-2 rounded-full bg-[#f1efe8] overflow-hidden">
           <div
-            className="h-full rounded-full bg-gradient-to-r from-accent to-[#3aa981] transition-all duration-500"
+            className="h-full rounded-full bg-gradient-to-r from-accent to-[#f0a04a] transition-all duration-500"
             style={{ width: `${Math.max(pct, 5)}%` }}
           />
         </div>
@@ -391,7 +391,7 @@ export function CourseRecordsView({
                       已结课
                     </span>
                   )}
-                  <div aria-hidden className="absolute inset-0 flex items-center justify-center bg-[#0f6e56]/0 transition-colors duration-200 group-hover:bg-[#0f6e56]/75">
+                  <div aria-hidden className="absolute inset-0 flex items-center justify-center bg-[rgb(var(--accent-rgb))]/0 transition-colors duration-200 group-hover:bg-[rgb(var(--accent-rgb))]/75">
                     <span aria-hidden className="opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-200 rounded-full bg-white px-4 py-1.5 text-[12px] font-semibold text-accent shadow-md">
                       {c.started ? "继续学习 →" : "开始学习 →"}
                     </span>

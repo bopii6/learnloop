@@ -14,15 +14,15 @@ function hashSeed(seed: string): number {
   return h >>> 0;
 }
 
-/** 主题关键词 → 纹样 + 色相带。色相带收窄到彼此协调的暖色/冷色区间，避免脏色 */
+/** 主题关键词 → 纹样 + 色相带。全族统一在暖阳手账色域（陶土 8-14 / 橙 16-28 / 琥珀金 30-52）。主题差异靠纹样与明度，不靠色相打架 */
 const THEME_RULES: { kw: RegExp; motif: Motif; hues: number[] }[] = [
-  { kw: /python|java|代码|编程|源码|开发|工程|部署|调试|closure|装饰器/i, motif: "terminal", hues: [150, 162, 174] },
-  { kw: /agent|tool|llm|大模型|transformer|rag|prompt|ai\b|机器学习|深度学习|神经网络/i, motif: "nodes", hues: [168, 178, 96] },
-  { kw: /英语|雅思|托福|语言|沟通|口语|写作|翻译/i, motif: "chat", hues: [32, 42, 52] },
-  { kw: /数据|分析|报表|统计|可视化|商业智能|bi\b/i, motif: "chart", hues: [198, 210, 222] },
-  { kw: /摄影|相机|镜头|光线|构图|人像/i, motif: "aperture", hues: [18, 28, 38] },
-  { kw: /redis|分布式|后端|系统|架构|网络|数据库|并发|锁/i, motif: "layers", hues: [350, 2, 14] },
-  { kw: /雅思|留学|备考|考试/i, motif: "flag", hues: [262, 274, 286] },
+  { kw: /python|java|代码|编程|源码|开发|工程|部署|调试|closure|装饰器/i, motif: "terminal", hues: [30, 40, 24] },
+  { kw: /agent|tool|llm|大模型|transformer|rag|prompt|ai\b|机器学习|深度学习|神经网络/i, motif: "nodes", hues: [18, 26, 46] },
+  { kw: /英语|雅思|托福|语言|沟通|口语|写作|翻译/i, motif: "chat", hues: [42, 50, 34] },
+  { kw: /数据|分析|报表|统计|可视化|商业智能|bi\b/i, motif: "chart", hues: [22, 32, 12] },
+  { kw: /摄影|相机|镜头|光线|构图|人像/i, motif: "aperture", hues: [16, 26, 8] },
+  { kw: /redis|分布式|后端|系统|架构|网络|数据库|并发|锁/i, motif: "layers", hues: [10, 20, 32] },
+  { kw: /雅思|留学|备考|考试/i, motif: "flag", hues: [38, 48, 28] },
 ];
 
 type Motif = "orbit" | "nodes" | "layers" | "wave" | "grid" | "terminal" | "chat" | "chart" | "aperture" | "flag";
@@ -48,12 +48,12 @@ export function CourseCover({
     hue = rule.hues[h % rule.hues.length];
   } else {
     motif = FALLBACK_MOTIFS[(h >>> 8) % FALLBACK_MOTIFS.length];
-    hue = h % 360;
+    hue = 8 + (h % 44); // 暖阳色域内取值，杜绝随机冷色
   }
-  const bg = `hsl(${hue} 52% 91%)`;
-  const deep = `hsl(${hue} 42% 62%)`;
-  const soft = `hsl(${(hue + 40) % 360} 55% 78%)`;
-  const ink = `hsl(${hue} 35% 38%)`;
+  const bg = `hsl(${hue} 62% 92%)`;
+  const deep = `hsl(${hue} 52% 58%)`;
+  const soft = `hsl(${(hue + 12) % 60} 56% 80%)`;
+  const ink = `hsl(${hue} 42% 34%)`;
 
   return (
     <div className={`relative overflow-hidden ${rounded} ${className}`} style={{ background: bg }}>

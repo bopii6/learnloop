@@ -25,7 +25,7 @@ export function SourcesStrip({
             rel="noreferrer"
             className={`shrink-0 w-52 rounded-lg border px-3 py-2 transition-all bg-white hover:border-accent ${
               highlight === s.index
-                ? "border-accent shadow-[0_0_0_2px_#5dcaa566]"
+                ? "border-accent shadow-[0_0_0_2px_#ecc794]"
                 : "border-[#e7e5dc]"
             }`}
           >

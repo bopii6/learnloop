@@ -16,11 +16,11 @@ const config: Config = {
           border: "rgb(var(--accent-border-rgb) / <alpha-value>)",
         },
         ink: {
-          DEFAULT: "#1a1a18",
-          soft: "#5F5E5A",
-          faint: "#888780",
+          DEFAULT: "#262019",
+          soft: "#6D6355",
+          faint: "#A29887",
         },
-        paper: "#FAFAF7",
+        paper: "#FBF7EE",
       },
       fontFamily: {
         sans: [

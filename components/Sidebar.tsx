@@ -93,10 +93,10 @@ export function Sidebar({
 
   return (
     <aside className="w-64 shrink-0 h-full p-3">
-      <div className="h-full rounded-2xl bg-white border border-[#e7e5dc] shadow-sm flex flex-col overflow-hidden">
+      <div className="h-full rounded-3xl bg-white/92 backdrop-blur border border-[#eadfc8] shadow-[0_10px_36px_rgba(90,62,20,0.09)] flex flex-col overflow-hidden">
         {/* Logo：上升台阶 + 星芒（与 favicon 同一图形） */}
         <div className="px-4 pt-4 pb-3.5 flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-lg bg-accent flex items-center justify-center text-white shadow-sm">
+          <div className="w-8 h-8 rounded-xl bg-accent flex items-center justify-center text-white shadow-[0_4px_12px_rgb(var(--accent-rgb)/0.35)] rotate-[-3deg]">
             <svg viewBox="0 0 24 24" fill="currentColor" className="h-[17px] w-[17px]" aria-hidden>
               <rect x="3.6" y="13.6" width="4.4" height="7" rx="1.2" />
               <rect x="9.8" y="10.2" width="4.4" height="10.4" rx="1.2" />
@@ -104,7 +104,10 @@ export function Sidebar({
               <path d="M18.2 1.2l0.9 1.9 1.9 0.9-1.9 0.9-0.9 1.9-0.9-1.9-1.9-0.9 1.9-0.9z" />
             </svg>
           </div>
-          <span className="font-bold text-[15.5px] tracking-tight">Superlearn</span>
+          <div>
+            <span className="font-extrabold text-[15.5px] tracking-tight text-ink">Superlearn</span>
+            <div className="text-[9.5px] text-ink-faint tracking-[0.14em] leading-none mt-0.5">AI 白板讲师</div>
+          </div>
         </div>
 
         {/* 主导航 */}
@@ -117,8 +120,8 @@ export function Sidebar({
                 onClick={() => onMode(item.key as "course" | "records" | "market")}
                 className={`w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] transition-colors ${
                   active
-                    ? "bg-accent-soft/80 text-accent font-semibold"
-                    : "text-ink-soft hover:bg-[#f6f5ef] hover:text-ink"
+                    ? "bg-accent-soft text-accent font-semibold shadow-[inset_0_0_0_1.5px_#ecc794]"
+                    : "text-ink-soft hover:bg-[#faf4e8] hover:text-ink"
                 }`}
               >
                 <span className={active ? "text-accent" : "text-ink-faint"}>
@@ -131,7 +134,7 @@ export function Sidebar({
           {isAdmin && (
             <a
               href="/admin"
-              className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] text-ink-soft hover:bg-[#f6f5ef] hover:text-ink transition-colors"
+              className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] text-ink-soft hover:bg-[#faf4e8] hover:text-ink transition-colors"
             >
               <span className="text-ink-faint">⚙</span>
               运营后台
@@ -155,7 +158,7 @@ export function Sidebar({
             <div
               key={c.id}
               className={`group flex items-center rounded-xl px-3 py-2 cursor-pointer transition-colors ${
-                c.id === currentId ? "bg-accent-soft/70" : "hover:bg-[#f6f5ef]"
+                c.id === currentId ? "bg-accent-soft/70" : "hover:bg-[#faf4e8]"
               }`}
               onClick={() => onSelect(c.id)}
             >
@@ -182,7 +185,7 @@ export function Sidebar({
             </div>
           ))}
           {conversations.length === 0 && (
-            <div className="mx-1 mt-1 rounded-xl border border-dashed border-[#ddd9cc] bg-[#fcfbf7] px-3 py-4 text-center">
+            <div className="mx-1 mt-1 rounded-xl border border-dashed border-[#e2d3b4] bg-[#fdf8ec] px-3 py-4 text-center">
               <div className="mx-auto mb-2 flex h-8 w-8 items-center justify-center rounded-full bg-accent-soft text-accent">
                 <NavIcon name="chat" />
               </div>
@@ -200,7 +203,7 @@ export function Sidebar({
         </div>
 
         {/* 登录态：课程记录/教材/上架跟着账号走 */}
-        <div className="relative px-3.5 py-3.5 border-t border-[#efede4]">
+        <div className="relative px-3.5 py-3.5 border-t border-dashed border-[#eadfc8]">
           {user ? (
             <div className="flex items-center gap-2.5">
               <div className="w-7 h-7 shrink-0 rounded-full bg-accent flex items-center justify-center text-[11px] text-white font-bold">
@@ -230,7 +233,7 @@ export function Sidebar({
           ) : (
             <button
               onClick={onLogin}
-              className="w-full rounded-xl bg-accent px-3 py-2.5 text-[12.5px] font-medium text-white shadow-sm hover:bg-[#0c5f4b] transition-colors"
+              className="w-full rounded-xl bg-accent px-3 py-2.5 text-[12.5px] font-medium text-white shadow-sm hover:bg-[#c24e08] transition-colors"
             >
               登录 / 注册
             </button>

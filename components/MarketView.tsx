@@ -107,7 +107,7 @@ export function MarketView({
         <h1 className="text-[30px] font-bold leading-tight mb-1.5">
           发现最适合你的课程
           <br />
-          <span className="bg-[linear-gradient(transparent_62%,rgba(93,202,165,0.42)_62%)] px-0.5 text-[22px] font-semibold">
+          <span className="bg-[linear-gradient(transparent_62%,rgba(252,190,120,0.55)_62%)] px-0.5 text-[22px] font-semibold">
             专为你的学习方式打造
           </span>
         </h1>
@@ -223,7 +223,7 @@ export function MarketView({
                   {hero.author === "official" && (
                     <span className="rounded-full bg-accent-soft text-accent px-2 py-0.5 text-[10px] font-medium">官方精选</span>
                   )}
-                  <span className={`text-[11.5px] font-semibold ${hero.price > 0 ? "text-[#b45309]" : "rounded-full bg-emerald-50 px-2 py-0.5 text-[10.5px] text-emerald-700"}`}>
+                  <span className={`text-[11.5px] font-semibold ${hero.price > 0 ? "text-[#b45309]" : "rounded-full bg-[#eaf3e6] px-2 py-0.5 text-[10.5px] text-[#4d7c43]"}`}>
                     {hero.price > 0 ? fmtPrice(hero.price) : "免费"}
                   </span>
                 </div>
@@ -256,7 +256,7 @@ export function MarketView({
                   <div className="p-4 flex flex-col flex-1">
                     <div className="flex items-center gap-2 mb-1.5">
                       <span className="text-[11px] text-ink-faint">{e.author === "official" ? "官方精选" : "学员上架"}</span>
-                      <span className={`font-semibold ${e.price > 0 ? "text-[11.5px] text-[#b45309]" : "rounded-full bg-emerald-50 px-2 py-0.5 text-[10.5px] text-emerald-700"}`}>
+                      <span className={`font-semibold ${e.price > 0 ? "text-[11.5px] text-[#b45309]" : "rounded-full bg-[#eaf3e6] px-2 py-0.5 text-[10.5px] text-[#4d7c43]"}`}>
                         {e.price > 0 ? fmtPrice(e.price) : "免费"}
                       </span>
                     </div>
