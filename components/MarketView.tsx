@@ -216,7 +216,7 @@ export function MarketView({
               className="group w-full text-left rounded-3xl border border-[#e7e5dc] bg-white overflow-hidden flex mb-5 hover:border-accent/60 hover:shadow-[0_6px_24px_rgba(0,0,0,0.07)] transition-all fade-up"
             >
               <div className="overflow-hidden">
-                <CourseCover seed={hero.courseId} rounded="rounded-none" className="w-[280px] shrink-0 min-h-[190px] h-full transition-transform duration-300 group-hover:scale-[1.03]" />
+                <CourseCover seed={hero.courseId} title={hero.title} rounded="rounded-none" className="w-[280px] shrink-0 min-h-[190px] h-full transition-transform duration-300 group-hover:scale-[1.03]" />
               </div>
               <div className="flex-1 min-w-0 p-6 flex flex-col">
                 <div className="flex items-center gap-2 mb-2">
@@ -251,7 +251,7 @@ export function MarketView({
                   className="group rounded-2xl border border-[#e7e5dc] bg-white overflow-hidden flex flex-col hover:border-accent/60 hover:shadow-[0_4px_20px_rgba(0,0,0,0.06)] transition-all fade-up"
                 >
                   <button onClick={() => onOpenCourse(e.courseId)} className="block w-full overflow-hidden text-left">
-                    <CourseCover seed={e.courseId} rounded="rounded-none" className="w-full h-[104px] transition-transform duration-300 group-hover:scale-[1.03]" />
+                    <CourseCover seed={e.courseId} title={e.title} rounded="rounded-none" className="w-full h-[104px] transition-transform duration-300 group-hover:scale-[1.03]" />
                   </button>
                   <div className="p-4 flex flex-col flex-1">
                     <div className="flex items-center gap-2 mb-1.5">

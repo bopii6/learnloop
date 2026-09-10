@@ -353,7 +353,7 @@ export function ReplayPlayer({ replayId }: { replayId: string }) {
         />
         {/* 开场遮罩 */}
         {(status === "ready" || status === "loading") && (
-          <div className="absolute inset-0 z-40 flex items-center justify-center bg-white/70 backdrop-blur-[2px]">
+          <div className="absolute inset-0 z-40 flex items-center justify-center bg-[#2b2a26]/45 backdrop-blur-[2px]">
             <div className="w-[400px] max-w-[88%] rounded-3xl border border-[#e7e5dc] bg-white shadow-xl p-8 text-center fade-up">
               <div className="text-[11px] text-ink-faint uppercase tracking-[.12em] mb-2">Superlearn 白板课回放</div>
               <div className="text-[20px] font-bold leading-snug mb-2">{reel?.lectureTitle || "加载中…"}</div>

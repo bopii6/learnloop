@@ -193,17 +193,30 @@ select:focus-visible {
 .lesson-message { animation: stage-enter .25s ease-out both; }
 .lesson-message-label { margin-bottom: 4px; color: #7b7971; font-size: 10px; letter-spacing: .03em; }
 
-/* 白板底部悬浮字幕条：讲师"正在说的这句话" */
-.board-subtitle {
+/* 白板底部悬浮堆叠：弹题卡 / 聆听反馈 / 字幕条从上往下排。
+   字幕条常驻最底层——此前弹题直接顶替字幕，讲师正在说的那句话会被吃掉 */
+.board-bottom-stack {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
   bottom: 18px;
-  max-width: min(76%, 680px);
+  width: max-content;
+  max-width: min(86%, 760px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  z-index: 30;
+  pointer-events: none;
+}
+
+/* 讲师"正在说的这句话" */
+.board-subtitle {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
+  max-width: 100%;
   padding: 12px 20px;
   border-radius: 16px;
   background: rgba(255, 255, 255, .96);
@@ -212,14 +225,29 @@ select:focus-visible {
   font-size: 14px;
   line-height: 1.7;
   color: #2b2a27;
-  z-index: 30;
-  pointer-events: none;
+  pointer-events: auto;
 }
 .board-subtitle-label { flex-shrink: 0; color: var(--accent); font-weight: 600; font-size: 12px; letter-spacing: .04em; }
 .board-subtitle-idle { color: #a3a19a; font-size: 13px; }
 
-/* 字幕区内的课堂练习（原版 Hyperknow 打法：问题+选项直接嵌在字幕位置） */
-.board-quiz { pointer-events: auto; text-align: center; width: 100%; }
+/* 课堂练习卡：独立成卡悬在字幕上方，答题时字幕仍可见 */
+.board-quiz {
+  pointer-events: auto;
+  text-align: center;
+  max-width: 100%;
+  padding: 14px 22px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, .98);
+  border: 1px solid #eadfc8;
+  box-shadow: 0 10px 32px rgba(26, 26, 24, .14);
+}
+.board-quiz-title {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  margin-bottom: 6px;
+}
 .board-quiz-q { font-weight: 600; font-size: 14.5px; margin-bottom: 10px; }
 .board-quiz-options { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
 .board-quiz-option {
@@ -233,8 +261,18 @@ select:focus-visible {
 }
 .board-quiz-option:hover { border-color: var(--accent); color: var(--accent); background: rgb(var(--accent-soft-rgb) / .6); }
 
-/* 字幕区内的语音聆听反馈 */
-.board-voice-heard { text-align: center; width: 100%; }
+/* 字幕区上方的语音聆听反馈（细长小卡） */
+.board-voice-heard {
+  pointer-events: auto;
+  text-align: center;
+  max-width: 100%;
+  padding: 7px 16px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .96);
+  border: 1px solid #e7e5dc;
+  box-shadow: 0 6px 20px rgba(26, 26, 24, .10);
+  font-size: 13px;
+}
 .board-voice-heard-label { color: var(--accent); font-weight: 600; font-size: 11px; letter-spacing: .04em; margin-right: 6px; }
 .board-voice-heard-text { color: #1a1a18; }
 .board-voice-heard-note { color: #a3a19a; font-size: 11px; margin-left: 6px; }

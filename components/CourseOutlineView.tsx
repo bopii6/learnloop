@@ -8,6 +8,8 @@ import type { CourseOutline } from "@/types";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { uploadTextbookPdf } from "@/lib/textbook-client";
+import { fmtDuration } from "@/lib/format";
+import { Icon } from "./icons";
 
 interface CourseOutlineViewProps {
   outline: CourseOutline;
@@ -93,7 +95,6 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
 
   const totalLectures = allLectures.length;
   const totalMin = learnableLectures.reduce((t, l) => t + (l.duration_min || 0), 0);
-  const totalHours = totalMin > 0 ? (totalMin / 60).toFixed(1).replace(/\.0$/, "") : null;
   const completed = learnableLectures.length > 0 && visitedCount >= learnableLectures.length;
   // 课节的结课状态（徽章跟学员的真实记录走）
   const projectLecture = allLectures.find((l) => l.content_type === "project");
@@ -147,11 +148,16 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
         <div className="flex items-center gap-2.5 flex-wrap mt-4 text-[12.5px] text-ink-soft">
           <span>{outline.units.length} 个单元</span>
           <span className="text-[#d9d6ca]">·</span>
-          <span>{totalLectures} 个课节</span>
-          {totalHours && (
+          <span>
+            {totalLectures} 个课节
+            {/* 口径统一：可学的白板讲次之外还有测验/结课环节，写清楚免得"32 节 vs 29 讲"让人犯嘀咕 */}
+            {totalLectures !== learnableLectures.length &&
+              `（含 ${totalLectures - learnableLectures.length} 节测验/结课）`}
+          </span>
+          {totalMin > 0 && (
             <>
               <span className="text-[#d9d6ca]">·</span>
-              <span>约 {totalHours} 小时</span>
+              <span>{fmtDuration(totalMin)}</span>
             </>
           )}
           <span className="text-[#d9d6ca]">·</span>
@@ -166,31 +172,37 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
           </div>
         )}
 
-        {/* 主 CTA：永远回答"我现在点哪里" */}
+        {/* 主 CTA：永远回答"我现在点哪里"。课程名放副行独立截断——
+            此前挤在一行里被 CSS 拦腰截断，出现「…如何衡量模型对语言的」这种半个词加悬空引号 */}
         <div className="mt-5 flex items-center gap-3 flex-wrap">
           {completed ? (
             <button
               onClick={() => nextLecture && openLecture(nextLecture)}
-              className="rounded-full border border-accent/40 bg-white text-accent px-6 py-2.5 text-[13px] font-medium hover:bg-accent/5 transition-colors"
+              className="rounded-full border border-accent/40 bg-white text-accent px-6 py-2 text-[13px] font-medium hover:bg-accent/5 transition-colors"
             >
-              🎉 已学完 · 随意复习 →
+              已学完 · 随意复习 →
             </button>
           ) : (
             <button
               onClick={() => nextLecture && openLecture(nextLecture)}
-              className="rounded-full bg-accent px-6 py-2.5 text-[13.5px] font-medium text-white shadow-lg shadow-accent/25 hover:opacity-90 transition-opacity"
+              className="rounded-full bg-accent px-6 py-2 text-left text-white shadow-lg shadow-accent/25 hover:opacity-90 transition-opacity max-w-full"
             >
-              {visitedCount > 0
-                ? `继续学习 · 下一讲「${nextLecture?.title.slice(0, 16) || ""}」→`
-                : `开始学习 · 第 1 讲「${nextLecture?.title.slice(0, 16) || ""}」→`}
+              <span className="block text-[13.5px] font-medium leading-tight">
+                {visitedCount > 0 ? "继续学习" : "开始学习"}
+              </span>
+              <span className="block text-[11px] leading-tight opacity-85 max-w-[320px] overflow-hidden text-ellipsis whitespace-nowrap">
+                {visitedCount > 0 ? "下一讲：" : "第 1 讲："}
+                {nextLecture?.title || ""}
+              </span>
             </button>
           )}
           <button
             onClick={() => materialRef.current?.click()}
             disabled={materialState === "uploading"}
-            className="text-[12px] text-ink-faint hover:text-accent transition-colors disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded-full border border-[#e7e5dc] bg-white px-3.5 py-2 text-[12px] text-ink-soft hover:border-accent hover:text-accent transition-colors disabled:opacity-50"
           >
-            ＋ 上传材料
+            <Icon name="paperclip" className="h-[13px] w-[13px]" />
+            上传材料
           </button>
           {!marketOpen && (
             <button
@@ -198,9 +210,10 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
                 setMarketOpen(true);
                 setMarketState("idle");
               }}
-              className="text-[12px] text-ink-faint hover:text-accent transition-colors"
+              className="flex items-center gap-1.5 rounded-full border border-[#e7e5dc] bg-white px-3.5 py-2 text-[12px] text-ink-soft hover:border-accent hover:text-accent transition-colors"
             >
-              🛍 上架到精品课程
+              <Icon name="link" className="h-[13px] w-[13px]" />
+              上架到精品课程
             </button>
           )}
         </div>
@@ -263,7 +276,7 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
           <div className="flex items-start gap-4">
             <div className="flex-1 min-w-0">
               <div className="text-[11.5px] text-accent font-semibold tracking-wide mb-1">
-                🎯 结课作品 · 学完你将亲手做出
+                结课作品 · 学完你将亲手做出
               </div>
               <div className="text-[15.5px] font-semibold text-ink">{outline.capstone.name}</div>
               {outline.capstone.description && (
@@ -277,7 +290,7 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
                   capstonePassed ? "border border-accent/40 bg-white text-accent hover:bg-accent/5" : "bg-accent text-white hover:opacity-90"
                 }`}
               >
-                {capstonePassed ? "🏆 已结课 · 再看看" : "进入结课工坊 →"}
+                {capstonePassed ? "已结课 · 再看看" : "进入结课工坊 →"}
               </button>
             )}
           </div>
@@ -353,7 +366,7 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
                         <div className="flex-1 min-w-0">
                           <div className={`text-[13.5px] truncate ${done ? "text-ink-faint" : "text-ink"}`}>{lec.title}</div>
                           {(lec.ref_files ?? []).length > 0 && (
-                            <div className="text-[10.5px] text-ink-faint mt-0.5">📄 {(lec.ref_files ?? []).join("、")}</div>
+                            <div className="text-[10.5px] text-ink-faint mt-0.5">{(lec.ref_files ?? []).join("、")}</div>
                           )}
                         </div>
                         <span className="text-[11px] text-ink-faint shrink-0">
@@ -382,7 +395,7 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
                                 : "bg-accent text-white hover:opacity-90"
                             }`}
                           >
-                            {quizPassed.get(lec.id) ? "✓ 已通过" : "📝 测验"}
+                            {quizPassed.get(lec.id) ? "✓ 已通过" : "测验"}
                           </button>
                         ) : (
                           <button
@@ -392,7 +405,7 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
                               capstonePassed ? "border border-accent/40 text-accent" : "bg-accent text-white hover:opacity-90"
                             }`}
                           >
-                            {capstonePassed ? "🏆 已结课" : "🏆 结课作品"}
+                            {capstonePassed ? "已结课" : "结课作品"}
                           </button>
                         )}
                       </div>

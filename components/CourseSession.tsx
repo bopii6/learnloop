@@ -13,6 +13,7 @@ import { boardCssVars, CHROME_VARS } from "@/lib/board-themes";
 import { createTtsPlayer, fetchTtsSegments, prefetchTts, ttsUnavailable } from "@/lib/tts-client";
 import { exportBoardPoster, exportScriptPoster, downloadBlob, copyImageToClipboard, safeFilename } from "@/lib/board-poster";
 import { VerticalClipModal, type ClipBeat } from "./VerticalClipModal";
+import { Icon } from "./icons";
 
 interface CourseSessionProps {
   courseId: string;
@@ -92,6 +93,26 @@ function storyEmotion(line: string): "fail" | "happy" | null {
   return null;
 }
 
+/** 板书文本归一化：去空白/标点后小写，只用于"是不是同一条标题/同一句话"的比对 */
+function normBoardText(s?: string | null): string {
+  return (s || "").replace(/[\s，。：:、（）()[\]【】·\-—_？！?!.,'"'""]+/g, "").toLowerCase();
+}
+
+/** 把裸的 HTTP 状态码/超时翻译成学员能听懂、知道下一步做什么的话 */
+function friendlyError(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e);
+  if (e instanceof Error && e.name === "TimeoutError") {
+    return "请求超时：服务长时间没有响应，请重试（你的进度已保存，已扣的积分会自动退回）";
+  }
+  const m = msg.match(/请求失败 \((\d+)\)/);
+  if (m) {
+    const code = m[1];
+    if (["501", "502", "503", "504"].includes(code)) return `服务暂时不可用（${code}），稍等片刻重试一次；你的进度已保存`;
+    return `请求失败（${code}），请稍后重试；你的进度已保存`;
+  }
+  return msg;
+}
+
 // 浏览器系统音色兜底（云端 TTS 未配置/失败时）：onend / 兜底超时 / 主动取消 三路收敛
 function speakWithBrowser(
   text: string,
@@ -140,7 +161,8 @@ export function CourseSession({
   const [input, setInput] = useState("");
   const [draft, setDraft] = useState("");
   const [chatStreaming, setChatStreaming] = useState(false);
-  const [chatOpen, setChatOpen] = useState(true);
+  // 窄屏默认收起对话面板：固定 320px 常开曾把白板挤成一条缝
+  const [chatOpen, setChatOpen] = useState(() => (typeof window === "undefined" ? true : window.innerWidth >= 1024));
   const scrollRef = useRef<HTMLDivElement>(null);
   // 文档建课：讲师讲到的原文页（teach 流的 doc_pages 事件），"对照原文"面板展示
   const [docPages, setDocPages] = useState<{ docTitle: string; pages: { page: number; text: string }[] } | null>(null);
@@ -154,7 +176,23 @@ export function CourseSession({
   // 否则写板器等画布超时后前几拍板书静默丢弃（讲师在讲、白板是空的）
   const [boardReady, setBoardReady] = useState(false);
   const [introCard, setIntroCard] = useState(true); // 本节预告卡：点"开始学习"才开讲
-  const [chatMode, setChatMode] = useState<"text" | "voice">("text");
+  // 交流方式记住上次的选择：每节课都被重新问一遍"想怎样交流"是纯摩擦
+  const [chatMode, setChatModeState] = useState<"text" | "voice">(() => {
+    if (typeof window === "undefined") return "text";
+    try {
+      return window.localStorage.getItem("ll:chat-mode") === "voice" ? "voice" : "text";
+    } catch {
+      return "text";
+    }
+  });
+  const setChatMode = (m: "text" | "voice") => {
+    setChatModeState(m);
+    try {
+      window.localStorage.setItem("ll:chat-mode", m);
+    } catch {
+      // 隐私模式等场景下存不了就算了
+    }
+  };
   // 结课庆祝：讲完最后一拍，角色换庆祝姿势撒花
   useEffect(() => {
     if (playback === "done" && boardReady) writerRef.current?.characterCelebrate();
@@ -179,9 +217,22 @@ export function CourseSession({
   const [rate, setRate] = useState(1);
   // ---- 面向传播的三个产物：知识海报 / 回放链接 / 60 秒竖屏速览 ----
   const [posterBusy, setPosterBusy] = useState(false);
-  const [posterMsg, setPosterMsg] = useState("");
+  const [posterMsg, setPosterMsg] = useState<{ text: string; href?: string } | null>(null);
   const [replayUrl, setReplayUrl] = useState("");
   const [clipOpen, setClipOpen] = useState(false);
+  // 白板缩放（单一控件）：由 Whiteboard onChange 实时上报，摄像机自动运镜时读数跟着走
+  const [zoomPct, setZoomPct] = useState(100);
+  // 退出确认：× 是破坏性操作的入口（停讲解、断语音），必须有一步确认
+  const [exitConfirmOpen, setExitConfirmOpen] = useState(false);
+  // —— 讲解的细粒度控制与反馈 ——
+  const [prepStage, setPrepStage] = useState<string | null>(null); // 备课进度（服务端逐片段 stage 事件）
+  const [ttsIssue, setTtsIssue] = useState(false); // 云端语音连续失败：提示学员并提供自救
+  const browserVoicePrefRef = useRef(false); // 学员选择过"改用浏览器音色"
+  const replayReqRef = useRef(false); // 重听本句：speak 收敛后原地重讲
+  const lastSectionKeyRef = useRef(""); // 白板标题去重：最近写上的小节标题（归一化键）
+  // 断连提示：从未连上不提示（首连失败由备课态兜住），连上后又断才提示
+  const wsEverRef = useRef(false);
+  const [wsLost, setWsLost] = useState(false);
   const replaySavedRef = useRef(false);
   const profileNameRef = useRef("");
   profileNameRef.current = profileName === null ? "" : profileName;
@@ -216,7 +267,16 @@ export function CourseSession({
   rateRef.current = rate;
   // ---- 课堂状态通道（WS 恢复 + 进度上报） ----
   const room = `${courseId}:${unitId}:${lectureId}`;
-  const { state: wsState, connected: wsConnected, send: wsSend } = useClassroomSocket(room);
+  const { state: wsState, connected: wsConnected, send: wsSend, reconnect: wsReconnect } = useClassroomSocket(room);
+  // 连接断了必须让学员看见：此前重连 8 次失败后课堂静默死掉，UI 毫无表示
+  useEffect(() => {
+    if (wsConnected) {
+      wsEverRef.current = true;
+      setWsLost(false);
+    } else if (wsEverRef.current && !exitedRef.current) {
+      setWsLost(true);
+    }
+  }, [wsConnected]);
   const savedStateRef = useRef<ClassroomState | null>(null); // join 后拿到的历史状态
   const nextOrdinalRef = useRef(0); // 全课 beat 序号（剧本顺序）
   const wsScriptRef = useRef<any[]>([]); // 已接收的剧本片段（上报服务端）
@@ -246,6 +306,25 @@ export function CourseSession({
       savedStateRef.current = wsState;
     }
   }, [wsState]);
+
+  // 恢复预览：预告卡还挂着时就把上次的板书画出来当背景——
+  // 学员在点"继续学习"之前就知道自己回到了哪，而不是盯着一块空白白板
+  useEffect(() => {
+    if (!introCard || !boardReady || !wsState) return;
+    if ((wsState.cursor || 0) <= 0) return;
+    try {
+      if ((wsState.elements?.length || 0) > 0) {
+        excalidrawApiRef.current?.updateScene({ elements: wsState.elements || [] });
+      }
+      if (wsState.writer) {
+        writerRef.current?.restore(wsState.writer);
+        writerRef.current?.recolor();
+        window.setTimeout(() => writerRef.current?.focusCurrent(), 200);
+      }
+    } catch {
+      // 预览失败不影响正式恢复（点开始后的完整恢复链路会再来一遍）
+    }
+  }, [introCard, boardReady, wsState]);
 
   // ---- 语音全双工（BETA）：自动聆听常开，检测到学员开口 → 打断提问 → 答完续播 ----
   const normSpeech = (s: string) => s.replace(/[\s，。！？、：""''.!?,.…-]/g, "");
@@ -423,13 +502,9 @@ export function CourseSession({
     if (pausedRef.current || exitedRef.current) return Promise.resolve();
     return new Promise<void>((resolve) => {
       const minMs = 1800 / spd;
-      if (!voiceOnRef.current || !("speechSynthesis" in window)) {
-        // 静音模式：按阅读节奏推进（约 4 行/秒 的中文语速）
-        window.setTimeout(resolve, Math.max(minMs, (text.length * 170 + 400) / spd));
-        return;
-      }
+      // finish 必须在所有分支之前定义：静音分支提前 return，
+      // 若它在后面才声明，stop() 触发时会因 TDZ 抛 ReferenceError、promise 永不收敛
       let settled = false;
-      let cancelled = false; // 云端合成等待期间被暂停/退出
       const finish = () => {
         if (!settled) {
           settled = true;
@@ -437,6 +512,19 @@ export function CourseSession({
           resolve();
         }
       };
+      if (!voiceOnRef.current || !("speechSynthesis" in window)) {
+        // 静音模式：按阅读节奏推进（约 4 行/秒 的中文语速）。
+        // 计时器也挂到 speechStopRef 上：否则跳过本句在静音下是空操作（实测踩过）
+        let timer = 0;
+        const stop = () => {
+          if (timer) window.clearTimeout(timer);
+          finish();
+        };
+        timer = window.setTimeout(stop, Math.max(minMs, (text.length * 170 + 400) / spd));
+        speechStopRef.current = stop;
+        return;
+      }
+      let cancelled = false; // 云端合成等待期间被暂停/退出
       speechStopRef.current = () => {
         cancelled = true;
         finish();
@@ -445,6 +533,7 @@ export function CourseSession({
         const segs = await fetchTtsSegments(text);
         if (cancelled || settled) return;
         if (segs) {
+          setTtsIssue(false); // 云端语音恢复了，撤掉降级提示
           const player = createTtsPlayer(segs, spd);
           speechStopRef.current = () => player.stop();
           await player.promise;
@@ -454,9 +543,15 @@ export function CourseSession({
           speakWithBrowser(text, spd, (stop) => {
             speechStopRef.current = stop;
           }, finish);
+        } else if (browserVoicePrefRef.current) {
+          // 学员在提示里选过"改用浏览器音色"：云端抖动期间用系统音色顶上，不再闷声安静
+          speakWithBrowser(text, spd, (stop) => {
+            speechStopRef.current = stop;
+          }, finish);
         } else {
-          // 云端已配置但这句暂时失败（重试仍失败）：字幕/板书照常、按阅读节奏安静推进，
-          // 绝不回退浏览器音色——生硬的机器声突兀插进来比安静几秒糟糕得多
+          // 云端已配置但这句暂时失败（重试仍失败）：字幕/板书照常、按阅读节奏推进。
+          // 但不能安静装没事——学员不知道"没声音"和"讲到哪了"，提示 + 给一条自救路
+          setTtsIssue(true);
           window.setTimeout(finish, Math.max(minMs, (text.length * 170 + 400) / spd));
         }
       })();
@@ -466,8 +561,22 @@ export function CourseSession({
   const pausePlayback = useCallback(() => {
     if (playbackRef.current !== "playing") return;
     pausedRef.current = true;
+    replayReqRef.current = false;
     speechStopRef.current?.();
     setPlayback("paused");
+  }, []);
+
+  // 跳过本句：立即收掉当前句的语音/合成等待，直接进下一句（未写的板书由拍末兜底补齐）
+  const skipLine = useCallback(() => {
+    if (playbackRef.current !== "playing") return;
+    speechStopRef.current?.();
+  }, []);
+
+  // 重听本句：停掉当前播报，pump 在原句原地重讲一遍（不重复写板书）
+  const replayLine = useCallback(() => {
+    if (playbackRef.current !== "playing") return;
+    replayReqRef.current = true;
+    speechStopRef.current?.();
   }, []);
 
   // ---- 播放器主循环：从队列取一个 beat，同步驱动 字幕 / 对话 / 白板 / 语音 ----
@@ -487,6 +596,8 @@ export function CourseSession({
       if (currentSegmentRef.current !== item.segmentId) {
         currentSegmentRef.current = item.segmentId;
         segBeatIndexRef.current = 0;
+        // 新片段的标题已经写进页眉：小节标题若与它同文，后面 beginBeat 时要跳过
+        lastSectionKeyRef.current = normBoardText(item.title);
         // 断线恢复只跳过落点片段的胶囊（画面快照已含）；之后的片段照常另起模块起纸，
         // restoredRef 必须在此消费掉——不清会导致恢复后整节课都不再画纸和页眉
         const skipCapsule = restoredRef.current && resumeSegmentRef.current === item.segmentId;
@@ -517,14 +628,35 @@ export function CourseSession({
       if (speechLines[0]) setSubtitle(speechLines[0]);
 
       // 同步节拍：板书条目按句分配——说到哪句，那条板书才落笔（一句话带一个动作，不再整块先出后说）
-      const boardItems = (item.beat.items || []).filter((it) => it && it.kind).slice(0, 4);
-      await writerRef.current?.beginBeat(item.beat.section, boardItems.length);
+      // 标题去重：小节标题与片段标题同文的不写；条目正文复述标题的也跳过——
+      // 白板只写新信息，"标准语言"连写三遍这种事不能再发生
+      const segTitleKey = normBoardText(item.title);
+      let sectionForBoard: string | undefined = item.beat.section;
+      const secKey = normBoardText(sectionForBoard || "");
+      if (!secKey || secKey === segTitleKey || secKey === lastSectionKeyRef.current) {
+        sectionForBoard = undefined;
+      } else {
+        lastSectionKeyRef.current = secKey;
+      }
+      const boardItems = (item.beat.items || [])
+        .filter((it) => it && it.kind)
+        .slice(0, 6)
+        .filter((it) => {
+          if (it.kind === "diagram" || it.kind === "cast" || it.kind === "circle" || it.kind === "underline" || it.kind === "burst") return true;
+          const k = normBoardText((it as { text?: string }).text);
+          return !k || (k !== segTitleKey && k !== secKey);
+        });
+      await writerRef.current?.beginBeat(sectionForBoard, boardItems.length);
       const itemAtLine = planItemLines(speechLines.length, boardItems.length);
       const nextBeatLines = queueRef.current[0] ? splitSpeechLines(queueRef.current[0].beat.say) : [];
       let drawn = 0;
       let beatReacted = false;
-      for (let li = 0; li < speechLines.length; li++) {
-        if (pausedRef.current || exitedRef.current) break;
+      let li = 0;
+      while (li < speechLines.length) {
+        if (pausedRef.current || exitedRef.current) {
+          replayReqRef.current = false;
+          break;
+        }
         setSubtitle(speechLines[li]);
         while (drawn < boardItems.length && itemAtLine[drawn] <= li) {
           await writerRef.current?.writeItem(boardItems[drawn]);
@@ -534,9 +666,15 @@ export function CourseSession({
         // 取消静音后下一拍恢复预取，当拍首句改为即时合成（多等一两秒）
         if (voiceOnRef.current) prefetchTts(speechLines[li + 1] ?? nextBeatLines[0]);
         await speak(speechLines[li]);
+        // 重听本句：原地再讲一遍，不前进（跳过则无需标记——speak 被叫停后自然落进下一句）
+        if (replayReqRef.current) {
+          replayReqRef.current = false;
+          continue;
+        }
+        li += 1;
         // 台词命中情绪关键词 → 角色即兴反应（一拍至多一次）
         if (!beatReacted) {
-          const emo = storyEmotion(speechLines[li]);
+          const emo = storyEmotion(speechLines[li - 1]);
           if (emo) {
             beatReacted = true;
             writerRef.current?.characterReact(emo);
@@ -661,17 +799,25 @@ export function CourseSession({
     setError(null);
     setPreparing(true);
     try {
+      // 备课正常十几秒，慢网/服务抖动也给个 3 分钟硬上限：不能让学员对着"正在备课"永远等
+      const timeout = AbortSignal.timeout(3 * 60_000);
+      const signal = typeof AbortSignal.any === "function" ? AbortSignal.any([controller.signal, timeout]) : controller.signal;
       const res = await fetch("/api/teach", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "start_teaching", courseId, unitId, lectureId }),
-        signal: controller.signal,
+        signal,
       });
       if (!res.ok || !res.body) throw new Error(`请求失败 (${res.status})`);
       await consumeSse<WhiteboardEvent>(res, (e) => {
         if (lectureGenRef.current !== gen) return; // 旧流（已被 abort/替换）的事件全部丢弃
         if (e.type === "beats") {
+          setPrepStage(null); // 第一拍到了：备课态结束
           enqueueBeats(e);
+        } else if (e.type === "stage") {
+          // 服务端逐片段上报备课进度（拆片段 → 写剧本 1/6 → …），不再是一句笼统的"正在备课"
+          const d = e.detail || "";
+          setPrepStage(/^\d+\/\d+$/.test(d) ? `正在编写剧本 ${d} · ${e.label}` : d ? `${e.label} · ${d}` : e.label);
         } else if (e.type === "doc_pages") {
           // 本节课引用的文档原文页：右上角"对照原文"入口点亮
           setDocPages({ docTitle: e.docTitle, pages: e.pages });
@@ -698,7 +844,7 @@ export function CourseSession({
       });
     } catch (e) {
       if ((e as Error).name !== "AbortError") {
-        setError(e instanceof Error ? e.message : String(e));
+        setError(friendlyError(e));
         setPreparing(false);
       }
     } finally {
@@ -739,6 +885,9 @@ export function CourseSession({
       abortChatRef.current = controller;
       let acc = "";
       try {
+        // 提问响应给 90 秒硬上限：流式回答挂起时不能让"正在思考"永远转下去
+        const timeout = AbortSignal.timeout(90_000);
+        const signal = typeof AbortSignal.any === "function" ? AbortSignal.any([controller.signal, timeout]) : controller.signal;
         const res = await fetch("/api/teach", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -771,7 +920,7 @@ export function CourseSession({
         });
       } catch (e) {
         if ((e as Error).name !== "AbortError") {
-          setError(e instanceof Error ? e.message : String(e));
+          setError(friendlyError(e));
         }
       } finally {
         setChatStreaming(false);
@@ -934,7 +1083,7 @@ export function CourseSession({
   const generatePoster = async () => {
     if (posterBusy) return;
     setPosterBusy(true);
-    setPosterMsg("");
+    setPosterMsg(null);
     try {
       let blob: Blob;
       const segs = [...wsScriptRef.current].sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
@@ -958,11 +1107,11 @@ export function CourseSession({
       }
       downloadBlob(blob, `learnloop_poster_${safeFilename(lectureTitle)}.png`);
       const copied = await copyImageToClipboard(blob);
-      setPosterMsg(copied ? "已下载并复制到剪贴板" : "海报已下载");
-      window.setTimeout(() => setPosterMsg(""), 2600);
+      setPosterMsg({ text: copied ? "海报已下载并复制到剪贴板" : "海报已下载" });
+      window.setTimeout(() => setPosterMsg(null), 2600);
     } catch (e) {
-      setPosterMsg(e instanceof Error ? e.message : "海报生成失败");
-      window.setTimeout(() => setPosterMsg(""), 3200);
+      setPosterMsg({ text: e instanceof Error ? e.message : "海报生成失败" });
+      window.setTimeout(() => setPosterMsg(null), 3200);
     } finally {
       setPosterBusy(false);
     }
@@ -1016,28 +1165,38 @@ export function CourseSession({
   }, [buildReelFromScript, replayUrl]);
 
   const copyReplayLink = async () => {
-    let url = replayUrl;
-    // window.open 必须在 await 前同步调用（放 await 后会被弹窗拦截）：已生成 → 直接开回放页；
-    // 未生成 → 先开空白标签，生成成功后导向过去（失败就关掉）
-    const existing = Boolean(url);
-    const win = window.open(existing ? url : "about:blank", "_blank");
-    if (!existing) {
-      url = await saveReplay();
-      if (!url) {
-        win?.close();
-        setPosterMsg("回放还没准备好，讲师讲完就有了");
-        window.setTimeout(() => setPosterMsg(""), 2600);
-        return;
+    // 未讲完：不再"先开空白标签再关掉"——那是用户眼里的闪屏事故。直接说明，讲完自动生成。
+    if (!replayUrl && playbackRef.current !== "done") {
+      setPosterMsg({ text: "回放还没准备好：讲师讲完本节会自动生成，到时点这里就能分享" });
+      window.setTimeout(() => setPosterMsg(null), 3200);
+      return;
+    }
+    // 已有链接：同步打开（用户手势窗口内，不会被弹窗拦截）并复制
+    if (replayUrl) {
+      window.open(replayUrl, "_blank");
+      try {
+        await navigator.clipboard.writeText(replayUrl);
+        setPosterMsg({ text: "回放已在新的标签页打开，链接也复制好了，发给朋友看同一条" });
+      } catch {
+        setPosterMsg({ text: "回放已在新的标签页打开（链接复制失败，可在地址栏复制）" });
       }
-      if (win) win.location.href = url;
+      window.setTimeout(() => setPosterMsg(null), 3200);
+      return;
+    }
+    // 讲完但还没存过：生成后不自动开窗（await 之后开窗会被浏览器拦截），用 toast 里的链接打开
+    const url = await saveReplay();
+    if (!url) {
+      setPosterMsg({ text: "回放生成失败，稍后再试一次" });
+      window.setTimeout(() => setPosterMsg(null), 3200);
+      return;
     }
     try {
       await navigator.clipboard.writeText(url);
-      setPosterMsg("回放已在新的标签页打开（自己随时回看），链接也复制好了，发给朋友看同一条");
     } catch {
-      setPosterMsg(url);
+      // 剪贴板权限失败不影响链接本身
     }
-    window.setTimeout(() => setPosterMsg(""), 3200);
+    setPosterMsg({ text: "回放已生成，链接已复制，发给朋友看同一条", href: url });
+    window.setTimeout(() => setPosterMsg(null), 6000);
   };
 
   // 讲完自动保存回放（一次）
@@ -1119,11 +1278,9 @@ export function CourseSession({
     }
   };
 
-  // 退出课堂：清空恢复状态（主动离开 = 下次从头开始）；刷新/断线则保留
-  const exitAndClear = () => {
-    wsSend({ type: "end" });
-    handleExit();
-  };
+  // 退出课堂：不再清空恢复状态——主动离开和刷新/断线同等对待，下次进来从暂停处继续。
+  // 此前主动退出会清掉服务端快照（"从头重学"），误触一次 × 的代价是整节课归零，太重了。
+  // 服务端的 "end" 消息保留但客户端不再发送；未来"重听本节"功能可以接上。
 
   // 适应内容：把整块已写板书收进视口（自算 scroll/zoom，scrollToContent 在 viewMode 下会失效）
   const fitAll = () => {
@@ -1156,12 +1313,14 @@ export function CourseSession({
       style={{ ...boardCssVars(), ...CHROME_VARS } as React.CSSProperties}
     >
       {/* 顶部栏（Hyperknow 风格：标题 + 播放控制 + 缩放 + 操作） */}
-      <div className="h-14 border-b border-[#eadfc8] flex items-center justify-between px-4 shrink-0">
-        <div className="flex items-center gap-3">
+      {/* 顶部栏（Hyperknow 风格：标题 + 播放控制 + 缩放 + 操作）；窄屏下控制组横向滚动，不再溢出 */}
+      <div className="h-14 border-b border-[#eadfc8] flex items-center justify-between gap-3 px-4 shrink-0">
+        <div className="flex items-center gap-3 min-w-0">
           <button
-            onClick={exitAndClear}
-            className="text-ink-soft hover:text-ink text-[18px]"
-            aria-label="退出"
+            onClick={() => setExitConfirmOpen(true)}
+            className="text-ink-soft hover:text-ink text-[18px] leading-none"
+            aria-label="退出课堂"
+            title="退出课堂（进度会保留）"
           >
             ×
           </button>
@@ -1173,71 +1332,81 @@ export function CourseSession({
             AI 生成
           </span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0 overflow-x-auto py-1" role="toolbar" aria-label="课堂控制">
           {(playback === "playing" || playback === "paused") && (
             <button
               onClick={playback === "playing" ? pausePlayback : resumePlayback}
-              className={`rounded-lg border px-3 py-1.5 text-[12px] transition-colors ${
+              className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12px] transition-colors ${
                 playback === "paused" ? "border-accent text-accent" : "border-[#e0d6c2] text-ink-soft"
               }`}
             >
-              {playback === "playing" ? "⏸ 暂停" : "▶ 播放"}
+              <Icon name={playback === "playing" ? "pause" : "play"} />
+              {playback === "playing" ? "暂停" : "播放"}
             </button>
           )}
           <button
             onClick={toggleVoice}
-            className={`rounded-lg border px-3 py-1.5 text-[12px] transition-colors ${voiceOn ? "border-accent text-accent" : "border-[#e0d6c2] text-ink-soft"}`}
+            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12px] transition-colors ${voiceOn ? "border-accent text-accent" : "border-[#e0d6c2] text-ink-soft"}`}
             aria-pressed={voiceOn}
             title={voiceOn ? "关闭语音讲解" : "开启语音讲解"}
           >
-            {voiceOn ? "◖ 语音" : "◌ 静音"}
+            <Icon name={voiceOn ? "voice" : "voice-off"} />
+            {voiceOn ? "语音" : "静音"}
           </button>
           {/* 语速：嫌节奏慢就提速 */}
           <button
             onClick={() => setRate((r) => (r >= 2 ? 1 : Math.round((r + 0.25) * 100) / 100))}
-            className="rounded-lg border border-[#e0d6c2] px-3 py-1.5 text-[12px] text-ink-soft hover:border-accent hover:text-accent transition-colors"
+            className="flex items-center gap-1.5 rounded-lg border border-[#e0d6c2] px-3 py-1.5 text-[12px] text-ink-soft hover:border-accent hover:text-accent transition-colors"
             title="讲解语速（点击切换）"
           >
-            ⏩ {rate}x
+            <Icon name="speed" />
+            {rate}x
           </button>
           <button
             onClick={toggleAutoListen}
-            className={`rounded-lg border px-3 py-1.5 text-[12px] transition-colors ${
+            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12px] transition-colors ${
               micArmed ? "border-accent text-accent animate-pulse" : "border-[#e0d6c2] text-ink-soft"
             }`}
             aria-pressed={micArmed}
             title={micArmed ? "自动聆听中：开口即打断 · 点击暂停聆听" : "开启自动聆听：开口说话即打断老师"}
           >
-            {micArmed ? "🎙 聆听中" : "🎙 聆听"}
+            <Icon name="mic" />
+            {micArmed ? "聆听中" : "聆听"}
           </button>
-          {/* 缩放控制 */}
+          {/* 缩放控制（全课堂唯一一处；读数由 Whiteboard onChange 实时回报，运镜时不再显示旧值） */}
           <div className="flex items-center border border-[#e0d6c2] rounded-lg overflow-hidden">
             <button
               onClick={() => excalidrawApiRef.current?.updateScene({ appState: { ...excalidrawApiRef.current.getAppState(), zoom: { value: Math.max(0.2, (excalidrawApiRef.current.getAppState().zoom?.value || 1) - 0.1) } } })}
-              className="px-2.5 py-1.5 text-[13px] text-ink-soft hover:bg-[#f7edda]"
+              className="px-2.5 py-1.5 text-ink-soft hover:bg-[#f7edda]"
+              aria-label="缩小"
+              title="缩小"
             >
-              −
+              <Icon name="zoom-out" />
             </button>
             <button
               onClick={() => excalidrawApiRef.current?.updateScene({ appState: { ...excalidrawApiRef.current.getAppState(), zoom: { value: 1 } } })}
               className="px-2 py-1.5 text-[11px] text-ink-soft hover:bg-[#f7edda] min-w-[3rem] text-center border-x border-[#e0d6c2]"
+              title="重置为 100%"
             >
-              {Math.round((excalidrawApiRef.current?.getAppState?.()?.zoom?.value || 1) * 100)}%
+              {zoomPct}%
             </button>
             <button
               onClick={() => excalidrawApiRef.current?.updateScene({ appState: { ...excalidrawApiRef.current.getAppState(), zoom: { value: Math.min(3, (excalidrawApiRef.current.getAppState().zoom?.value || 1) + 0.1) } } })}
-              className="px-2.5 py-1.5 text-[13px] text-ink-soft hover:bg-[#f7edda]"
+              className="px-2.5 py-1.5 text-ink-soft hover:bg-[#f7edda]"
+              aria-label="放大"
+              title="放大"
             >
-              +
+              <Icon name="zoom-in" />
             </button>
           </div>
           {/* 适应内容 */}
           <button
             onClick={fitAll}
-            className="rounded-lg border border-[#e0d6c2] px-3 py-1.5 text-[12px] text-ink-soft hover:border-accent"
-            title="适应内容"
+            className="rounded-lg border border-[#e0d6c2] px-2.5 py-1.5 text-ink-soft hover:border-accent hover:text-accent"
+            title="适应内容：把整块板书收进视口"
+            aria-label="适应内容"
           >
-            ⛶
+            <Icon name="fit" />
           </button>
           {/* 对照原文（文档建课模式）：讲师讲到的原文页 */}
           {docPages && (
@@ -1248,35 +1417,60 @@ export function CourseSession({
               }`}
               title="查看讲师本节课引用的上传文档原文"
             >
-              📄 对照原文
+              对照原文
             </button>
           )}
-          {/* 传播产物：海报 / 竖屏速览 / 回放链接。海报 = 全节讲义，讲完才生成，保证与白板终态一致 */}
-          <button
-            onClick={() => void generatePoster()}
-            disabled={posterBusy || playback !== "done"}
-            className="rounded-lg border border-[#e0d6c2] px-3 py-1.5 text-[12px] text-ink-soft hover:border-accent hover:text-accent transition-colors disabled:opacity-50 disabled:hover:border-[#e0d6c2] disabled:hover:text-ink-soft"
+          {/* 传播产物：海报 / 竖屏速览 / 回放链接。海报 = 全节讲义，讲完才生成，保证与白板终态一致。
+              未就绪的按钮用外层 span 承接点击给出解释——disabled 按钮点了没反应，用户只会以为坏了 */}
+          <span
+            onClick={() => {
+              if (playback !== "done" && !posterBusy) {
+                setPosterMsg({ text: "海报讲完本节才能生成：内容是整节讲义，和板书终态一致" });
+                window.setTimeout(() => setPosterMsg(null), 3200);
+              }
+            }}
+            className="inline-flex"
             title={playback === "done" ? "把整节讲义生成竖版知识海报" : "讲完本节后可生成（内容为整节讲义，和板书终态一致）"}
           >
-            {posterBusy ? "生成中…" : "🖼 海报"}
-          </button>
+            <button
+              onClick={() => void generatePoster()}
+              disabled={posterBusy || playback !== "done"}
+              className="flex items-center gap-1.5 rounded-lg border border-[#e0d6c2] px-3 py-1.5 text-[12px] text-ink-soft hover:border-accent hover:text-accent transition-colors disabled:opacity-45 disabled:hover:border-[#e0d6c2] disabled:hover:text-ink-soft disabled:cursor-not-allowed"
+            >
+              <Icon name="poster" />
+              {posterBusy ? "生成中…" : "海报"}
+            </button>
+          </span>
           <button
             onClick={() => setClipOpen(true)}
             disabled={wsScriptRef.current.length === 0}
-            className="rounded-lg border border-[#e0d6c2] px-3 py-1.5 text-[12px] text-ink-soft hover:border-accent hover:text-accent transition-colors disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded-lg border border-[#e0d6c2] px-3 py-1.5 text-[12px] text-ink-soft hover:border-accent hover:text-accent transition-colors disabled:opacity-45 disabled:cursor-not-allowed"
             title="录一条 60 秒竖屏速览视频，直接发抖音/小红书"
           >
-            🎬 竖屏速览
+            <Icon name="clip" />
+            竖屏速览
           </button>
-          <button
-            onClick={() => void copyReplayLink()}
-            className={`rounded-lg border px-3 py-1.5 text-[12px] transition-colors ${
-              replayUrl ? "border-accent text-accent" : "border-[#e0d6c2] text-ink-soft hover:border-accent hover:text-accent"
-            }`}
-            title="打开只读回放页（自己回看 / 复制链接发给朋友）"
+          <span
+            onClick={() => {
+              if (!replayUrl && playbackRef.current !== "done") {
+                setPosterMsg({ text: "回放还没准备好：讲师讲完本节会自动生成，到时点这里就能分享" });
+                window.setTimeout(() => setPosterMsg(null), 3200);
+              }
+            }}
+            className="inline-flex"
+            title={replayUrl || playback === "done" ? "打开只读回放页（自己回看 / 复制链接发给朋友）" : "讲完本节后自动生成回放"}
           >
-            🔗 回放
-          </button>
+            <button
+              onClick={() => void copyReplayLink()}
+              disabled={!replayUrl && playback !== "done"}
+              className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12px] transition-colors disabled:opacity-45 disabled:cursor-not-allowed ${
+                replayUrl ? "border-accent text-accent" : "border-[#e0d6c2] text-ink-soft enabled:hover:border-accent enabled:hover:text-accent"
+              }`}
+            >
+              <Icon name="link" />
+              回放
+            </button>
+          </span>
         </div>
       </div>
 
@@ -1286,18 +1480,20 @@ export function CourseSession({
           <LectureQuizPanel quiz={lectureQuiz} onClose={() => setQuizOpen(false)} />
         )}
 
-        {/* 成就徽章弹窗（原版同款激励闭环） */}
+        {/* 成就徽章弹窗：暗蒙层聚焦（白色蒙层会让整页像没加载完） */}
         {achievement && (
-          <div className="absolute inset-0 z-[70] flex items-center justify-center bg-white/75 backdrop-blur-[2px]">
+          <div className="absolute inset-0 z-[70] flex items-center justify-center bg-[#2b2a26]/45 backdrop-blur-[2px]">
             <div className="w-[430px] max-w-[88%] rounded-3xl border border-[#eadfc8] bg-white shadow-2xl p-7 flex items-start gap-5 fade-up">
-              <div className="text-[52px] leading-none select-none">🏅</div>
+              <div className="text-accent leading-none select-none">
+                <Icon name="medal" />
+              </div>
               <div className="flex-1">
-                <div className="text-[11px] text-accent font-semibold tracking-[.1em] mb-1">你获得了奖励</div>
+                <div className="text-[11px] text-accent font-semibold tracking-[.1em] mb-1">课堂成就</div>
                 <div className="text-[20px] font-bold leading-snug mb-1.5">{achievement.title}</div>
                 <div className="text-[12.5px] text-ink-soft leading-relaxed">{achievement.desc}</div>
                 <button
                   onClick={() => setAchievement(null)}
-                  className="mt-4 rounded-lg bg-[#2c2c2a] px-5 py-2 text-[12.5px] text-white hover:opacity-85"
+                  className="mt-4 rounded-lg bg-accent px-5 py-2 text-[12.5px] text-white hover:opacity-90"
                 >
                   知道了
                 </button>
@@ -1309,7 +1505,7 @@ export function CourseSession({
         {/* 白板主体 */}
         <div className="flex-1 flex flex-col min-w-0 relative">
           {introCard && (
-            <div className="absolute inset-0 z-40 flex items-center justify-center bg-white/70 backdrop-blur-[2px]">
+            <div className="absolute inset-0 z-40 flex items-center justify-center bg-[#2b2a26]/45 backdrop-blur-[2px]">
               <div className="w-[420px] max-w-[90%] rounded-3xl border border-[#eadfc8] bg-white shadow-xl p-8 fade-up">
                 <div className="text-[11px] text-ink-faint uppercase tracking-[.12em] mb-2">本节学习内容</div>
                 <div className="text-[21px] font-bold leading-snug mb-3">{lectureTitle}</div>
@@ -1327,7 +1523,7 @@ export function CourseSession({
                     约 {unit?.lectures.find((l) => l.id === lectureId)?.duration_min ?? 20} 分钟
                   </span>
                 </div>
-                {/* 交流方式（原版同款：文字 / 语音+文字全双工） */}
+                {/* 交流方式：记住上次选择，默认选中，不再每次从零问起 */}
                 <div className="mb-5">
                   <div className="text-[12.5px] font-medium mb-2">你想怎样和老师交流？</div>
                   <div className="space-y-2">
@@ -1370,6 +1566,10 @@ export function CourseSession({
                     />
                   </div>
                 )}
+                {/* 计费透明：进入前就把这一步花多少钱说清楚（数值与 lib/credits.ts 对应） */}
+                <div className="mb-4 text-[11.5px] text-ink-faint">
+                  首次听本节消耗 1 积分，复习免费；课堂提问不另收费（每节上限 30 条）。
+                </div>
                 <button
                   onClick={() => void beginLecture()}
                   className="w-full rounded-xl bg-accent py-3 text-[14px] font-medium text-white hover:opacity-90 transition-opacity"
@@ -1384,21 +1584,16 @@ export function CourseSession({
               excalidrawApiRef.current = api;
               setBoardReady(true);
             }}
+            onZoomChange={(z) => {
+              const pct = Math.round(z * 100);
+              setZoomPct((prev) => (prev === pct ? prev : pct));
+            }}
           />
-          <div className="board-subtitle" aria-live="polite">
-            {voiceHeard ? (
-              <div className="board-voice-heard">
-                <span className="board-voice-heard-label">
-                  {voiceHeard.status === "interim" ? "🎙 正在听" : voiceHeard.status === "hint" ? "🎙 提示" : "🎙 听到"}
-                </span>
-                <span className="board-voice-heard-text">{voiceHeard.text}</span>
-                {voiceHeard.status === "echo" && <span className="board-voice-heard-note">（与老师声音重叠，已忽略）</span>}
-                {voiceHeard.status === "dup" && <span className="board-voice-heard-note">（重复，已忽略）</span>}
-                {voiceHeard.status === "short" && <span className="board-voice-heard-note">（太短）</span>}
-                {voiceHeard.status === "error" && <span className="board-voice-heard-note">（服务不稳，改用 Edge 或打字）</span>}
-              </div>
-            ) : checkpoint ? (
+          {/* 底部堆叠：弹题卡 / 聆听反馈各自成卡，字幕条常驻——弹题不再吃掉讲师正在说的那句话 */}
+          <div className="board-bottom-stack">
+            {checkpoint && (
               <div className="board-quiz">
+                <div className="board-quiz-title">小练一下 · 答完讲师自动继续</div>
                 <div className="board-quiz-q">{checkpoint.question}</div>
                 <div className="board-quiz-options">
                   {checkpoint.options.map((option) => (
@@ -1408,34 +1603,73 @@ export function CourseSession({
                   ))}
                 </div>
               </div>
-            ) : playback === "playing" && subtitle ? (
-              <>
-                <span className="board-subtitle-label">讲师</span>
-                <span>{subtitle}</span>
-              </>
-            ) : playback === "paused" ? (
-              <>
-                <span className="board-subtitle-idle">已暂停 · 可随时提问，或</span>
-                <button onClick={resumePlayback} className="board-resume-btn">▶ 继续上课</button>
-              </>
-            ) : playback === "done" ? (
-              <span className="board-subtitle-idle">
-                本节课讲完 · 可继续提问或回看板书
-                {lectureQuiz && lectureQuiz.length > 0 && (
-                  <button onClick={() => setQuizOpen(true)} className="board-resume-btn ml-2">
-                    📝 做课后练习（{lectureQuiz.length} 题）
-                  </button>
-                )}
-                <button onClick={() => void generatePoster()} disabled={posterBusy} className="board-resume-btn ml-2">
-                  🖼 生成知识海报
-                </button>
-                <button onClick={() => void copyReplayLink()} className="board-resume-btn ml-2">
-                  🔗 {replayUrl ? "复制回放链接" : "生成回放链接"}
-                </button>
-              </span>
-            ) : (
-              <span className="board-subtitle-idle">{!boardReady ? "正在准备白板…" : preparing ? "AI 讲师正在备课…" : "白板课堂"}</span>
             )}
+            {voiceHeard && (
+              <div className="board-voice-heard">
+                <span className="board-voice-heard-label">
+                  {voiceHeard.status === "interim" ? "正在听" : voiceHeard.status === "hint" ? "提示" : "听到"}
+                </span>
+                <span className="board-voice-heard-text">{voiceHeard.text}</span>
+                {voiceHeard.status === "echo" && <span className="board-voice-heard-note">（与老师声音重叠，已忽略）</span>}
+                {voiceHeard.status === "dup" && <span className="board-voice-heard-note">（重复，已忽略）</span>}
+                {voiceHeard.status === "short" && <span className="board-voice-heard-note">（太短）</span>}
+                {voiceHeard.status === "error" && <span className="board-voice-heard-note">（服务不稳，改用 Edge 或打字）</span>}
+              </div>
+            )}
+            <div className="board-subtitle" aria-live="polite">
+              {playback === "playing" && subtitle ? (
+                <>
+                  <span className="board-subtitle-label">讲师</span>
+                  <span>{subtitle}</span>
+                  {/* 句级控制：听漏了重听一遍，嫌慢直接跳过——此前唯一的控制是暂停整节课 */}
+                  <span className="ml-2 flex items-center gap-1">
+                    <button onClick={replayLine} className="board-resume-btn" title="把这句再讲一遍">↻ 重听</button>
+                    <button onClick={skipLine} className="board-resume-btn" title="跳过这句，讲下一句">⏭ 跳过</button>
+                  </span>
+                </>
+              ) : playback === "paused" ? (
+                chatStreaming ? (
+                  <span className="board-subtitle-idle">讲师作答中，答完自动从这里继续…</span>
+                ) : (
+                  <>
+                    {/* 暂停也要看得到刚讲的那句：字幕消失会让学员失去"讲到哪了"的坐标 */}
+                    {subtitle && (
+                      <>
+                        <span className="board-subtitle-label">讲师</span>
+                        <span className="opacity-60">{subtitle}</span>
+                      </>
+                    )}
+                    <span className="board-subtitle-idle">已暂停 · 可随时提问，或</span>
+                    <button onClick={resumePlayback} className="board-resume-btn">▶ 继续上课</button>
+                  </>
+                )
+              ) : playback === "done" ? (
+                <span className="board-subtitle-idle">
+                  本节课讲完 · 可继续提问或回看板书
+                  {lectureQuiz && lectureQuiz.length > 0 && (
+                    <button onClick={() => setQuizOpen(true)} className="board-resume-btn ml-2">
+                      做课后练习（{lectureQuiz.length} 题）
+                    </button>
+                  )}
+                  <button onClick={() => void generatePoster()} disabled={posterBusy} className="board-resume-btn ml-2">
+                    生成知识海报
+                  </button>
+                  <button onClick={() => void copyReplayLink()} className="board-resume-btn ml-2">
+                    {replayUrl ? "复制回放链接" : "生成回放链接"}
+                  </button>
+                </span>
+              ) : (
+                <span className="board-subtitle-idle">
+                  {!boardReady
+                    ? "正在准备白板…"
+                    : preparing
+                      ? (wsState && (wsState.script?.length || 0) > 0
+                          ? "正在恢复课堂…"
+                          : prepStage || "AI 讲师正在备课…")
+                      : "白板课堂"}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
@@ -1466,7 +1700,7 @@ export function CourseSession({
 
         {/* 右侧聊天 */}
         {chatOpen && (
-          <div className="w-80 border-l border-[#eadfc8] bg-white flex flex-col shrink-0">
+          <div className="w-80 max-w-[85vw] border-l border-[#eadfc8] bg-white flex flex-col shrink-0">
             <div className="p-3 border-b border-[#eadfc8] flex items-center justify-between">
               <span className="text-[13px] font-medium">对话记录</span>
               <button
@@ -1501,7 +1735,7 @@ export function CourseSession({
               )}
               {chatStreaming && !draft && (
                 <div className="bg-[#f7edda] text-ink rounded-xl px-3 py-2 text-[13px] mr-8">
-                  <span className="animate-pulse">AI 讲师正在思考...</span>
+                  <span className="animate-pulse">AI 讲师正在思考…</span>
                 </div>
               )}
               {error && (
@@ -1521,7 +1755,7 @@ export function CourseSession({
                       void sendChat(input);
                     }
                   }}
-                  placeholder="输入问题，打断讲师..."
+                  placeholder="输入问题，打断讲师…"
                   rows={1}
                   className="flex-1 resize-none rounded-lg border border-[#e0d6c2] px-3 py-2 text-[13px] outline-none focus:border-accent"
                 />
@@ -1563,10 +1797,77 @@ export function CourseSession({
         </div>
       </div>
 
-      {/* 产物操作反馈（海报/回放） */}
+      {/* 断连警示：连接断了必须被看见（重连 8 次失败后此前是无声死亡），给手动重连入口 */}
+      {wsLost && (
+        <div className="absolute left-1/2 -translate-x-1/2 top-16 z-[76] rounded-xl bg-[#b45309] px-4 py-2 text-[12.5px] text-white shadow-lg fade-up flex items-center gap-3">
+          <span>与服务器的连接已断开，进度暂停保存</span>
+          <button onClick={() => wsReconnect()} className="underline underline-offset-2 hover:opacity-80">
+            重连
+          </button>
+        </div>
+      )}
+      {/* 错误对聊天面板外的可见性：面板关着时错误不该被一起藏掉 */}
+      {error && !chatOpen && (
+        <div className="absolute left-1/2 -translate-x-1/2 top-28 z-[76] max-w-[70%] rounded-xl bg-red-600 px-4 py-2 text-[12.5px] text-white shadow-lg fade-up text-center">
+          {error}
+        </div>
+      )}
+      {/* 语音降级提示：云端 TTS 暂时失败时不再"安静装没事"，说明现状 + 给自救入口 */}
+      {ttsIssue && !wsLost && (
+        <div className="absolute left-1/2 -translate-x-1/2 top-16 z-[75] rounded-xl bg-[#2b2a26] px-4 py-2.5 text-[12.5px] text-white shadow-xl fade-up flex items-center gap-3">
+          <span>语音合成暂时不可用，讲师正按字幕节奏默讲</span>
+          {!browserVoicePrefRef.current && (
+            <button
+              onClick={() => {
+                browserVoicePrefRef.current = true;
+                setTtsIssue(false);
+              }}
+              className="shrink-0 underline underline-offset-2 text-[#ffd9a8] hover:opacity-80"
+            >
+              改用浏览器音色
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* 产物操作反馈（海报/回放）：深色 toast + 可选回放链接 */}
       {posterMsg && (
-        <div className="absolute left-1/2 -translate-x-1/2 bottom-20 z-[75] rounded-xl bg-[#2c2c2a] px-4 py-2.5 text-[12.5px] text-white shadow-xl fade-up max-w-[70%] text-center">
-          {posterMsg}
+        <div className="absolute left-1/2 -translate-x-1/2 bottom-20 z-[75] rounded-xl bg-[#2b2a26] px-4 py-2.5 text-[12.5px] text-white shadow-xl fade-up max-w-[70%] text-center">
+          {posterMsg.text}
+          {posterMsg.href && (
+            <a href={posterMsg.href} target="_blank" rel="noreferrer" className="ml-2 underline underline-offset-2 text-[#ffd9a8]">
+              打开回放页
+            </a>
+          )}
+        </div>
+      )}
+
+      {/* 退出确认：× 会停掉讲解和聆听，破坏性操作给一步反悔的机会 */}
+      {exitConfirmOpen && (
+        <div className="absolute inset-0 z-[80] flex items-center justify-center bg-[#2b2a26]/45 backdrop-blur-[2px]">
+          <div className="w-[360px] max-w-[86%] rounded-3xl border border-[#eadfc8] bg-white shadow-2xl p-6 fade-up">
+            <div className="text-[17px] font-bold text-ink mb-1.5">退出这节课？</div>
+            <div className="text-[13px] text-ink-soft leading-relaxed mb-5">
+              讲解进度会保留，下次进来从暂停的地方继续；正在播放的语音会停下。
+            </div>
+            <div className="flex gap-2.5 justify-end">
+              <button
+                onClick={() => setExitConfirmOpen(false)}
+                className="rounded-lg border border-[#e0d6c2] px-4 py-2 text-[12.5px] text-ink-soft hover:border-accent hover:text-accent transition-colors"
+              >
+                继续上课
+              </button>
+              <button
+                onClick={() => {
+                  setExitConfirmOpen(false);
+                  handleExit();
+                }}
+                className="rounded-lg bg-accent px-4 py-2 text-[12.5px] text-white hover:opacity-90 transition-opacity"
+              >
+                退出课堂
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

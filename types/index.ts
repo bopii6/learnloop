@@ -176,6 +176,7 @@ export type CourseEvent =
   | { type: "qa_reply"; reply: string; sources: SourceItem[] } // 入口问答回路：带引用的直接回答（不建课）
   | { type: "search_queries"; queries: string[] } // 检索词 chips
   | { type: "clarify_round"; round: number; total_rounds: number; question: ClarifyQuestion; courseId: string }
+  | { type: "course_created"; courseId: string } // 建课一开始就广播 id：取消/刷新找回都不用等到澄清轮
   | { type: "sources"; items: SourceItem[] }
   | { type: "blueprint"; data: CourseBlueprint }
   | { type: "outline_progress"; current: number; total: number; unitTitle: string; optimized?: number } // optimized = 已填充完细节的课节累计数（"已优化 N 个课节"）

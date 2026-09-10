@@ -31,6 +31,8 @@ const DEPTH_COLORS: Record<string, string> = {
   "应用实操": "bg-rose-50 text-rose-700 border-rose-200",
 };
 
+const ALL_DEPTH_TAGS = ["建立直觉", "正式定义", "公式推导", "进阶理论", "应用实操"];
+
 // ---- 自定义节点：课程根节点 ----
 function CourseRootNode({ data }: NodeProps) {
   const d = data as { title: string; tags: string[]; totalLectures: number };
@@ -50,6 +52,10 @@ function CourseRootNode({ data }: NodeProps) {
   );
 }
 
+// 悬停操作按钮的显隐策略：桌面端 hover 才亮（不挡导线），但触屏/窄屏常显（hover 不可达），
+// 键盘 focus-within 也亮（可访问性）
+const HOVER_OPS = "flex opacity-0 group-hover:opacity-100 focus-within:opacity-100 max-lg:opacity-100 transition-opacity";
+
 // ---- 自定义节点：单元节点（点击卡片展开/收起课节） ----
 function UnitNode({ data }: NodeProps) {
   const d = data as {
@@ -57,10 +63,25 @@ function UnitNode({ data }: NodeProps) {
     index: number;
     expanded: boolean;
     lectureCount: number;
-    hovered: boolean;
     onToggle: () => void;
     onSplit: () => void;
     onDelete: () => void;
+    onRenameUnit: (unitId: string, title: string) => void;
+    onEditSummary: (unitId: string, summary: string) => void;
+  };
+  const [editing, setEditing] = useState(false);
+  const [title, setTitle] = useState(d.unit.title);
+  const [editingSummary, setEditingSummary] = useState(false);
+  const [summary, setSummary] = useState(d.unit.summary || "");
+  const commitTitle = () => {
+    const t = title.trim();
+    if (t && t !== d.unit.title) d.onRenameUnit(d.unit.id, t);
+    else setTitle(d.unit.title);
+    setEditing(false);
+  };
+  const commitSummary = () => {
+    if (summary.trim() !== (d.unit.summary || "")) d.onEditSummary(d.unit.id, summary.trim());
+    setEditingSummary(false);
   };
   return (
     <div
@@ -80,14 +101,56 @@ function UnitNode({ data }: NodeProps) {
           {d.expanded ? "▾" : "▸"} {d.lectureCount} 讲
         </div>
       </div>
-      <div className="text-[13px] font-semibold leading-snug">{d.unit.title}</div>
-      {!d.expanded && (
+      {editing ? (
+        <input
+          value={title}
+          autoFocus
+          onChange={(e) => setTitle(e.target.value)}
+          onClick={(e) => e.stopPropagation()}
+          onBlur={commitTitle}
+          onKeyDown={(e) => { if (e.key === "Enter") commitTitle(); if (e.key === "Escape") { setTitle(d.unit.title); setEditing(false); } }}
+          className="w-full text-[13px] font-semibold leading-snug border border-accent rounded px-1 py-0.5 outline-none nodrag"
+        />
+      ) : (
+        <div className="text-[13px] font-semibold leading-snug">{d.unit.title}</div>
+      )}
+      {!d.expanded && !editingSummary && (
         <div className="text-[10.5px] text-ink-soft mt-1 leading-relaxed line-clamp-2">
           {d.unit.summary}
         </div>
       )}
-      {/* 悬停操作 */}
-      <div className="absolute -top-2.5 -right-2.5 hidden group-hover:flex gap-1">
+      {d.expanded && (
+        editingSummary ? (
+          <textarea
+            value={summary}
+            autoFocus
+            rows={3}
+            onClick={(e) => e.stopPropagation()}
+            onChange={(e) => setSummary(e.target.value)}
+            onBlur={commitSummary}
+            onKeyDown={(e) => { if (e.key === "Escape") { setSummary(d.unit.summary || ""); setEditingSummary(false); } }}
+            className="w-full mt-1 text-[10.5px] text-ink-soft leading-relaxed border border-accent rounded px-1 py-0.5 outline-none resize-none nodrag"
+            placeholder="这个单元学完学员能做什么"
+          />
+        ) : (
+          <button
+            onClick={(e) => { e.stopPropagation(); setSummary(d.unit.summary || ""); setEditingSummary(true); }}
+            title="编辑单元简介"
+            className={`mt-1 text-left text-[10.5px] text-ink-soft leading-relaxed line-clamp-3 w-full rounded hover:bg-accent/10 px-0.5 -mx-0.5 ${HOVER_OPS} nodrag`}
+          >
+            ✎ {d.unit.summary || "补充单元简介…"}
+          </button>
+        )
+      )}
+      {/* 操作（桌面悬停显现，触屏/窄屏常显） */}
+      <div className={`absolute -top-2.5 -right-2.5 gap-1 ${HOVER_OPS}`}>
+        <button
+          onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+          title="重命名单元"
+          className="w-6 h-6 rounded-full bg-white border border-[#d3d1c7] text-[11px] shadow-sm hover:border-accent hover:text-accent flex items-center justify-center nodrag"
+        >
+          ✎
+        </button>
         <button
           onClick={(e) => { e.stopPropagation(); d.onSplit(); }}
           title="拆分单元"
@@ -113,6 +176,17 @@ function LectureNode({ data }: NodeProps) {
     lecture: BlueprintLecture;
     index: number;
     onDelete: () => void;
+    onRenameLecture: (unitId: string, lecId: string, title: string) => void;
+    onToggleDepth: (unitId: string, lecId: string, tag: string) => void;
+    unitId: string;
+  };
+  const [editing, setEditing] = useState(false);
+  const [title, setTitle] = useState(d.lecture.title);
+  const commitTitle = () => {
+    const t = title.trim();
+    if (t && t !== d.lecture.title) d.onRenameLecture(d.unitId, d.lecture.id, t);
+    else setTitle(d.lecture.title);
+    setEditing(false);
   };
   return (
     <div className="rounded-xl border border-[#e7e5dc] bg-white shadow-sm p-3 w-48 relative group">
@@ -120,27 +194,55 @@ function LectureNode({ data }: NodeProps) {
       <div className="text-[10px] text-ink-faint mb-0.5">
         讲次 {String(d.index + 1).padStart(2, "0")}
       </div>
-      <div className="text-[12px] font-medium leading-snug mb-1.5">
-        {d.lecture.title}
-      </div>
+      {editing ? (
+        <input
+          value={title}
+          autoFocus
+          onChange={(e) => setTitle(e.target.value)}
+          onClick={(e) => e.stopPropagation()}
+          onBlur={commitTitle}
+          onKeyDown={(e) => { if (e.key === "Enter") commitTitle(); if (e.key === "Escape") { setTitle(d.lecture.title); setEditing(false); } }}
+          className="w-full text-[12px] font-medium leading-snug border border-accent rounded px-1 py-0.5 outline-none nodrag"
+        />
+      ) : (
+        <div className="text-[12px] font-medium leading-snug mb-1.5">
+          {d.lecture.title}
+        </div>
+      )}
       <div className="flex gap-1 flex-wrap">
-        {d.lecture.depth_tags.map((tag) => (
-          <span
-            key={tag}
-            className={`rounded-full px-1.5 py-0.5 text-[9px] border ${DEPTH_COLORS[tag] || "bg-[#f1efe8] text-ink-soft border-[#e7e5dc]"}`}
-          >
-            {tag}
-          </span>
-        ))}
+        {(editing ? ALL_DEPTH_TAGS : d.lecture.depth_tags).map((tag) => {
+          const active = !editing || d.lecture.depth_tags.includes(tag);
+          return (
+            <button
+              key={tag}
+              onClick={(e) => { e.stopPropagation(); if (editing) d.onToggleDepth(d.unitId, d.lecture.id, tag); }}
+              title={editing ? "点击切换该课节的深度标签" : undefined}
+              className={`rounded-full px-1.5 py-0.5 text-[9px] border transition-opacity ${
+                DEPTH_COLORS[tag] || "bg-[#f1efe8] text-ink-soft border-[#e7e5dc]"
+              } ${active ? "" : "opacity-30"} ${editing ? "nodrag" : ""}`}
+            >
+              {tag}
+            </button>
+          );
+        })}
       </div>
-      {/* 悬停删除 */}
-      <button
-        onClick={(e) => { e.stopPropagation(); d.onDelete(); }}
-        title="删除课节"
-        className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-white border border-[#d3d1c7] text-[9px] shadow-sm hover:border-red-400 hover:text-red-500 hidden group-hover:flex items-center justify-center nodrag"
-      >
-        ×
-      </button>
+      {/* 操作（桌面悬停显现，触屏/窄屏常显） */}
+      <div className={`absolute -top-1.5 -right-1.5 gap-1 ${HOVER_OPS}`}>
+        <button
+          onClick={(e) => { e.stopPropagation(); setTitle(d.lecture.title); setEditing((v) => !v); }}
+          title={editing ? "完成编辑" : "改标题 / 调深度标签"}
+          className="w-5 h-5 rounded-full bg-white border border-[#d3d1c7] text-[9px] shadow-sm hover:border-accent hover:text-accent flex items-center justify-center nodrag"
+        >
+          {editing ? "✓" : "✎"}
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); d.onDelete(); }}
+          title="删除课节"
+          className="w-5 h-5 rounded-full bg-white border border-[#d3d1c7] text-[9px] shadow-sm hover:border-red-400 hover:text-red-500 flex items-center justify-center nodrag"
+        >
+          ×
+        </button>
+      </div>
     </div>
   );
 }
@@ -178,6 +280,10 @@ function layoutNodes(
     onSplitUnit: (unitId: string) => void;
     onDeepen: (unitId: string) => void;
     onToggleUnit: (unitId: string) => void;
+    onRenameUnit: (unitId: string, title: string) => void;
+    onEditSummary: (unitId: string, summary: string) => void;
+    onRenameLecture: (unitId: string, lecId: string, title: string) => void;
+    onToggleDepth: (unitId: string, lecId: string, tag: string) => void;
   }
 ): { nodes: Node[]; edges: Edge[] } {
   const nodes: Node[] = [];
@@ -233,6 +339,8 @@ function layoutNodes(
         onToggle: () => callbacks.onToggleUnit(unit.id),
         onSplit: () => callbacks.onSplitUnit(unit.id),
         onDelete: () => callbacks.onDeleteUnit(unit.id),
+        onRenameUnit: callbacks.onRenameUnit,
+        onEditSummary: callbacks.onEditSummary,
       },
       draggable: false,
     });
@@ -260,6 +368,9 @@ function layoutNodes(
             lecture: lec,
             index: li,
             onDelete: () => callbacks.onDeleteLecture(unit.id, lec.id),
+            onRenameLecture: callbacks.onRenameLecture,
+            onToggleDepth: callbacks.onToggleDepth,
+            unitId: unit.id,
           },
           draggable: false,
         });
@@ -306,6 +417,8 @@ function layoutNodes(
 export function BlueprintEditor({ blueprint, onChange, loading }: BlueprintEditorProps) {
   const [expandedUnits, setExpandedUnits] = useState<Set<string>>(() => new Set(blueprint.units.slice(0, 1).map((u) => u.id)));
   const [expanded, setExpanded] = useState(false); // 全屏展开导图
+  // 撤销栈：删除/拆分/改名等操作前的蓝图快照（误删不再是死局）
+  const [history, setHistory] = useState<CourseBlueprint[]>([]);
   const toggleUnit = useCallback((unitId: string) => {
     setExpandedUnits((prev) => {
       const next = new Set(prev);
@@ -314,6 +427,23 @@ export function BlueprintEditor({ blueprint, onChange, loading }: BlueprintEdito
       return next;
     });
   }, []);
+
+  /** 所有结构性编辑统一走这里：先快照当前版，再提交新版 */
+  const commit = useCallback(
+    (next: CourseBlueprint) => {
+      setHistory((h) => [...h.slice(-19), blueprint]);
+      onChange(next);
+    },
+    [blueprint, onChange]
+  );
+
+  const undo = useCallback(() => {
+    setHistory((h) => {
+      if (h.length === 0) return h;
+      onChange(h[h.length - 1]);
+      return h.slice(0, -1);
+    });
+  }, [onChange]);
 
   const deleteLecture = useCallback(
     (unitId: string, lectureId: string) => {
@@ -327,19 +457,19 @@ export function BlueprintEditor({ blueprint, onChange, loading }: BlueprintEdito
           )
           .filter((u) => u.lectures.length > 0),
       };
-      onChange(next);
+      commit(next);
     },
-    [blueprint, onChange]
+    [blueprint, commit]
   );
 
   const deleteUnit = useCallback(
     (unitId: string) => {
-      onChange({
+      commit({
         ...blueprint,
         units: blueprint.units.filter((u) => u.id !== unitId),
       });
     },
-    [blueprint, onChange]
+    [blueprint, commit]
   );
 
   const splitUnit = useCallback(
@@ -357,9 +487,65 @@ export function BlueprintEditor({ blueprint, onChange, loading }: BlueprintEdito
       };
       const units = [...blueprint.units];
       units.splice(idx, 1, first, second);
-      onChange({ ...blueprint, units });
+      commit({ ...blueprint, units });
     },
-    [blueprint, onChange]
+    [blueprint, commit]
+  );
+
+  const renameUnit = useCallback(
+    (unitId: string, title: string) => {
+      commit({
+        ...blueprint,
+        units: blueprint.units.map((u) => (u.id === unitId ? { ...u, title } : u)),
+      });
+    },
+    [blueprint, commit]
+  );
+
+  const editSummary = useCallback(
+    (unitId: string, summary: string) => {
+      commit({
+        ...blueprint,
+        units: blueprint.units.map((u) => (u.id === unitId ? { ...u, summary } : u)),
+      });
+    },
+    [blueprint, commit]
+  );
+
+  const renameLecture = useCallback(
+    (unitId: string, lecId: string, title: string) => {
+      commit({
+        ...blueprint,
+        units: blueprint.units.map((u) =>
+          u.id === unitId
+            ? { ...u, lectures: u.lectures.map((l) => (l.id === lecId ? { ...l, title } : l)) }
+            : u
+        ),
+      });
+    },
+    [blueprint, commit]
+  );
+
+  const toggleDepth = useCallback(
+    (unitId: string, lecId: string, tag: string) => {
+      commit({
+        ...blueprint,
+        units: blueprint.units.map((u) =>
+          u.id === unitId
+            ? {
+                ...u,
+                lectures: u.lectures.map((l) => {
+                  if (l.id !== lecId) return l;
+                  const has = l.depth_tags.includes(tag);
+                  const nextTags = has ? l.depth_tags.filter((t) => t !== tag) : [...l.depth_tags, tag];
+                  return { ...l, depth_tags: nextTags.length > 0 ? nextTags : l.depth_tags };
+                }),
+              }
+            : u
+        ),
+      });
+    },
+    [blueprint, commit]
   );
 
   const deepenLecture = useCallback(
@@ -378,14 +564,14 @@ export function BlueprintEditor({ blueprint, onChange, loading }: BlueprintEdito
         title: `${unit.key_concepts[0] || unit.title}：进阶专题`,
         depth_tags: nextDepth,
       };
-      onChange({
+      commit({
         ...blueprint,
         units: blueprint.units.map((u) =>
           u.id === unitId ? { ...u, lectures: [...u.lectures, newLec] } : u
         ),
       });
     },
-    [blueprint, onChange]
+    [blueprint, commit]
   );
 
   const { nodes, edges } = useMemo(
@@ -396,8 +582,12 @@ export function BlueprintEditor({ blueprint, onChange, loading }: BlueprintEdito
         onSplitUnit: splitUnit,
         onDeepen: deepenLecture,
         onToggleUnit: toggleUnit,
+        onRenameUnit: renameUnit,
+        onEditSummary: editSummary,
+        onRenameLecture: renameLecture,
+        onToggleDepth: toggleDepth,
       }),
-    [blueprint, expandedUnits, deleteLecture, deleteUnit, splitUnit, deepenLecture, toggleUnit]
+    [blueprint, expandedUnits, deleteLecture, deleteUnit, splitUnit, deepenLecture, toggleUnit, renameUnit, editSummary, renameLecture, toggleDepth]
   );
 
   if (loading) {
@@ -406,13 +596,12 @@ export function BlueprintEditor({ blueprint, onChange, loading }: BlueprintEdito
         <div className="animate-pulse space-y-4 text-center">
           <div className="h-5 bg-[#e7e5dc] rounded w-48 mx-auto"></div>
           <div className="h-4 bg-[#e7e5dc] rounded w-64 mx-auto"></div>
-          <div className="text-[13px] text-ink-soft mt-4">正在生成课程结构...</div>
+          <div className="text-[13px] text-ink-soft mt-4">正在生成课程结构…</div>
         </div>
       </div>
     );
   }
 
-  const DEPTH_TAG_LIST = ["建立直觉", "正式定义", "公式推导", "进阶理论", "应用实操"];
   const totalLectures = blueprint.units.reduce((s, u) => s + u.lectures.length, 0);
 
   const canvas = (
@@ -433,7 +622,18 @@ export function BlueprintEditor({ blueprint, onChange, loading }: BlueprintEdito
 
   const cardHeader = (
     <div className="p-5 pb-3">
-      <div className="text-[12px] text-accent font-medium mb-1">课程讲解结构</div>
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-[12px] text-accent font-medium mb-1">课程讲解结构 · 悬停或点击单元/课节可删除、拆分、改名、调深度</div>
+        {history.length > 0 && (
+          <button
+            onClick={undo}
+            className="shrink-0 text-[11.5px] text-ink-faint border border-[#e7e5dc] rounded-full px-3 py-1 hover:border-accent hover:text-accent transition-colors"
+            title="撤销上一步结构修改"
+          >
+            ↩ 撤销（{history.length}）
+          </button>
+        )}
+      </div>
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-[17px] font-bold leading-snug">{blueprint.title}</span>
         <span className="rounded-full bg-[#f1efe8] px-2.5 py-0.5 text-[11px] text-ink-soft shrink-0">
@@ -443,7 +643,7 @@ export function BlueprintEditor({ blueprint, onChange, loading }: BlueprintEdito
       <div className="text-[12.5px] text-ink-soft mt-1">{blueprint.audience}</div>
       <div className="flex items-center gap-2 flex-wrap mt-3">
         <span className="text-[11px] text-ink-faint mr-1">课节深度</span>
-        {DEPTH_TAG_LIST.map((tag) => (
+        {ALL_DEPTH_TAGS.map((tag) => (
           <span
             key={tag}
             className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] border ${DEPTH_COLORS[tag] || "bg-[#f1efe8] text-ink-soft border-[#e7e5dc]"}`}

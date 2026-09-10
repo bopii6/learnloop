@@ -36,6 +36,10 @@ const HEADER_H = 92; // 标题区高（页码 + 标题 + 强调线）
 const ROW_GAP = 14;
 const MODULE_X_GAP = 230; // 两块模块板的间距
 const ITEM_DELAY_MS = 280; // 每条板书出现间隔，模拟手写节奏
+/** 板书标题归一化：去掉空白/中英文标点后小写，只用于"是否同一条标题"的比对 */
+function normSectionKey(s: string): string {
+  return s.replace(/[\s，。：:、（）()\[\]【】·\-—_？！?!.,'"'""]+/g, "").toLowerCase();
+}
 const WRITE_MAX_ZOOM = 1.45; // 书写镜头最大推近（字别放得过大）
 const WRITE_MIN_ZOOM = 0.8; // 书写镜头最远：再远板书就看不清，改为平移跟拍、不再拉远
 const FOLLOW_BOTTOM_PAD = 100; // 跟拍时画面底边到最新板书的留白（避开暂停条浮层）
@@ -866,7 +870,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
     },
 
     async write(section, items) {
-      const list = (items || []).filter((it) => it && it.kind).slice(0, 4);
+      const list = (items || []).filter((it) => it && it.kind).slice(0, 6);
       await this.beginBeat(section, list.length);
       for (const item of list) {
         await this.writeItem(item);
@@ -876,8 +880,10 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
     /** 新 beat 开场：模块内换小主题 → 画小节标题（独占整行）。同步节拍下由 pump 在开讲前调用 */
     async beginBeat(section: string | undefined, itemCount: number) {
       const newSection = (section || "").trim();
-      if (newSection && newSection !== currentSection && itemCount > 0) {
-        currentSection = newSection;
+      // 归一化后再比对：剧本里 "SQL 是什么" 和 "SQL是什么" 这类空格/标点抖动
+      // 不该在白板上连写两条一模一样的标题（实测出现过的双写事故）
+      if (newSection && normSectionKey(newSection) !== currentSection && itemCount > 0) {
+        currentSection = normSectionKey(newSection);
         sections.push(newSection);
         await drawSectionHeading(newSection);
       }
@@ -1425,7 +1431,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
       // 不能默认 true——否则会对着不存在的上一页做收尾并右移出一块空白页
       moduleUsed = typeof s.moduleUsed === "boolean" ? s.moduleUsed : false;
       bulletNo = typeof s.bulletNo === "number" ? s.bulletNo : 0;
-      currentSection = s.currentSection ?? null;
+      currentSection = s.currentSection ? normSectionKey(String(s.currentSection)) : null;
       sections.length = 0;
       if (Array.isArray(s.sections)) sections.push(...s.sections);
       lastItemBox = s.lastItemBox || null;

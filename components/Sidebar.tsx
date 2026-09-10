@@ -4,7 +4,7 @@
 // 图标统一用内联 SVG 线性图标（stroke=currentColor），选中态走品牌绿。
 import { useState } from "react";
 import type { ConversationMeta } from "@/types";
-import { RedeemModal } from "./RedeemModal";
+import { CreditsPopover } from "./CreditsPopover";
 
 export interface SidebarCourse {
   id: string;
@@ -84,7 +84,7 @@ export function Sidebar({
   onLogout: () => void;
   credits?: number | null;
 }) {
-  const [redeemOpen, setRedeemOpen] = useState(false);
+  const [creditsOpen, setCreditsOpen] = useState(false);
   const navItems = [
     { key: "course", label: "首页", icon: "home" as const },
     { key: "records", label: "课程记录", icon: "library" as const },
@@ -200,7 +200,7 @@ export function Sidebar({
         </div>
 
         {/* 登录态：课程记录/教材/上架跟着账号走 */}
-        <div className="px-3.5 py-3.5 border-t border-[#efede4]">
+        <div className="relative px-3.5 py-3.5 border-t border-[#efede4]">
           {user ? (
             <div className="flex items-center gap-2.5">
               <div className="w-7 h-7 shrink-0 rounded-full bg-accent flex items-center justify-center text-[11px] text-white font-bold">
@@ -213,9 +213,10 @@ export function Sidebar({
                 <div className="flex items-center gap-2">
                   {typeof credits === "number" && (
                     <button
-                      onClick={() => setRedeemOpen((v) => !v)}
+                      onClick={() => setCreditsOpen((v) => !v)}
+                      aria-expanded={creditsOpen}
                       className="rounded-full bg-accent-soft px-1.5 py-px text-[10px] font-semibold text-accent hover:opacity-80 transition-opacity"
-                      title="点击兑换积分：生成一门课 10 积分；首次听一节课 1 积分，复习免费"
+                      title="积分余额与明细：怎么扣的、花在哪，点开一目了然"
                     >
                       ⚡ {credits} 积分
                     </button>
@@ -234,11 +235,10 @@ export function Sidebar({
               登录 / 注册
             </button>
           )}
-          {redeemOpen && user && (
-            <RedeemModal
-              balance={typeof credits === "number" ? credits : null}
-              onClose={() => setRedeemOpen(false)}
-              onRedeemed={() => window.dispatchEvent(new CustomEvent("ll:credits-changed"))}
+          {creditsOpen && user && (
+            <CreditsPopover
+              onClose={() => setCreditsOpen(false)}
+              onChanged={() => window.dispatchEvent(new CustomEvent("ll:credits-changed"))}
             />
           )}
         </div>

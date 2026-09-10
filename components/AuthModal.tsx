@@ -73,7 +73,7 @@ export function AuthModal({ onClose, onLoggedIn }: AuthModalProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-white/70 backdrop-blur-[2px]">
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-[#2b2a26]/45 backdrop-blur-[2px]">
       <div className="w-[400px] max-w-[90%] rounded-3xl border border-[#e7e5dc] bg-white shadow-2xl p-7 fade-up">
         <div className="flex items-center justify-between mb-1">
           <div className="text-[11px] text-accent font-semibold tracking-[.1em]">Superlearn</div>

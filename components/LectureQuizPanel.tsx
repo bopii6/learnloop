@@ -39,7 +39,7 @@ export function LectureQuizPanel({
   }, [answers, quiz]);
 
   return (
-    <div className="absolute inset-0 z-[60] flex items-center justify-center bg-white/70 backdrop-blur-[2px]">
+    <div className="absolute inset-0 z-[60] flex items-center justify-center bg-[#2b2a26]/45 backdrop-blur-[2px]">
       <div className="w-[600px] max-w-[92%] max-h-[86%] overflow-y-auto rounded-3xl border border-[#e7e5dc] bg-white shadow-2xl p-7 fade-up">
         <div className="flex items-center justify-between mb-1">
           <div className="text-[11px] text-accent font-semibold tracking-[.1em]">课后练习</div>

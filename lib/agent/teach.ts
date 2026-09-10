@@ -76,6 +76,7 @@ const BEAT_SCRIPT_SYSTEM = `你是白板课程讲师兼板书设计师。为一�
 - 角色出演 cast（每个片段最多 1 次，用在情绪最重的那个 beat）：{"kind":"cast","action":"alert|think|happy|fail|point|run","text":"≤10字标注"}——白板上有个固定角色，让 ta 画进场景当当事人：alert=吓到（事故发生的瞬间）、think=纠结两难、happy=成功交付、fail=emo 摆烂、point=指着别处讲、run=手忙脚乱。text 写当事人的身份瞬间（如"凌晨2点的你""被@的运维""下单成功的用户"）。没有合适的出演瞬间就不写 cast，不要硬凑。
 - 整段最多 1 个表格（2-3 列 × 2-4 行）；纯文字类（bullet/note）在整段 items 里占比不得超过一半。
 - section 是模块内的小节标题（≤ 6 字）：片段标题已经是板书大标题，section 通常省略；只有片段内部明显换了一个小主题时才写一次新 section。
+- 【禁重复】section 与片段标题（板书大标题/锚点词）不得同文或同义；相邻 beat 的 section 若意思相近，沿用同一个词，不许换着措辞连写两条近义标题；items 条目严禁复述 section 或片段标题的原文（标题已经写过，条目要写新信息）。
 - 【形式丰富是硬规则】真老师的板书是"图文并茂的手绘"：箭头流程、对比表、趋势线、对勾打叉、圈划重点、大括号归纳……绝不允许一整段全是文字条目。每个片段至少用 3 种不同类型。
 - 类型（像老师的手绘，按内容选形式）：
   - {"kind":"subtitle","text":"..."} — 小标题（比大标题低一级的板块题）
@@ -214,7 +215,7 @@ function normalizeBeats(raw: unknown): TeachBeat[] {
     const items: BoardItem[] = Array.isArray(beat.items)
       ? beat.items
           .filter((it) => it && typeof it === "object" && it.kind)
-          .slice(0, 4)
+          .slice(0, 6)
           .map((it) => ({
             ...it,
             text: clamp(it.text, it.kind === "subtitle" ? 14 : it.kind === "note" ? 16 : 22),

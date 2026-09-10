@@ -20,6 +20,7 @@ export function useClassroomSocket(room: string | null) {
   const [state, setState] = useState<ClassroomState | null>(null);
   const [connected, setConnected] = useState(false);
   const retryRef = useRef(0);
+  const connectRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     if (!room) return;
@@ -70,11 +71,13 @@ export function useClassroomSocket(room: string | null) {
         }
       };
     };
+    connectRef.current = connect;
 
     connect();
 
     return () => {
       disposed = true;
+      connectRef.current = null;
       if (retryTimer !== null) window.clearTimeout(retryTimer);
       try {
         ws?.close();
@@ -93,5 +96,16 @@ export function useClassroomSocket(room: string | null) {
     return false;
   }, [room]);
 
-  return { state, connected, send };
+  /** 手动重连：自动重试 8 次耗尽后，用户点"重连"时用（重置退避计数） */
+  const reconnect = useCallback(() => {
+    retryRef.current = 0;
+    try {
+      wsRef.current?.close(); // 触发 onclose → 走正常重连链路
+    } catch {
+      // 忽略
+    }
+    connectRef.current?.();
+  }, []);
+
+  return { state, connected, send, reconnect };
 }

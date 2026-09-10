@@ -23,6 +23,12 @@ import type { CourseEvent, SourceItem, TextbookPage } from "@/types";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// ---- 真取消（R2）：取消不再只是前端 abort ----
+// cancelledCourses：用户点了取消的课。管线里的 send() 在每个事件边界检查它，直接抛错中止
+// 后续 LLM 调用；inFlightSpends：已扣 10 积分但大纲还没跑完的课程，取消时据此退分。
+const cancelledCourses = new Set<string>();
+const inFlightSpends = new Map<string, string>(); // courseId -> userId
+
 /** 把已读网页压缩成给 LLM 的资料摘要（top 4 页 × 1800 字符，控 token 预算） */
 function buildPageExcerpts(
   sources: { index: number; title: string; domain: string }[],
@@ -44,6 +50,7 @@ export async function POST(req: NextRequest) {
     courseId?: string;
     query?: string;
     answer?: string;
+    revise?: boolean; // 修改上一轮已提交的澄清答案（覆盖而非追加）
     feedback?: string;
     courseSource?: string;
     textbookId?: string; // 教材模式：对着上传的课本建课
@@ -58,9 +65,62 @@ export async function POST(req: NextRequest) {
   const action = body.action || "start";
   const encoder = new TextEncoder();
 
+  // ---- 非 SSE 的轻量动作：查询生成状态（F5 找回）/ 取消生成 ----
+  if (action === "state") {
+    const courseId = body.courseId || "";
+    const state = await getCourseState(courseId);
+    if (!state) return new Response(JSON.stringify({ error: "not_found" }), { status: 404 });
+    return new Response(
+      JSON.stringify({
+        step: state.step,
+        query: state.query,
+        title: state.title,
+        cancelled: Boolean((state as any).cancelled),
+        generating: inFlightSpends.has(courseId),
+        sources: state.sources ?? [],
+        blueprint: state.blueprint ?? null,
+        outline: state.outline ?? null,
+        clarifyAnswers: state.clarifyAnswers ?? [],
+        currentQuestion: (state as any).currentQuestionObj ?? null,
+        designNotes: (state as any).designNotes ?? [],
+      }),
+      { headers: { "Content-Type": "application/json; charset=utf-8" } }
+    );
+  }
+  if (action === "cancel") {
+    const courseId = body.courseId || "";
+    const state = await getCourseState(courseId);
+    cancelledCourses.add(courseId);
+    if (state) {
+      (state as any).cancelled = true;
+      await setCourseState(courseId, state).catch(() => {});
+    }
+    // 已扣分且还在跑：立即退回（跑完再取消的没有扣分，退个寂寞是 bug）
+    let refunded = false;
+    const owner = inFlightSpends.get(courseId);
+    if (owner) {
+      await refundCredits(owner, COST_COURSE_GENERATE, "用户取消生成，积分退回");
+      inFlightSpends.delete(courseId);
+      refunded = true;
+    }
+    return new Response(JSON.stringify({ ok: true, refunded }), {
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+    });
+  }
+
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
+      // currentCourseId 贯穿本条 SSE 连接：send() 在每个事件边界检查取消标记，
+      // 抛错会沿 await 链向上中止整条管线（比只断前端连接真省真退）
+      let currentCourseId = "";
+      let lastDesignNotes: string[] = [];
+      let lastQuestionObj: unknown = null;
       const send = async (e: CourseEvent) => {
+        if (currentCourseId && cancelledCourses.has(currentCourseId)) {
+          throw new Error("CANCELLED_BY_USER");
+        }
+        if (e.type === "design_notes") lastDesignNotes = e.notes;
+        if (e.type === "clarify_round") lastQuestionObj = e.question;
         try {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(e)}\n\n`));
         } catch {
@@ -106,6 +166,10 @@ export async function POST(req: NextRequest) {
           }
 
           const courseId = `course-${randomUUID().slice(0, 8)}`;
+          currentCourseId = courseId;
+          cancelledCourses.delete(courseId);
+          // 一开课就广播 id：前端立刻持久化，刷新/取消都不用等到第一轮澄清
+          await send({ type: "course_created", courseId });
 
           // 学习者画像：注入澄清提问（避免重复问已覆盖的维度）；按登录用户隔离
           const profile = await getProfile(me?.id);
@@ -305,7 +369,10 @@ mode 为 course 或 answer 时，额外做需求抽取（认真对待用户说�
             clarifyAnswers: [],
             clarifyRound: 1,
             currentQuestion: question?.question,
-          });
+            // F5 找回用的完整快照：完整问题对象（含选项）+ 设计思路，光有题目文本恢复不出界面
+            currentQuestionObj: lastQuestionObj,
+            designNotes: lastDesignNotes,
+          } as any);
 
           if (done) {
             // 不需要澄清，直接出蓝图（仍等用户确认后再生成大纲）
@@ -324,6 +391,8 @@ mode 为 course 或 answer 时，额外做需求抽取（认真对待用户说�
             const state = (await getCourseState(courseId))!;
             state.step = "blueprint";
             state.blueprint = blueprint;
+            (state as any).designNotes = lastDesignNotes;
+            (state as any).currentQuestionObj = null;
             await setCourseState(courseId, state);
           }
         } else if (action === "answer") {
@@ -335,6 +404,15 @@ mode 为 course 或 answer 时，额外做需求抽取（认真对待用户说�
             await send({ type: "error", message: "course not found" });
             controller.close();
             return;
+          }
+          currentCourseId = courseId;
+
+          // 修改上一轮答案：弹掉旧答案、轮次回退，再走一遍正常的"记录答案→下一问"路径。
+          // 已出蓝图后不允许改（那条路走"我想修改课程讲解结构"的反馈重生成）
+          const revising = Boolean(body.revise) && state.step === "clarify" && state.clarifyAnswers.length > 0;
+          if (revising) {
+            state.clarifyAnswers.pop();
+            state.clarifyRound = Math.max(1, state.clarifyRound - 1);
           }
 
           // 记录答案（带真实问题文本）
@@ -360,6 +438,8 @@ mode 为 course 或 answer 时，额外做需求抽取（认真对待用户说�
             });
             state.step = "blueprint";
             state.blueprint = blueprint;
+            (state as any).designNotes = lastDesignNotes;
+            (state as any).currentQuestionObj = null;
             await setCourseState(courseId, state);
           } else {
             // 继续下一轮澄清（画像与资料摘要同样注入：不补的话第 2 轮起会重复问已覆盖的维度）
@@ -377,6 +457,7 @@ mode 为 course 或 answer 时，额外做需求抽取（认真对待用户说�
               emit: send,
             });
             state.currentQuestion = question?.question;
+            (state as any).currentQuestionObj = lastQuestionObj;
 
             if (done) {
               const { blueprint } = await runBlueprintStep({
@@ -391,11 +472,15 @@ mode 为 course 或 answer 时，额外做需求抽取（认真对待用户说�
               });
               state.step = "blueprint";
               state.blueprint = blueprint;
+              (state as any).designNotes = lastDesignNotes;
+              (state as any).currentQuestionObj = null;
             }
             await setCourseState(courseId, state);
           }
         } else if (action === "blueprint_feedback") {
-          // 用户想修改蓝图：带反馈重新生成
+          // 用户想修改蓝图：带反馈重新生成。
+          // 前端会把用户手动编辑过的蓝图一并送来（previousBlueprint）：本地手改不能
+          // 因为走了"反馈重生成"就被旧状态悄悄覆盖
           const courseId = body.courseId || "";
           const feedback = (body.feedback || "").trim();
           const state = await getCourseState(courseId);
@@ -405,12 +490,13 @@ mode 为 course 或 answer 时，额外做需求抽取（认真对待用户说�
             controller.close();
             return;
           }
+          currentCourseId = courseId;
 
           const { blueprint } = await runBlueprintStep({
             query: state.query,
             clarifyAnswers: state.clarifyAnswers,
             feedback,
-            previousBlueprint: state.blueprint,
+            previousBlueprint: body.blueprint || state.blueprint,
             profileText: profileText(await getProfile(me?.id)),
             pageExcerpts: buildPageExcerpts(state.sources, state.pageContents || {}),
             textbookHint: state.textbook ? buildTextbookExcerpt(state.textbook) : undefined,
@@ -432,6 +518,8 @@ mode 为 course 或 answer 时，额外做需求抽取（认真对待用户说�
             controller.close();
             return;
           }
+          currentCourseId = courseId;
+          cancelledCourses.delete(courseId);
 
           // 如果前端传了编辑后的蓝图，用编辑后的版本
           const finalBlueprint = body.blueprint || state.blueprint;
@@ -452,6 +540,8 @@ mode 为 course 或 answer 时，额外做需求抽取（认真对待用户说�
               return;
             }
             creditsSpent = true;
+            // 登记"已扣分、正在跑"：用户此刻点取消，cancel 动作据此退分
+            inFlightSpends.set(courseId, me.id);
           }
 
           try {
@@ -488,9 +578,16 @@ mode 为 course 或 answer 时，额外做需求抽取（认真对待用户说�
 
             await send({ type: "done", courseId, title, saveFailed });
           } catch (e) {
-            // 生成失败退回积分：用户只为成功交付的资产付费
-            if (creditsSpent && me) await refundCredits(me.id, COST_COURSE_GENERATE, "课程生成失败退回");
+            // 生成失败退回积分：用户只为成功交付的资产付费。
+            // 用户主动取消的情况已由 cancel 动作退过（在 inFlightSpends 里销了账），不重复退
+            const userCancelled = cancelledCourses.has(courseId);
+            if (creditsSpent && me && !userCancelled && inFlightSpends.has(courseId)) {
+              await refundCredits(me.id, COST_COURSE_GENERATE, "课程生成失败退回");
+            }
+            inFlightSpends.delete(courseId);
             throw e;
+          } finally {
+            cancelledCourses.delete(courseId);
           }
         } else if (action === "save_course") {
           // 存档失败后的手动补存：状态在生成过程中已多次落盘，重写一次完整状态
@@ -511,15 +608,22 @@ mode 为 course 或 answer 时，额外做需求抽取（认真对待用户说�
           await send({ type: "error", message: `unknown action: ${action}` });
         }
       } catch (e) {
-        await logOpsError({
-          kind: "course_generate",
-          userId: me?.id,
-          detail: `action=${action} ${e instanceof Error ? e.message : String(e)}`,
-        }).catch(() => {});
-        await send({
-          type: "error",
-          message: e instanceof Error ? e.message : String(e),
-        });
+        const msg = e instanceof Error ? e.message : String(e);
+        if (msg !== "CANCELLED_BY_USER") {
+          await logOpsError({
+            kind: "course_generate",
+            userId: me?.id,
+            detail: `action=${action} ${msg}`,
+          }).catch(() => {});
+          try {
+            await send({
+              type: "error",
+              message: msg,
+            });
+          } catch {
+            // 取消/断开后的补发失败忽略
+          }
+        }
       } finally {
         await drainToUsage(me?.id || ipSubject(req)).catch(() => {});
         try {
