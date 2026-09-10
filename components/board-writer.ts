@@ -12,10 +12,22 @@
 import type { BoardItem } from "@/types";
 import { classicToSunnyMaps, getBoardTheme, type BoardColors } from "@/lib/board-themes";
 
+/** 白板原住民角色：stick 简笔小人（定稿，站页眉线上）/ none 不画 */
+export type BoardCharacter = "stick" | "none";
+
+/** 角色姿势：normal 平常 / ask 出题举手 / celebrate 庆祝 / fail 翻车emo / happy 开心 */
+type CharacterPose = "normal" | "ask" | "celebrate" | "fail" | "happy";
+
 // 配色：暖阳手账（定稿，见 lib/board-themes.ts）。accents 按模块轮换（T.accent = 当前模块强调色）；
 // 旧课堂的经典墨绿板书经 classicToSunnyMaps 重着色（recolorExisting，恢复路径会调用）。
 let T: BoardColors = getBoardTheme("sunny").colors;
 let recolorMaps = classicToSunnyMaps();
+// 原住民角色：每页 beginSegment 时在页眉右端"画"出来（和板书同笔触），切换角色时擦掉当前页重画
+let character = "stick" as BoardCharacter;
+let charIds: string[] = [];
+// 角色出演（cast）：正在场景里当当事人时，页眉的"旁白位"下场，removePencil/翻页时归位
+let castIds: string[] = [];
+let castActive = false;
 const START_X = 60;
 const START_Y = 60;
 const MODULE_W = 660; // 模块板总宽（收窄让内容占满版面，密度优先）
@@ -45,8 +57,18 @@ export interface BoardWriter {
     anchor?: string,
     segmentKey?: string
   ): Promise<void>;
-  /** 写一条 beat 的板书（section 是模块内的小节标题，可选），逐条出现 */
+  /** 写一条 beat 的板书（section 是模块内的小节标题，可选），整拍一次性写完（回放重建用） */
   write(section: string | undefined, items: BoardItem[]): Promise<void>;
+  /** 新 beat 开场：画小节标题（如有）。同步节拍下由 pump 在开讲前调用 */
+  beginBeat(section: string | undefined, itemCount: number): Promise<void>;
+  /** 写一条板书（同步节拍：说到对应句子时调用），写完角色蹦一下 */
+  writeItem(item: BoardItem): Promise<void>;
+  /** 角色进入"出题"姿势（举手 + 问号）；false 还原 */
+  characterAsk(on: boolean): void;
+  /** 即兴情绪反应：台词命中关键词时换 fail/happy 姿势，片刻后自动归位 */
+  characterReact(pose: "fail" | "happy"): void;
+  /** 角色庆祝姿势 + 撒花（结课时调用） */
+  characterCelebrate(): void;
   /** 已写下的模块名/小节名（注入学员提问上下文） */
   outline(): string[];
   /** 移除铅笔指示（片段讲完时调用） */
@@ -164,6 +186,12 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
       api.updateScene({ elements: els });
     } catch {
       // 场景未就绪时忽略
+    }
+    if (castActive) {
+      // 出演结束：擦掉场景里的角色，旁白位归位
+      castActive = false;
+      eraseCast();
+      void drawCharacter("normal");
     }
   }
 
@@ -424,7 +452,321 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
     return rays;
   }
 
-  /** 按最近一次 setTheme 的映射给已有板书重着色（换主题即时生效；恢复出的旧板书也走这里） */
+  /**
+   * 白板原住民角色：讲师在每个模块板的页眉右端亲手"画"出 IP 角色——
+   * 和板书同笔触、同张纸、逐页出现，是课堂故事里的演员而不只是 UI 吉祥物。
+   * 小太阳漂浮（光芒随当前模块强调色换装），简笔小人站在页眉线上（挥手方向逐页交替）。
+   */
+  async function drawCharacter(pose: CharacterPose = "normal"): Promise<void> {
+    const cx = mx + MODULE_W - 100;
+    const feetY = my + 56; // 页眉强调线：小人的脚、太阳的"地平线"
+    const dot = (x: number, y: number, w: number, h: number, color = T.ink) => ({
+      type: "ellipse",
+      x,
+      y,
+      width: w,
+      height: h,
+      backgroundColor: color,
+      fillStyle: "solid",
+      strokeColor: color,
+      strokeWidth: 0.5,
+      roughness: 1,
+    });
+    const sk: any[] = [];
+    {
+      const wave = moduleIndex % 2 === 0 ? 1 : -1; // 挥手方向逐页换，页面之间像活的一样
+      sk.push({
+        type: "ellipse",
+        x: cx - 14,
+        y: feetY - 58,
+        width: 28,
+        height: 28,
+        backgroundColor: "#ffffff",
+        fillStyle: "solid",
+        strokeColor: T.ink,
+        strokeWidth: 1.6,
+        roughness: 1,
+      });
+      sk.push(dot(cx - 7, feetY - 48, 3, 4));
+      sk.push(dot(cx + 3, feetY - 48, 3, 4));
+      if (pose === "ask") {
+        sk.push({
+          type: "ellipse",
+          x: cx - 4,
+          y: feetY - 42,
+          width: 8,
+          height: 9,
+          backgroundColor: "transparent",
+          strokeColor: T.ink,
+          strokeWidth: 1.3,
+          roughness: 1,
+        });
+      } else {
+        const droop = pose === "fail" ? -3 : pose === "celebrate" ? 5 : 3;
+        sk.push({
+          type: "line",
+          x: cx - 5,
+          y: feetY - 40 + (pose === "fail" ? 3 : 0),
+          points: [[0, 0], [5, droop], [10, 0]],
+          strokeColor: T.ink,
+          strokeWidth: 1.3,
+          roughness: 1,
+        });
+      }
+      sk.push({ type: "line", x: cx, y: feetY - 30, points: [[0, 0], [0, 20]], strokeColor: T.ink, strokeWidth: 1.6, roughness: 1 });
+      if (pose === "ask" || pose === "celebrate") {
+        // 提问/庆祝：双手举起来
+        sk.push({ type: "line", x: cx, y: feetY - 24, points: [[0, 0], [-16, -14]], strokeColor: T.ink, strokeWidth: 1.6, roughness: 1 });
+        sk.push({ type: "line", x: cx, y: feetY - 24, points: [[0, 0], [16, -14]], strokeColor: T.ink, strokeWidth: 1.6, roughness: 1 });
+      } else if (pose === "fail") {
+        // 翻车emo：双手耷拉
+        sk.push({ type: "line", x: cx, y: feetY - 24, points: [[0, 0], [-13, 4]], strokeColor: T.ink, strokeWidth: 1.6, roughness: 1 });
+        sk.push({ type: "line", x: cx, y: feetY - 24, points: [[0, 0], [13, 4]], strokeColor: T.ink, strokeWidth: 1.6, roughness: 1 });
+      } else if (pose === "happy") {
+        // 开心：单手比耶
+        sk.push({ type: "line", x: cx, y: feetY - 24, points: [[0, 0], [15, -13]], strokeColor: T.ink, strokeWidth: 1.6, roughness: 1 });
+        sk.push({ type: "line", x: cx, y: feetY - 24, points: [[0, 0], [-13, 8]], strokeColor: T.ink, strokeWidth: 1.6, roughness: 1 });
+      } else {
+        sk.push({ type: "line", x: cx, y: feetY - 24, points: [[0, 0], [-15, 10]], strokeColor: T.ink, strokeWidth: 1.6, roughness: 1 });
+        sk.push({ type: "line", x: cx, y: feetY - 24, points: [[0, 0], [16 * wave, -15]], strokeColor: T.ink, strokeWidth: 1.6, roughness: 1 });
+      }
+      sk.push({ type: "line", x: cx, y: feetY - 10, points: [[0, 0], [-9, 10]], strokeColor: T.ink, strokeWidth: 1.6, roughness: 1 });
+      sk.push({ type: "line", x: cx, y: feetY - 10, points: [[0, 0], [9, 10]], strokeColor: T.ink, strokeWidth: 1.6, roughness: 1 });
+    }
+    if (pose === "ask") {
+      // 头顶浮一个问号：出题了
+      sk.push({
+        type: "text",
+        x: cx + 24,
+        y: my - 4,
+        text: "？",
+        fontSize: 24,
+        fontFamily: 5,
+        strokeColor: T.accent,
+      });
+    }
+    if (pose === "celebrate") {
+      // 撒花：主题色小纸屑
+      const confetti = [
+        [cx - 46, my + 4, T.accents[0]],
+        [cx + 42, my - 2, T.accents[1] || T.accent],
+        [cx - 34, my - 16, T.accents[2] || T.accent],
+        [cx + 30, my - 20, T.accents[3] || T.accent],
+        [cx - 54, my + 28, T.nodeFills[1] ? T.ink : T.ink],
+        [cx + 50, my + 22, T.ink],
+      ] as const;
+      for (const [fx, fy, fc] of confetti) {
+        sk.push({ ...dot(fx, fy, 5, 7, fc), angle: (Math.random() - 0.5) * 0.9 });
+      }
+    }
+    const created = await append(sk);
+    charIds = created.map((el: any) => el?.id).filter(Boolean);
+  }
+
+  /** 切换角色姿势：擦掉当前页角色按新姿势重画（无页面/无角色时不动） */
+  function setCharacterPose(pose: CharacterPose): void {
+    if (!moduleUsed || castActive) return;
+    eraseCharacter();
+    void drawCharacter(pose);
+  }
+
+  let reactTimer: number | null = null;
+  /** 即兴情绪反应：台词命中关键词时角色换 fail/happy 姿势，片刻后归位（一拍至多一次，由调用方节流） */
+  function characterReactInternal(pose: "fail" | "happy"): void {
+    if (castActive || !moduleUsed) return;
+    if (reactTimer) window.clearTimeout(reactTimer);
+    eraseCharacter();
+    void drawCharacter(pose);
+    reactTimer = window.setTimeout(() => {
+      reactTimer = null;
+      if (castActive) return;
+      eraseCharacter();
+      void drawCharacter("normal");
+    }, 2600);
+  }
+
+  /** 角色随板书节奏蹦一下：每写完一条内容原地小跳（离散帧，不跑连续动画——大板书逐帧改场景会卡） */
+  function characterHop(): void {
+    if (turbo || charIds.length === 0) return;
+    const api = getApi();
+    if (!api) return;
+    try {
+      const ids = new Set(charIds);
+      const base = new Map<string, number>();
+      api
+        .getSceneElements()
+        .filter((el: any) => !el.isDeleted && ids.has(el.id))
+        .forEach((el: any) => base.set(el.id, el.y || 0));
+      if (base.size === 0) return;
+      const steps = [-8, 0, -5, 0];
+      let step = 0;
+      const tick = () => {
+        try {
+          const dy = steps[step];
+          const cur = api.getSceneElements().filter((el: any) => !el.isDeleted);
+          api.updateScene({
+            elements: cur.map((el: any) => (base.has(el.id) ? { ...el, y: (base.get(el.id) as number) + dy } : el)),
+          });
+        } catch {
+          // 场景重置时停止
+          return;
+        }
+        step += 1;
+        if (step < steps.length) window.setTimeout(tick, 90);
+      };
+      tick();
+    } catch {
+      // 场景未就绪时忽略
+    }
+  }
+
+  /** 擦掉当前页的角色元素（切换角色时用；旧页保留原样，下一页起用新角色） */
+  function eraseCharacter(): void {
+    if (charIds.length === 0) return;
+    const api = getApi();
+    if (!api) return;
+    const ids = new Set(charIds);
+    try {
+      api.updateScene({ elements: api.getSceneElements().filter((el: any) => !ids.has(el.id)) });
+    } catch {
+      // 场景未就绪时忽略
+    }
+    charIds = [];
+  }
+
+  function eraseCast(): void {
+    if (castIds.length === 0) return;
+    const api = getApi();
+    if (!api) return;
+    const ids = new Set(castIds);
+    try {
+      api.updateScene({ elements: api.getSceneElements().filter((el: any) => !ids.has(el.id)) });
+    } catch {
+      // 场景未就绪时忽略
+    }
+    castIds = [];
+  }
+
+  /**
+   * 角色出演：把角色画进场景当当事人（独占一行：动作造型 + 情绪气泡 + 当事人标注）。
+   * 出演期间页眉的旁白位下场，removePencil（片段收尾）或翻页时归位。
+   */
+  async function drawCastItem(item: BoardItem): Promise<void> {
+    const action = (item.action || "alert") as NonNullable<BoardItem["action"]>;
+    const bx = mx + 48;
+    const footY = rowY + 62;
+    const sk: any[] = [];
+    // 头
+    sk.push({
+      type: "ellipse",
+      x: bx - 12,
+      y: footY - 50,
+      width: 24,
+      height: 24,
+      backgroundColor: "#ffffff",
+      fillStyle: "solid",
+      strokeColor: T.ink,
+      strokeWidth: 1.6,
+      roughness: 1,
+    });
+    // 眼睛：fail 眯成 ><，其余豆豆眼
+    if (action === "fail") {
+      sk.push({ type: "line", x: bx - 7, y: footY - 41, points: [[0, 0], [5, 3]], strokeColor: T.ink, strokeWidth: 1.2, roughness: 1 });
+      sk.push({ type: "line", x: bx + 2, y: footY - 38, points: [[0, 0], [5, -3]], strokeColor: T.ink, strokeWidth: 1.2, roughness: 1 });
+    } else {
+      sk.push({ type: "ellipse", x: bx - 6, y: footY - 42, width: 3, height: 4, backgroundColor: T.ink, fillStyle: "solid", strokeColor: T.ink, strokeWidth: 0.5 });
+      sk.push({ type: "ellipse", x: bx + 3, y: footY - 42, width: 3, height: 4, backgroundColor: T.ink, fillStyle: "solid", strokeColor: T.ink, strokeWidth: 0.5 });
+    }
+    // 嘴：happy 大笑 / fail·alert 惊呼圆嘴 / 其余平嘴
+    if (action === "happy") {
+      sk.push({ type: "line", x: bx - 5, y: footY - 35, points: [[0, 0], [5, 4], [10, 0]], strokeColor: T.ink, strokeWidth: 1.2, roughness: 1 });
+    } else if (action === "fail" || action === "alert") {
+      sk.push({ type: "ellipse", x: bx - 3, y: footY - 36, width: 6, height: 8, backgroundColor: "transparent", strokeColor: T.ink, strokeWidth: 1.1, roughness: 1 });
+    } else {
+      sk.push({ type: "line", x: bx - 4, y: footY - 34, points: [[0, 0], [8, 0]], strokeColor: T.ink, strokeWidth: 1.1, roughness: 1 });
+    }
+    // 身体
+    sk.push({ type: "line", x: bx, y: footY - 26, points: [[0, 0], [0, 18]], strokeColor: T.ink, strokeWidth: 1.6, roughness: 1 });
+    // 手臂（按动作）
+    const arm = (dx: number, dy: number) =>
+      sk.push({ type: "line", x: bx, y: footY - 21, points: [[0, 0], [dx, dy]], strokeColor: T.ink, strokeWidth: 1.6, roughness: 1 });
+    if (action === "alert") {
+      arm(-12, -13);
+      arm(13, -11);
+    } else if (action === "happy") {
+      arm(-14, -14);
+      arm(14, -14);
+    } else if (action === "think") {
+      arm(10, -13); // 托腮
+      arm(-11, 3);
+    } else if (action === "point") {
+      arm(19, -4); // 指向板书
+      arm(-11, 6);
+    } else if (action === "run") {
+      arm(-14, -5);
+      arm(12, 7);
+    } else {
+      arm(-11, 5);
+      arm(11, 5);
+    }
+    // 腿
+    if (action === "run") {
+      sk.push({ type: "line", x: bx, y: footY - 8, points: [[0, 0], [-12, 8]], strokeColor: T.ink, strokeWidth: 1.6, roughness: 1 });
+      sk.push({ type: "line", x: bx, y: footY - 8, points: [[0, 0], [12, 4]], strokeColor: T.ink, strokeWidth: 1.6, roughness: 1 });
+      // 速度线
+      sk.push({ type: "line", x: bx - 22, y: footY - 18, points: [[0, 0], [-12, 0]], strokeColor: T.mute, strokeWidth: 1.2, roughness: 1 });
+      sk.push({ type: "line", x: bx - 20, y: footY - 10, points: [[0, 0], [-9, 0]], strokeColor: T.mute, strokeWidth: 1.2, roughness: 1 });
+    } else {
+      sk.push({ type: "line", x: bx, y: footY - 8, points: [[0, 0], [-9, 8]], strokeColor: T.ink, strokeWidth: 1.6, roughness: 1 });
+      sk.push({ type: "line", x: bx, y: footY - 8, points: [[0, 0], [9, 8]], strokeColor: T.ink, strokeWidth: 1.6, roughness: 1 });
+    }
+    // 情绪气泡
+    const bubble = action === "alert" ? "！" : action === "think" ? "？" : action === "happy" ? "✓" : action === "fail" ? "…" : "";
+    if (bubble) {
+      sk.push({
+        type: "text",
+        x: bx + 16,
+        y: footY - 76,
+        text: bubble,
+        fontSize: 20,
+        fontFamily: bubble === "✓" ? 2 : 5,
+        strokeColor: action === "happy" ? T.semGood : action === "alert" || action === "fail" ? T.semBad : T.accent,
+      });
+    }
+    // 汗滴（吓到/emo）
+    if (action === "fail" || action === "alert") {
+      sk.push({
+        type: "ellipse",
+        x: bx + 19,
+        y: footY - 56,
+        width: 6,
+        height: 9,
+        backgroundColor: "#7aa7d1",
+        fillStyle: "solid",
+        strokeColor: "#5b8dbb",
+        strokeWidth: 1,
+        angle: 0.4,
+        roughness: 1,
+      });
+    }
+    const created = await append(sk);
+    castIds = created.map((el: any) => el?.id).filter(Boolean);
+    castActive = true;
+    // 当事人标注（角色旁的小字）
+    const caption = (item.text || "").replace(/\s+/g, " ").trim().slice(0, 12);
+    if (caption) {
+      const cap = await append([
+        { type: "text", x: bx + 34, y: footY - 46, text: caption, fontSize: 16, fontFamily: 5, strokeColor: T.ink },
+      ]);
+      castIds.push(...cap.map((el: any) => el?.id).filter(Boolean));
+    }
+    lastItemBox = { x: bx - 24, y: rowY, w: 130, h: 70 };
+    rowY += 76 + ROW_GAP;
+    contentBottom = Math.max(contentBottom, rowY - ROW_GAP);
+    growBackdrop();
+    await focusWriting();
+  }
+
   function recolorExisting(): void {
     const api = getApi();
     if (!api || !recolorMaps) return;
@@ -466,6 +808,7 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
       currentSection = null;
       lastItemBox = null;
       lastSegmentKey = segmentKey || null;
+      castActive = false; // 新页：旁白位重新上场（上一页的出演画面留作那一页的板书）
       const anchorWord = (anchor || "").trim().slice(0, 6);
       const anchorBand = anchorWord ? 66 : 0; // 标题线下方为锚点带让出的高度
       rowY = my + HEADER_H + anchorBand;
@@ -516,496 +859,513 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
           },
         ]);
       }
+      // 原住民角色上页面：页眉右端，随模块逐页重画
+      await drawCharacter();
       // 镜头先行：推近新模块标题区，板书随后写进画面
       await focusWriting();
     },
 
     async write(section, items) {
       const list = (items || []).filter((it) => it && it.kind).slice(0, 4);
-      const newSection = (section || "").trim();
+      await this.beginBeat(section, list.length);
+      for (const item of list) {
+        await this.writeItem(item);
+      }
+    },
 
-      // 模块内换小主题 → 画小节标题（独占整行）
-      if (newSection && newSection !== currentSection && list.length > 0) {
+    /** 新 beat 开场：模块内换小主题 → 画小节标题（独占整行）。同步节拍下由 pump 在开讲前调用 */
+    async beginBeat(section: string | undefined, itemCount: number) {
+      const newSection = (section || "").trim();
+      if (newSection && newSection !== currentSection && itemCount > 0) {
         currentSection = newSection;
         sections.push(newSection);
         await drawSectionHeading(newSection);
       }
+    },
 
-      // 逐条写内容，边讲边写
-      for (const item of list) {
-        if (item.kind === "circle" || item.kind === "underline" || item.kind === "burst") {
-          await append(emphasizeSkeleton(item.kind));
-          await delay(ITEM_DELAY_MS * 0.5);
-          continue;
-        }
+    /** 写一条板书（同步节拍：pump 在对应句子开讲的时刻调用——说到哪句、写哪条） */
+    async writeItem(item: BoardItem) {
+      if (item.kind === "cast") {
+        // 角色从页眉旁白位"下场"，画进场景当当事人；片段收尾（removePencil）时归位
+        eraseCharacter();
+        await drawCastItem(item);
+        await delay(ITEM_DELAY_MS);
+        return;
+      }
+      if (item.kind === "circle" || item.kind === "underline" || item.kind === "burst") {
+      await append(emphasizeSkeleton(item.kind));
+      await delay(ITEM_DELAY_MS * 0.5);
+      characterHop();
+      return;
+      }
 
-        if (item.kind === "bullet" && item.text) {
-          const text = item.text.replace(/\s+/g, " ").trim().slice(0, 30);
-          if (!text) continue;
-          bulletNo += 1;
-          const no = bulletNo;
-          await placeFull(() => ({
-            skeleton: [
-              {
-                type: "text",
-                x: mx + 10,
-                y: rowY + 2,
-                text: `${no}.`,
-                fontSize: 15,
-                fontFamily: 5,
-                strokeColor: T.mute,
-              },
-              {
-                type: "text",
-                x: mx + 42,
-                y: rowY,
-                text,
-                fontSize: 17,
-                fontFamily: 5,
-                strokeColor: T.ink,
-              },
-            ],
-            h: 34,
-            emBox: {
-              x: mx + 36,
-              y: rowY - 2,
-              w: Math.min(text.length * 18 + 24, CONTENT_W - 44),
-              h: 36,
+      if (item.kind === "bullet" && item.text) {
+        const text = item.text.replace(/\s+/g, " ").trim().slice(0, 30);
+        if (!text) return;
+        bulletNo += 1;
+        const no = bulletNo;
+        await placeFull(() => ({
+          skeleton: [
+            {
+              type: "text",
+              x: mx + 10,
+              y: rowY + 2,
+              text: `${no}.`,
+              fontSize: 15,
+              fontFamily: 5,
+              strokeColor: T.mute,
             },
-          }));
-        } else if (item.kind === "note" && item.text) {
-          const text = item.text.replace(/\s+/g, " ").trim().slice(0, 24);
-          if (!text) continue;
-          await placeFull(() => ({
-            skeleton: [
-              {
-                type: "text",
-                x: mx + 42,
-                y: rowY + 3,
-                text: `— ${text}`,
-                fontSize: 14,
-                fontFamily: 5,
-                strokeColor: T.mute,
-              },
-            ],
-            h: 28,
-            emBox: {
+            {
+              type: "text",
               x: mx + 42,
               y: rowY,
-              w: Math.min(text.length * 15 + 30, CONTENT_W - 50),
-              h: 28,
+              text,
+              fontSize: 17,
+              fontFamily: 5,
+              strokeColor: T.ink,
             },
-          }));
-        } else if (item.kind === "judge" && item.text) {
-          // ✓/✗ 判断行：语义色只出现在勾/叉上，正文墨色，细墨框贴着内容宽
-          const good = item.verdict !== "bad";
-          const text = item.text.replace(/\s+/g, " ").trim().slice(0, 24);
-          if (!text) continue;
-          await placeFull(() => {
-            const boxW = Math.min(CONTENT_W, 66 + Math.round(text.length * 15.5));
-            return {
-              skeleton: [
-                {
-                  type: "rectangle",
-                  x: mx,
-                  y: rowY,
-                  width: boxW,
-                  height: 42,
-                  backgroundColor: good ? T.judgeGoodBg : T.judgeBadBg,
-                  fillStyle: "solid",
-                  strokeColor: T.judgeStroke,
-                  strokeWidth: 1,
-                  roughness: 1,
-                },
-                {
-                  type: "text",
-                  x: mx + 16,
-                  y: rowY + 11,
-                  text: good ? "✓" : "✗",
-                  fontSize: 16,
-                  fontFamily: 2,
-                  strokeColor: good ? T.semGood : T.semBad,
-                },
-                {
-                  type: "text",
-                  x: mx + 46,
-                  y: rowY + 11,
-                  text,
-                  fontSize: 15,
-                  fontFamily: 5,
-                  strokeColor: T.ink,
-                },
-              ],
-              h: 42,
-              emBox: { x: mx, y: rowY, w: boxW, h: 42 },
-            };
-          });
-        } else if (item.kind === "subtitle" && item.text) {
-          const text = item.text.replace(/\s+/g, " ").trim().slice(0, 14);
-          if (!text) continue;
-          await drawSectionHeading(text);
-        } else if (item.kind === "diagram" && item.nodes && item.nodes.length >= 2) {
-          // 横向流程图：2-4 个节点盒子 + 衔接箭头（讲流程/数据流/架构）
-          const nodes = item.nodes.slice(0, 4).map((n) => (n || "").trim().slice(0, 6)).filter(Boolean);
-          if (nodes.length < 2) continue;
-          await placeFull(() => {
-            const n = nodes.length;
-            const gap = 38;
-            const boxW = Math.floor((CONTENT_W - (n - 1) * gap) / n);
-            const boxH = 58;
-            const sk: any[] = [];
-            for (let ni = 0; ni < n; ni++) {
-              const nx = mx + ni * (boxW + gap);
-              sk.push({
+          ],
+          h: 34,
+          emBox: {
+            x: mx + 36,
+            y: rowY - 2,
+            w: Math.min(text.length * 18 + 24, CONTENT_W - 44),
+            h: 36,
+          },
+        }));
+      } else if (item.kind === "note" && item.text) {
+        const text = item.text.replace(/\s+/g, " ").trim().slice(0, 24);
+        if (!text) return;
+        await placeFull(() => ({
+          skeleton: [
+            {
+              type: "text",
+              x: mx + 42,
+              y: rowY + 3,
+              text: `— ${text}`,
+              fontSize: 14,
+              fontFamily: 5,
+              strokeColor: T.mute,
+            },
+          ],
+          h: 28,
+          emBox: {
+            x: mx + 42,
+            y: rowY,
+            w: Math.min(text.length * 15 + 30, CONTENT_W - 50),
+            h: 28,
+          },
+        }));
+      } else if (item.kind === "judge" && item.text) {
+        // ✓/✗ 判断行：语义色只出现在勾/叉上，正文墨色，细墨框贴着内容宽
+        const good = item.verdict !== "bad";
+        const text = item.text.replace(/\s+/g, " ").trim().slice(0, 24);
+        if (!text) return;
+        await placeFull(() => {
+          const boxW = Math.min(CONTENT_W, 66 + Math.round(text.length * 15.5));
+          return {
+            skeleton: [
+              {
                 type: "rectangle",
-                x: nx,
-                y: rowY + 6,
+                x: mx,
+                y: rowY,
                 width: boxW,
-                height: boxH,
-                backgroundColor: T.nodeFills[ni % T.nodeFills.length],
+                height: 42,
+                backgroundColor: good ? T.judgeGoodBg : T.judgeBadBg,
                 fillStyle: "solid",
-                strokeColor: T.diagramStroke,
-                strokeWidth: 1.2,
+                strokeColor: T.judgeStroke,
+                strokeWidth: 1,
                 roughness: 1,
-              });
-              sk.push({
+              },
+              {
                 type: "text",
-                x: nx + Math.max(4, (boxW - nodes[ni].length * 15) / 2),
-                y: rowY + 6 + 20,
-                text: nodes[ni],
+                x: mx + 16,
+                y: rowY + 11,
+                text: good ? "✓" : "✗",
+                fontSize: 16,
+                fontFamily: 2,
+                strokeColor: good ? T.semGood : T.semBad,
+              },
+              {
+                type: "text",
+                x: mx + 46,
+                y: rowY + 11,
+                text,
                 fontSize: 15,
                 fontFamily: 5,
                 strokeColor: T.ink,
+              },
+            ],
+            h: 42,
+            emBox: { x: mx, y: rowY, w: boxW, h: 42 },
+          };
+        });
+      } else if (item.kind === "subtitle" && item.text) {
+        const text = item.text.replace(/\s+/g, " ").trim().slice(0, 14);
+        if (!text) return;
+        await drawSectionHeading(text);
+      } else if (item.kind === "diagram" && item.nodes && item.nodes.length >= 2) {
+        // 横向流程图：2-4 个节点盒子 + 衔接箭头（讲流程/数据流/架构）
+        const nodes = item.nodes.slice(0, 4).map((n) => (n || "").trim().slice(0, 6)).filter(Boolean);
+        if (nodes.length < 2) return;
+        await placeFull(() => {
+          const n = nodes.length;
+          const gap = 38;
+          const boxW = Math.floor((CONTENT_W - (n - 1) * gap) / n);
+          const boxH = 58;
+          const sk: any[] = [];
+          for (let ni = 0; ni < n; ni++) {
+            const nx = mx + ni * (boxW + gap);
+            sk.push({
+              type: "rectangle",
+              x: nx,
+              y: rowY + 6,
+              width: boxW,
+              height: boxH,
+              backgroundColor: T.nodeFills[ni % T.nodeFills.length],
+              fillStyle: "solid",
+              strokeColor: T.diagramStroke,
+              strokeWidth: 1.2,
+              roughness: 1,
+            });
+            sk.push({
+              type: "text",
+              x: nx + Math.max(4, (boxW - nodes[ni].length * 15) / 2),
+              y: rowY + 6 + 20,
+              text: nodes[ni],
+              fontSize: 15,
+              fontFamily: 5,
+              strokeColor: T.ink,
+            });
+            if (ni < n - 1) {
+              sk.push({
+                type: "arrow",
+                x: nx + boxW + 5,
+                y: rowY + 6 + boxH / 2,
+                points: [
+                  [0, 0],
+                  [Math.round((gap - 10) / 2), -6],
+                  [gap - 10, 0],
+                ],
+                strokeColor: T.mute,
+                strokeWidth: 1.5,
+                roughness: 1,
               });
-              if (ni < n - 1) {
-                sk.push({
-                  type: "arrow",
-                  x: nx + boxW + 5,
-                  y: rowY + 6 + boxH / 2,
-                  points: [
-                    [0, 0],
-                    [Math.round((gap - 10) / 2), -6],
-                    [gap - 10, 0],
-                  ],
-                  strokeColor: T.mute,
-                  strokeWidth: 1.5,
-                  roughness: 1,
-                });
-              }
             }
-            return { skeleton: sk, h: boxH + 12 };
-          });
-        } else if (item.kind === "table" && item.headers && item.rows) {
-          const cols = Math.max(2, Math.min(3, item.headers.length));
-          const rows = item.rows.slice(0, 4);
-          await placeFull(() => {
-            const cellW = Math.floor(CONTENT_W / cols);
-            const headH = 42;
-            const rowH = 38;
-            const sk: any[] = [];
+          }
+          return { skeleton: sk, h: boxH + 12 };
+        });
+      } else if (item.kind === "table" && item.headers && item.rows) {
+        const cols = Math.max(2, Math.min(3, item.headers.length));
+        const rows = item.rows.slice(0, 4);
+        await placeFull(() => {
+          const cellW = Math.floor(CONTENT_W / cols);
+          const headH = 42;
+          const rowH = 38;
+          const sk: any[] = [];
+          for (let ci = 0; ci < cols; ci++) {
+            sk.push({
+              type: "rectangle",
+              x: mx + ci * cellW,
+              y: rowY,
+              width: cellW,
+              height: headH,
+              backgroundColor: T.tableHeadBg,
+              strokeColor: T.tableHeadStroke,
+              strokeWidth: 1,
+              roughness: 1,
+            });
+            sk.push({
+              type: "text",
+              x: mx + ci * cellW + 10,
+              y: rowY + 11,
+              text: (item.headers?.[ci] || "").slice(0, 8),
+              fontSize: 15,
+              fontFamily: 5,
+              strokeColor: T.ink,
+            });
+          }
+          let ty = rowY + headH;
+          for (const row of rows) {
             for (let ci = 0; ci < cols; ci++) {
               sk.push({
                 type: "rectangle",
                 x: mx + ci * cellW,
-                y: rowY,
+                y: ty,
                 width: cellW,
-                height: headH,
-                backgroundColor: T.tableHeadBg,
-                strokeColor: T.tableHeadStroke,
+                height: rowH,
+                backgroundColor: "transparent",
+                strokeColor: T.tableRowStroke,
                 strokeWidth: 1,
                 roughness: 1,
               });
               sk.push({
                 type: "text",
                 x: mx + ci * cellW + 10,
-                y: rowY + 11,
-                text: (item.headers?.[ci] || "").slice(0, 8),
-                fontSize: 15,
-                fontFamily: 5,
-                strokeColor: T.ink,
-              });
-            }
-            let ty = rowY + headH;
-            for (const row of rows) {
-              for (let ci = 0; ci < cols; ci++) {
-                sk.push({
-                  type: "rectangle",
-                  x: mx + ci * cellW,
-                  y: ty,
-                  width: cellW,
-                  height: rowH,
-                  backgroundColor: "transparent",
-                  strokeColor: T.tableRowStroke,
-                  strokeWidth: 1,
-                  roughness: 1,
-                });
-                sk.push({
-                  type: "text",
-                  x: mx + ci * cellW + 10,
-                  y: ty + 10,
-                  text: (row?.[ci] || "").slice(0, 8),
-                  fontSize: 13,
-                  fontFamily: 5,
-                  strokeColor: T.ink,
-                });
-              }
-              ty += rowH;
-            }
-            return { skeleton: sk, h: headH + rows.length * rowH + 6 };
-          });
-        } else if (item.kind === "chart" && item.values && item.values.length >= 2) {
-          // 手绘趋势折线：坐标轴 + 折线 + 数据点 + 数值标注（讲增长/下降/波动）
-          await placeFull(() => {
-            const vals = item.values!.slice(0, 5).map((v) => Math.max(0, Number(v) || 0));
-            const cw = Math.min(CONTENT_W - 60, 480);
-            const chh = 118;
-            const maxV = Math.max(...vals) || 1;
-            const minV = Math.min(...vals, 0);
-            const baseY = rowY + chh;
-            const sk: any[] = [
-              { type: "line", x: mx, y: baseY, points: [[0, 0], [0, -chh]], strokeColor: T.chartAxis, strokeWidth: 1.2 },
-              { type: "line", x: mx, y: baseY, points: [[0, 0], [cw + 12, 0]], strokeColor: T.chartAxis, strokeWidth: 1.2 },
-            ];
-            const pts: number[][] = vals.map((v, i) => [
-              Math.round((cw / (vals.length - 1)) * i),
-              Math.round(-10 - ((v - minV) / (maxV - minV || 1)) * (chh - 26)),
-            ]);
-            sk.push({ type: "line", x: mx, y: baseY, points: pts, strokeColor: T.accent, strokeWidth: 2, roughness: 1 });
-            for (let pi = 0; pi < pts.length; pi++) {
-              sk.push({
-                type: "ellipse",
-                x: mx + pts[pi][0] - 4,
-                y: baseY + pts[pi][1] - 4,
-                width: 8,
-                height: 8,
-                backgroundColor: T.accent,
-                strokeColor: T.accent,
-                strokeWidth: 1,
-              });
-              sk.push({
-                type: "text",
-                x: mx + pts[pi][0] - 8,
-                y: baseY + pts[pi][1] - 26,
-                text: String(vals[pi]),
-                fontSize: 12,
-                fontFamily: 5,
-                strokeColor: T.diagramStroke,
-              });
-            }
-            return { skeleton: sk, h: chh + 14 };
-          });
-        } else if (item.kind === "vs" && (item.text || "").includes("|")) {
-          // 左右对比栏：两块半行卡 + 中央 vs 圆徽
-          const [l, r] = (item.text || "").split("|").map((s) => s.trim().slice(0, 10));
-          if (!l && !r) continue;
-          await placeFull(() => {
-            const halfW = Math.floor((CONTENT_W - 76) / 2);
-            const boxH = 56;
-            const sk: any[] = [
-              {
-                type: "rectangle",
-                x: mx,
-                y: rowY,
-                width: halfW,
-                height: boxH,
-                backgroundColor: "transparent",
-                strokeColor: T.faint,
-                strokeWidth: 1,
-                roughness: 1,
-              },
-              {
-                type: "text",
-                x: mx + (halfW - (l || "A").length * 17) / 2,
-                y: rowY + 16,
-                text: l || "A",
-                fontSize: 17,
-                fontFamily: 5,
-                strokeColor: T.ink,
-              },
-              {
-                type: "rectangle",
-                x: mx + halfW + 76,
-                y: rowY,
-                width: halfW,
-                height: boxH,
-                backgroundColor: "transparent",
-                strokeColor: T.faint,
-                strokeWidth: 1,
-                roughness: 1,
-              },
-              {
-                type: "text",
-                x: mx + halfW + 76 + (halfW - (r || "B").length * 17) / 2,
-                y: rowY + 16,
-                text: r || "B",
-                fontSize: 17,
-                fontFamily: 5,
-                strokeColor: T.ink,
-              },
-              {
-                type: "ellipse",
-                x: mx + halfW + 20,
-                y: rowY + 11,
-                width: 36,
-                height: 36,
-                backgroundColor: T.vsBadgeBg,
-                strokeColor: T.vsBadgeStroke,
-                strokeWidth: 1,
-                roughness: 1,
-              },
-              {
-                type: "text",
-                x: mx + halfW + 26,
-                y: rowY + 21,
-                text: "vs",
+                y: ty + 10,
+                text: (row?.[ci] || "").slice(0, 8),
                 fontSize: 13,
                 fontFamily: 5,
-                strokeColor: T.vsText,
-              },
-            ];
-            return { skeleton: sk, h: boxH + 8 };
-          });
-        } else if (item.kind === "tree" && item.nodes && item.nodes.length >= 2) {
-          // 一层分支树：父概念在上，2-3 个子概念在下（讲分类/组成/派生）
-          const nodes = item.nodes.slice(0, 3).map((n) => (n || "").trim().slice(0, 7)).filter(Boolean);
-          if (nodes.length < 2) continue;
-          await placeFull(() => {
-            const parentW = Math.max(96, nodes[0].length * 17 + 28);
-            const parentX = mx + Math.floor((CONTENT_W - parentW) / 2);
-            const parentH = 40;
-            const childY = rowY + parentH + 26;
-            const n = nodes.length - 1;
-            const gap = 22;
-            const childW = Math.floor((CONTENT_W - (n - 1) * gap) / n);
-            const sk: any[] = [
-              {
-                type: "rectangle",
-                x: parentX,
-                y: rowY,
-                width: parentW,
-                height: parentH,
-                backgroundColor: T.nodeFills[0],
-                fillStyle: "solid",
-                strokeColor: T.diagramStroke,
-                strokeWidth: 1.2,
-                roughness: 1,
-              },
-              {
-                type: "text",
-                x: parentX + Math.max(4, (parentW - nodes[0].length * 16) / 2),
-                y: rowY + 9,
-                text: nodes[0],
-                fontSize: 16,
-                fontFamily: 5,
-                strokeColor: T.ink,
-              },
-            ];
-            for (let ci = 1; ci < nodes.length; ci++) {
-              const cx = mx + (ci - 1) * (childW + gap);
-              sk.push({
-                type: "line",
-                x: parentX + parentW / 2,
-                y: rowY + parentH,
-                points: [[0, 0], [cx + childW / 2 - (parentX + parentW / 2), 26]],
-                strokeColor: T.faint,
-                strokeWidth: 1.2,
-                roughness: 1,
-              });
-              sk.push({
-                type: "rectangle",
-                x: cx,
-                y: childY,
-                width: childW,
-                height: 42,
-                backgroundColor: T.nodeFills[ci % T.nodeFills.length],
-                fillStyle: "solid",
-                strokeColor: T.mute,
-                strokeWidth: 1.2,
-                roughness: 1,
-              });
-              sk.push({
-                type: "text",
-                x: cx + Math.max(3, (childW - nodes[ci].length * 15) / 2),
-                y: childY + 11,
-                text: nodes[ci],
-                fontSize: 15,
-                fontFamily: 5,
                 strokeColor: T.ink,
               });
             }
-            return { skeleton: sk, h: parentH + 26 + 42 + 6 };
-          });
-        } else if (item.kind === "mark") {
-          // 简笔标记：星标/感叹号/问号。上一行是窄行 → 贴行尾作页边批注；
-          // 上一行是整行宽内容（表格/流程/对比）或行尾放不下 → 在内容下方另起小行写，不压在内容上
-          if (lastItemBox) {
-            const b = lastItemBox;
-            const fitsInRow = b.x + b.w + 14 <= mx + CONTENT_W - 24;
-            const wide = b.w > CONTENT_W * 0.7 || !fitsInRow;
-            const mxp = wide ? mx + 42 : Math.min(b.x + b.w + 14, mx + CONTENT_W - 24);
-            const myp = wide ? b.y + b.h + 12 : b.y + Math.max(4, (b.h - 26) / 2);
-            if (item.style === "alert") {
-              await append([
-                { type: "line", x: mxp, y: myp, points: [[0, 0], [0, 15]], strokeColor: T.semBad, strokeWidth: 2.4, roughness: 1 },
-                { type: "line", x: mxp, y: myp + 21, points: [[0, 0], [0, 2.5]], strokeColor: T.semBad, strokeWidth: 2.8, roughness: 1 },
-              ]);
-            } else if (item.style === "question") {
-              await append([{ type: "text", x: mxp, y: myp - 5, text: "?", fontSize: 22, fontFamily: 5, strokeColor: T.accent }]);
-            } else {
-              // star：四芒星（两长两短交叉线）
-              const cx = mxp + 9;
-              const cy = myp + 13;
-              await append([
-                { type: "line", x: cx, y: cy, points: [[-8, 8], [8, -8]], strokeColor: T.accent, strokeWidth: 1.8, roughness: 1 },
-                { type: "line", x: cx, y: cy, points: [[-8, -8], [8, 8]], strokeColor: T.accent, strokeWidth: 1.8, roughness: 1 },
-                { type: "line", x: cx, y: cy, points: [[-13, 0], [13, 0]], strokeColor: T.accent, strokeWidth: 1.4, roughness: 1 },
-                { type: "line", x: cx, y: cy, points: [[0, -13], [0, 13]], strokeColor: T.accent, strokeWidth: 1.4, roughness: 1 },
-              ]);
-            }
-            if (wide) {
-              rowY = Math.max(rowY, myp + 34 + ROW_GAP);
-              contentBottom = Math.max(contentBottom, myp + 34);
-              growBackdrop();
-            }
-            await delay(ITEM_DELAY_MS * 0.5);
+            ty += rowH;
           }
-        } else if (item.kind === "quote" && item.text) {
-          // 金句：强调色手绘椭圆圈住一句话（片段收尾用）
-          const q = item.text.replace(/\s+/g, " ").trim().slice(0, 18);
-          if (!q) continue;
-          await placeFull(() => {
-            const qw = Math.min(CONTENT_W, q.length * 20 + 84);
-            return {
-              skeleton: [
-                {
-                  type: "ellipse",
-                  x: mx + Math.floor((CONTENT_W - qw) / 2),
-                  y: rowY - 2,
-                  width: qw,
-                  height: 60,
-                  backgroundColor: T.quoteBg,
-                  strokeColor: T.quoteStroke,
-                  strokeWidth: 1.6,
-                  roughness: 1,
-                },
-                {
-                  type: "text",
-                  x: mx + Math.floor((CONTENT_W - q.length * 20) / 2),
-                  y: rowY + 17,
-                  text: q,
-                  fontSize: 19,
-                  fontFamily: 5,
-                  strokeColor: T.ink,
-                },
-              ],
-              h: 66,
-              emBox: { x: mx + Math.floor((CONTENT_W - qw) / 2), y: rowY - 2, w: qw, h: 64 },
-            };
-          });
+          return { skeleton: sk, h: headH + rows.length * rowH + 6 };
+        });
+      } else if (item.kind === "chart" && item.values && item.values.length >= 2) {
+        // 手绘趋势折线：坐标轴 + 折线 + 数据点 + 数值标注（讲增长/下降/波动）
+        await placeFull(() => {
+          const vals = item.values!.slice(0, 5).map((v) => Math.max(0, Number(v) || 0));
+          const cw = Math.min(CONTENT_W - 60, 480);
+          const chh = 118;
+          const maxV = Math.max(...vals) || 1;
+          const minV = Math.min(...vals, 0);
+          const baseY = rowY + chh;
+          const sk: any[] = [
+            { type: "line", x: mx, y: baseY, points: [[0, 0], [0, -chh]], strokeColor: T.chartAxis, strokeWidth: 1.2 },
+            { type: "line", x: mx, y: baseY, points: [[0, 0], [cw + 12, 0]], strokeColor: T.chartAxis, strokeWidth: 1.2 },
+          ];
+          const pts: number[][] = vals.map((v, i) => [
+            Math.round((cw / (vals.length - 1)) * i),
+            Math.round(-10 - ((v - minV) / (maxV - minV || 1)) * (chh - 26)),
+          ]);
+          sk.push({ type: "line", x: mx, y: baseY, points: pts, strokeColor: T.accent, strokeWidth: 2, roughness: 1 });
+          for (let pi = 0; pi < pts.length; pi++) {
+            sk.push({
+              type: "ellipse",
+              x: mx + pts[pi][0] - 4,
+              y: baseY + pts[pi][1] - 4,
+              width: 8,
+              height: 8,
+              backgroundColor: T.accent,
+              strokeColor: T.accent,
+              strokeWidth: 1,
+            });
+            sk.push({
+              type: "text",
+              x: mx + pts[pi][0] - 8,
+              y: baseY + pts[pi][1] - 26,
+              text: String(vals[pi]),
+              fontSize: 12,
+              fontFamily: 5,
+              strokeColor: T.diagramStroke,
+            });
+          }
+          return { skeleton: sk, h: chh + 14 };
+        });
+      } else if (item.kind === "vs" && (item.text || "").includes("|")) {
+        // 左右对比栏：两块半行卡 + 中央 vs 圆徽
+        const [l, r] = (item.text || "").split("|").map((s) => s.trim().slice(0, 10));
+        if (!l && !r) return;
+        await placeFull(() => {
+          const halfW = Math.floor((CONTENT_W - 76) / 2);
+          const boxH = 56;
+          const sk: any[] = [
+            {
+              type: "rectangle",
+              x: mx,
+              y: rowY,
+              width: halfW,
+              height: boxH,
+              backgroundColor: "transparent",
+              strokeColor: T.faint,
+              strokeWidth: 1,
+              roughness: 1,
+            },
+            {
+              type: "text",
+              x: mx + (halfW - (l || "A").length * 17) / 2,
+              y: rowY + 16,
+              text: l || "A",
+              fontSize: 17,
+              fontFamily: 5,
+              strokeColor: T.ink,
+            },
+            {
+              type: "rectangle",
+              x: mx + halfW + 76,
+              y: rowY,
+              width: halfW,
+              height: boxH,
+              backgroundColor: "transparent",
+              strokeColor: T.faint,
+              strokeWidth: 1,
+              roughness: 1,
+            },
+            {
+              type: "text",
+              x: mx + halfW + 76 + (halfW - (r || "B").length * 17) / 2,
+              y: rowY + 16,
+              text: r || "B",
+              fontSize: 17,
+              fontFamily: 5,
+              strokeColor: T.ink,
+            },
+            {
+              type: "ellipse",
+              x: mx + halfW + 20,
+              y: rowY + 11,
+              width: 36,
+              height: 36,
+              backgroundColor: T.vsBadgeBg,
+              strokeColor: T.vsBadgeStroke,
+              strokeWidth: 1,
+              roughness: 1,
+            },
+            {
+              type: "text",
+              x: mx + halfW + 26,
+              y: rowY + 21,
+              text: "vs",
+              fontSize: 13,
+              fontFamily: 5,
+              strokeColor: T.vsText,
+            },
+          ];
+          return { skeleton: sk, h: boxH + 8 };
+        });
+      } else if (item.kind === "tree" && item.nodes && item.nodes.length >= 2) {
+        // 一层分支树：父概念在上，2-3 个子概念在下（讲分类/组成/派生）
+        const nodes = item.nodes.slice(0, 3).map((n) => (n || "").trim().slice(0, 7)).filter(Boolean);
+        if (nodes.length < 2) return;
+        await placeFull(() => {
+          const parentW = Math.max(96, nodes[0].length * 17 + 28);
+          const parentX = mx + Math.floor((CONTENT_W - parentW) / 2);
+          const parentH = 40;
+          const childY = rowY + parentH + 26;
+          const n = nodes.length - 1;
+          const gap = 22;
+          const childW = Math.floor((CONTENT_W - (n - 1) * gap) / n);
+          const sk: any[] = [
+            {
+              type: "rectangle",
+              x: parentX,
+              y: rowY,
+              width: parentW,
+              height: parentH,
+              backgroundColor: T.nodeFills[0],
+              fillStyle: "solid",
+              strokeColor: T.diagramStroke,
+              strokeWidth: 1.2,
+              roughness: 1,
+            },
+            {
+              type: "text",
+              x: parentX + Math.max(4, (parentW - nodes[0].length * 16) / 2),
+              y: rowY + 9,
+              text: nodes[0],
+              fontSize: 16,
+              fontFamily: 5,
+              strokeColor: T.ink,
+            },
+          ];
+          for (let ci = 1; ci < nodes.length; ci++) {
+            const cx = mx + (ci - 1) * (childW + gap);
+            sk.push({
+              type: "line",
+              x: parentX + parentW / 2,
+              y: rowY + parentH,
+              points: [[0, 0], [cx + childW / 2 - (parentX + parentW / 2), 26]],
+              strokeColor: T.faint,
+              strokeWidth: 1.2,
+              roughness: 1,
+            });
+            sk.push({
+              type: "rectangle",
+              x: cx,
+              y: childY,
+              width: childW,
+              height: 42,
+              backgroundColor: T.nodeFills[ci % T.nodeFills.length],
+              fillStyle: "solid",
+              strokeColor: T.mute,
+              strokeWidth: 1.2,
+              roughness: 1,
+            });
+            sk.push({
+              type: "text",
+              x: cx + Math.max(3, (childW - nodes[ci].length * 15) / 2),
+              y: childY + 11,
+              text: nodes[ci],
+              fontSize: 15,
+              fontFamily: 5,
+              strokeColor: T.ink,
+            });
+          }
+          return { skeleton: sk, h: parentH + 26 + 42 + 6 };
+        });
+      } else if (item.kind === "mark") {
+        // 简笔标记：星标/感叹号/问号。上一行是窄行 → 贴行尾作页边批注；
+        // 上一行是整行宽内容（表格/流程/对比）或行尾放不下 → 在内容下方另起小行写，不压在内容上
+        if (lastItemBox) {
+          const b = lastItemBox;
+          const fitsInRow = b.x + b.w + 14 <= mx + CONTENT_W - 24;
+          const wide = b.w > CONTENT_W * 0.7 || !fitsInRow;
+          const mxp = wide ? mx + 42 : Math.min(b.x + b.w + 14, mx + CONTENT_W - 24);
+          const myp = wide ? b.y + b.h + 12 : b.y + Math.max(4, (b.h - 26) / 2);
+          if (item.style === "alert") {
+            await append([
+              { type: "line", x: mxp, y: myp, points: [[0, 0], [0, 15]], strokeColor: T.semBad, strokeWidth: 2.4, roughness: 1 },
+              { type: "line", x: mxp, y: myp + 21, points: [[0, 0], [0, 2.5]], strokeColor: T.semBad, strokeWidth: 2.8, roughness: 1 },
+            ]);
+          } else if (item.style === "question") {
+            await append([{ type: "text", x: mxp, y: myp - 5, text: "?", fontSize: 22, fontFamily: 5, strokeColor: T.accent }]);
+          } else {
+            // star：四芒星（两长两短交叉线）
+            const cx = mxp + 9;
+            const cy = myp + 13;
+            await append([
+              { type: "line", x: cx, y: cy, points: [[-8, 8], [8, -8]], strokeColor: T.accent, strokeWidth: 1.8, roughness: 1 },
+              { type: "line", x: cx, y: cy, points: [[-8, -8], [8, 8]], strokeColor: T.accent, strokeWidth: 1.8, roughness: 1 },
+              { type: "line", x: cx, y: cy, points: [[-13, 0], [13, 0]], strokeColor: T.accent, strokeWidth: 1.4, roughness: 1 },
+              { type: "line", x: cx, y: cy, points: [[0, -13], [0, 13]], strokeColor: T.accent, strokeWidth: 1.4, roughness: 1 },
+            ]);
+          }
+          if (wide) {
+            rowY = Math.max(rowY, myp + 34 + ROW_GAP);
+            contentBottom = Math.max(contentBottom, myp + 34);
+            growBackdrop();
+          }
+          await delay(ITEM_DELAY_MS * 0.5);
         }
-
-        await delay(ITEM_DELAY_MS);
+      } else if (item.kind === "quote" && item.text) {
+        // 金句：强调色手绘椭圆圈住一句话（片段收尾用）
+        const q = item.text.replace(/\s+/g, " ").trim().slice(0, 18);
+        if (!q) return;
+        await placeFull(() => {
+          const qw = Math.min(CONTENT_W, q.length * 20 + 84);
+          return {
+            skeleton: [
+              {
+                type: "ellipse",
+                x: mx + Math.floor((CONTENT_W - qw) / 2),
+                y: rowY - 2,
+                width: qw,
+                height: 60,
+                backgroundColor: T.quoteBg,
+                strokeColor: T.quoteStroke,
+                strokeWidth: 1.6,
+                roughness: 1,
+              },
+              {
+                type: "text",
+                x: mx + Math.floor((CONTENT_W - q.length * 20) / 2),
+                y: rowY + 17,
+                text: q,
+                fontSize: 19,
+                fontFamily: 5,
+                strokeColor: T.ink,
+              },
+            ],
+            h: 66,
+            emBox: { x: mx + Math.floor((CONTENT_W - qw) / 2), y: rowY - 2, w: qw, h: 64 },
+          };
+        });
       }
+
+      await delay(ITEM_DELAY_MS);
+      characterHop();
     },
 
     outline() {
@@ -1023,6 +1383,19 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
     },
 
     recolor: recolorExisting,
+
+    characterAsk(on: boolean) {
+      setCharacterPose(on ? "ask" : "normal");
+    },
+
+    characterReact(pose: "fail" | "happy") {
+      characterReactInternal(pose);
+    },
+
+    characterCelebrate() {
+      setCharacterPose("celebrate");
+    },
+
 
     snapshot() {
       return {

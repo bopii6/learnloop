@@ -203,11 +203,13 @@ export interface BoardItem {
     | "judge" // ✓/✗ 判断行
     | "mark" // 星标/感叹号/问号简笔标记（标在上一条旁）
     | "tree" // 一层分支树
-    | "quote"; // 金句：椭圆手绘圈住一句话
-  text?: string;
+    | "quote" // 金句：椭圆手绘圈住一句话
+    | "cast"; // 角色出演：把白板角色画进场景当当事人（场景锚定的关键瞬间）
+  text?: string; // cast 用：角色标注（如"凌晨2点的你"，≤10字）
   values?: number[]; // chart 用：2-5 个纵值
   verdict?: "good" | "bad"; // judge 用
   style?: "star" | "alert" | "question"; // mark 用
+  action?: "alert" | "think" | "happy" | "fail" | "point" | "run"; // cast 用：角色动作
   headers?: string[]; // table 用
   rows?: string[][]; // table 用
   nodes?: string[]; // diagram/tree 用

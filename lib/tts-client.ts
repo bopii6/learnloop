@@ -86,11 +86,38 @@ export function createTtsPlayer(urls: string[], rate: number): TtsPlayer {
       for (const url of urls) {
         if (stopped) return;
         await new Promise<void>((next) => {
-          audio = new Audio(url);
-          audio.playbackRate = Math.max(0.5, Math.min(3, rate || 1));
-          audio.onended = () => next();
-          audio.onerror = () => next();
-          void audio.play().catch(() => next());
+          const a = new Audio(url);
+          audio = a;
+          a.playbackRate = Math.max(0.5, Math.min(3, rate || 1));
+          // 起播看门狗：play() 挂死（无音频设备/自动播放策略异常）时 4 秒后跳过这句，
+          // 不让整节课卡死在同一句话上（正常起播后由 onended/onerror 收敛）
+          let started = false;
+          const watchdog = window.setTimeout(() => {
+            if (!started) {
+              try {
+                a.src = "";
+              } catch {
+                // ignore
+              }
+              next();
+            }
+          }, 4000);
+          a.ontimeupdate = () => {
+            started = true;
+            window.clearTimeout(watchdog);
+          };
+          a.onended = () => {
+            window.clearTimeout(watchdog);
+            next();
+          };
+          a.onerror = () => {
+            window.clearTimeout(watchdog);
+            next();
+          };
+          void a.play().catch(() => {
+            window.clearTimeout(watchdog);
+            next();
+          });
         });
       }
       resolve();

@@ -8,7 +8,7 @@ import { LectureQuizPanel } from "./LectureQuizPanel";
 import { useClassroomSocket, type ClassroomState } from "@/hooks/useClassroomSocket";
 import { startVoiceCapture, type VoiceCapture } from "./voice-capture";
 import { consumeSse } from "@/lib/sse";
-import { splitSpeechLines } from "@/lib/speech-lines";
+import { planItemLines, splitSpeechLines } from "@/lib/speech-lines";
 import { boardCssVars, CHROME_VARS } from "@/lib/board-themes";
 import { createTtsPlayer, fetchTtsSegments, prefetchTts, ttsUnavailable } from "@/lib/tts-client";
 import { exportBoardPoster, exportScriptPoster, downloadBlob, copyImageToClipboard, safeFilename } from "@/lib/board-poster";
@@ -85,6 +85,13 @@ if (typeof window !== "undefined" && "speechSynthesis" in window) {
 // 表现为朗读中途静音且 onend 永不触发。持有"最近一次"的 utterance 保活即可。
 let keepAliveUtterance: SpeechSynthesisUtterance | null = null;
 
+/** 台词情绪关键词：旧剧本没有 cast 出演指令，按关键词让角色即兴反应（一拍至多一次） */
+function storyEmotion(line: string): "fail" | "happy" | null {
+  if (/崩|挂了|翻车|完蛋|事故|超卖|扣了两次|丢锁|失败|出错|被告警|告警|被@|慌/.test(line)) return "fail";
+  if (/稳了|成功|解决|搞定|通过|优雅|正确|如愿|万无一失/.test(line)) return "happy";
+  return null;
+}
+
 // 浏览器系统音色兜底（云端 TTS 未配置/失败时）：onend / 兜底超时 / 主动取消 三路收敛
 function speakWithBrowser(
   text: string,
@@ -134,6 +141,7 @@ export function CourseSession({
   const [draft, setDraft] = useState("");
   const [chatStreaming, setChatStreaming] = useState(false);
   const [chatOpen, setChatOpen] = useState(true);
+  const scrollRef = useRef<HTMLDivElement>(null);
   // 文档建课：讲师讲到的原文页（teach 流的 doc_pages 事件），"对照原文"面板展示
   const [docPages, setDocPages] = useState<{ docTitle: string; pages: { page: number; text: string }[] } | null>(null);
   const [docOpen, setDocOpen] = useState(false);
@@ -147,6 +155,10 @@ export function CourseSession({
   const [boardReady, setBoardReady] = useState(false);
   const [introCard, setIntroCard] = useState(true); // 本节预告卡：点"开始学习"才开讲
   const [chatMode, setChatMode] = useState<"text" | "voice">("text");
+  // 结课庆祝：讲完最后一拍，角色换庆祝姿势撒花
+  useEffect(() => {
+    if (playback === "done" && boardReady) writerRef.current?.characterCelebrate();
+  }, [playback, boardReady]);
   // 学员称呼：只在第一次（画像里还没有名字时）在预告卡顺口问一次，之后自动记住
   const [profileName, setProfileName] = useState<string | null>(null); // null = 还没加载
   const [introName, setIntroName] = useState("");
@@ -185,7 +197,6 @@ export function CourseSession({
   const writerRef = useRef<BoardWriter | null>(null);
   if (!writerRef.current) writerRef.current = createBoardWriter(() => excalidrawApiRef.current);
   const startedRef = useRef(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<WhiteboardMessage[]>([]);
   messagesRef.current = messages;
 
@@ -505,27 +516,46 @@ export function CourseSession({
       const speechLines = splitSpeechLines(item.beat.say);
       if (speechLines[0]) setSubtitle(speechLines[0]);
 
-      // 白板逐条书写（每句话都有板书动作，镜头以模块为单位切换）
-      const boardItems = item.beat.items || [];
-      await writerRef.current?.write(item.beat.section, boardItems);
-      if (item.lastOfSegment) writerRef.current?.removePencil();
-
-      // 逐行朗读（或静音节奏计时）；播放本行期间预取下一行的云端音频，不空等。
-      // 静音时不预取：TTS 占首听成本八成，为永远不会播的句子付合成费是纯浪费；
-      // 取消静音后下一拍恢复预取，当拍首句改为即时合成（多等一两秒）
+      // 同步节拍：板书条目按句分配——说到哪句，那条板书才落笔（一句话带一个动作，不再整块先出后说）
+      const boardItems = (item.beat.items || []).filter((it) => it && it.kind).slice(0, 4);
+      await writerRef.current?.beginBeat(item.beat.section, boardItems.length);
+      const itemAtLine = planItemLines(speechLines.length, boardItems.length);
       const nextBeatLines = queueRef.current[0] ? splitSpeechLines(queueRef.current[0].beat.say) : [];
+      let drawn = 0;
+      let beatReacted = false;
       for (let li = 0; li < speechLines.length; li++) {
         if (pausedRef.current || exitedRef.current) break;
         setSubtitle(speechLines[li]);
+        while (drawn < boardItems.length && itemAtLine[drawn] <= li) {
+          await writerRef.current?.writeItem(boardItems[drawn]);
+          drawn += 1;
+        }
+        // 静音时不预取：TTS 占首听成本八成，为永远不会播的句子付合成费是纯浪费；
+        // 取消静音后下一拍恢复预取，当拍首句改为即时合成（多等一两秒）
         if (voiceOnRef.current) prefetchTts(speechLines[li + 1] ?? nextBeatLines[0]);
         await speak(speechLines[li]);
+        // 台词命中情绪关键词 → 角色即兴反应（一拍至多一次）
+        if (!beatReacted) {
+          const emo = storyEmotion(speechLines[li]);
+          if (emo) {
+            beatReacted = true;
+            writerRef.current?.characterReact(emo);
+          }
+        }
       }
+      // 收尾兜底：句子里没排上的条目（超短拍/中途暂停）在本拍结束前补齐，板书不缺内容
+      while (drawn < boardItems.length) {
+        await writerRef.current?.writeItem(boardItems[drawn]);
+        drawn += 1;
+      }
+      if (item.lastOfSegment) writerRef.current?.removePencil();
 
       // 片段收尾：有课堂练习则停下来，选项内嵌在字幕区等学员作答
       if (item.lastOfSegment) {
         const cp = segCheckpointRef.current.get(item.segmentId);
         if (cp && cp.question && cp.options.length > 0) {
           setCheckpoint({ id: item.segmentId, question: cp.question, options: cp.options });
+          writerRef.current?.characterAsk(true); // 角色举手出题，头顶浮问号
           setMessages((prev) => [
             ...prev,
             {
@@ -571,6 +601,7 @@ export function CourseSession({
 
   const resumePlayback = useCallback(() => {
     if (exitedRef.current) return;
+    writerRef.current?.characterAsk(false); // 收起问号，角色回平常姿势
     if (playbackRef.current === "done") return;
     if (queueRef.current.length === 0 && streamDoneRef.current) {
       // 队列空且脚本流已结束 = 没有更多内容：收尾进入 done，
@@ -1515,6 +1546,7 @@ export function CourseSession({
             </div>
           </div>
         )}
+
       </div>
 
       {/* 底部控制栏 */}

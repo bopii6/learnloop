@@ -45,3 +45,12 @@ export function splitSpeechLines(text: string | undefined | null): string[] {
   }
   return lines.length > 0 ? lines : [clean];
 }
+
+/** 把 itemCount 条板书分配到 lineCount 句话上：返回第 k 条应在第几句开讲时落笔（0 起，一句带一个动作） */
+export function planItemLines(lineCount: number, itemCount: number): number[] {
+  const out: number[] = [];
+  for (let k = 0; k < itemCount; k++) {
+    out.push(lineCount === 0 ? 0 : Math.min(lineCount - 1, Math.round((k * lineCount) / itemCount)));
+  }
+  return out;
+}

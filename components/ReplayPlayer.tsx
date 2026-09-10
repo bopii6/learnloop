@@ -8,7 +8,7 @@ import type { ReplayReel } from "@/types";
 import { Whiteboard } from "./Whiteboard";
 import { createBoardWriter, type BoardWriter } from "./board-writer";
 import { createTtsPlayer, fetchTtsSegments, prefetchTts, ttsUnavailable } from "@/lib/tts-client";
-import { splitSpeechLines } from "@/lib/speech-lines";
+import { planItemLines, splitSpeechLines } from "@/lib/speech-lines";
 import { boardCssVars, CHROME_VARS } from "@/lib/board-themes";
 
 let cachedZhVoice: SpeechSynthesisVoice | null = null;
@@ -186,14 +186,27 @@ export function ReplayPlayer({ replayId }: { replayId: string }) {
           curSeg = b.segmentTitle;
           await writer.beginSegment(b.segmentTitle, prog(b.segmentTitle));
         }
-        await writer.write(b.section, b.items || []);
+        // 同步节拍：说到哪句、写哪条（与课堂播放器同一节奏）
+        const boardItems = (b.items || []).filter((it) => it && it.kind).slice(0, 4);
+        await writer.beginBeat(b.section, boardItems.length);
+        const itemAtLine = planItemLines(speechLines.length, boardItems.length);
         const nextLines = beats[i + 1] ? splitSpeechLines(beats[i + 1].say) : [];
+        let drawn = 0;
         for (let li = 0; li < speechLines.length; li++) {
           if (cancelRef.current !== gen) return;
           setSubtitle(speechLines[li]);
+          while (drawn < boardItems.length && itemAtLine[drawn] <= li) {
+            await writer.writeItem(boardItems[drawn]);
+            drawn += 1;
+          }
           prefetchTts(speechLines[li + 1] ?? nextLines[0]); // 播放本行期间预取下一行云端音频
           await speak(speechLines[li]);
           if (cancelRef.current !== gen) return;
+        }
+        // 兜底补齐：超短拍没排上的条目，本拍结束前写完
+        while (drawn < boardItems.length) {
+          await writer.writeItem(boardItems[drawn]);
+          drawn += 1;
         }
       }
       setStatus((s) => (s === "playing" ? "done" : s));
