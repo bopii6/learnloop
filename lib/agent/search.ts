@@ -108,12 +108,24 @@ function escapeRe(s: string): string {
 }
 
 /** title+snippet 里命中的查询词个数：英文按整词（避免 "ai" 命中 "said"），中文按子串 */
+/** title+snippet 里命中的查询词个数：英文按整词（避免 "ai" 命中 "said"），中文按子串或二字片段。
+ *  中文长查询词（"播客入门指南"）几乎不会原样出现在结果标题里——逐字要求会把正经结果
+ *  全部拦掉（实测 6 条 Tavily 结果全灭、来源只剩 2 条），长词命中任一二字片段即算命中 */
+function cjkTokenHit(text: string, tok: string): boolean {
+  if (text.includes(tok)) return true;
+  if (tok.length <= 3) return false;
+  for (let i = 0; i + 2 <= tok.length; i++) {
+    if (text.includes(tok.slice(i, i + 2))) return true;
+  }
+  return false;
+}
+
 function relevanceHits(text: string, tokens: string[]): number {
   const t = text.toLowerCase();
   let hits = 0;
   for (const tok of tokens) {
     if (/[\u4e00-\u9fff]/.test(tok)) {
-      if (t.includes(tok)) hits += 1;
+      if (cjkTokenHit(t, tok)) hits += 1;
     } else if (new RegExp(`\\b${escapeRe(tok)}\\b`).test(t)) {
       hits += 1;
     }
@@ -256,6 +268,7 @@ export async function webSearch(query: string, max = 8): Promise<SourceItem[]> {
 
   let raw: RawResult[] = [];
   const errors: string[] = [];
+  const seenUrl = new Set<string>(); // 跨引擎去重：同一个 URL 不重复占位
   const providers: [string, () => Promise<RawResult[]>][] = [
     ["tavily", () => searchTavily(query, max)],
     ["bocha", () => searchBocha(query, max)],
@@ -267,18 +280,27 @@ export async function webSearch(query: string, max = 8): Promise<SourceItem[]> {
     if (name === "bocha" && !process.env.BOCHA_API_KEY) continue;
     try {
       const results = await run();
-      const kept = results.filter(passesGate);
-      if (kept.length > 0) {
-        raw = kept;
-        break;
+      let added = 0;
+      for (const r of results) {
+        if (seenUrl.has(r.url)) continue;
+        seenUrl.add(r.url);
+        if (passesGate(r)) {
+          raw.push(r);
+          added += 1;
+        }
       }
-      errors.push(`${name}: ${results.length} raw → 0 passed relevance gate`);
+      // 攒够就停；没攒够换下一个引擎补位——不同引擎对同一查询的重叠率不高，
+      // 此前"第一个引擎有结果就定"的写法在闸门偏严时会把来源饿到只剩一两条
+      if (raw.length >= max) break;
+      if (added === 0 && results.length > 0) errors.push(`${name}: ${results.length} raw → 0 passed relevance gate`);
     } catch (e) {
       errors.push(`${name}: ${String(e)}`);
     }
   }
   if (raw.length === 0) {
     console.error("all search providers failed:", errors);
+  } else if (errors.length > 0 || raw.length < max) {
+    console.log(`[search] "${query}" → ${raw.length}/${max}（${errors.join("; ") || "补位后仍不足"}）`);
   }
 
   // 权威度排序 + 同域最多 2 条（信息源多样性）；结果已在各引擎出口过闸
