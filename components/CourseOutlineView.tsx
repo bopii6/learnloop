@@ -8,7 +8,6 @@ import type { CourseOutline } from "@/types";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { uploadTextbookPdf } from "@/lib/textbook-client";
-import { CourseCover } from "./CourseCover";
 import { fmtDuration } from "@/lib/format";
 import { Icon } from "./icons";
 
@@ -132,79 +131,65 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
   };
 
   return (
-    <div className="max-w-3xl mx-auto pt-8 px-6 pb-16 space-y-4">
-      {/* Hero：封面锚点 + 课程信息 + 进度（Hyperknow 视觉：重排版轻装饰） */}
-      <section className="rounded-2xl border border-[#e4e4e7] bg-white p-5 shadow-sm">
-        <div className="flex gap-4">
-          <CourseCover
-            seed={courseId}
-            title={outline.title}
-            className="w-[112px] h-[112px] shrink-0 border border-[#f4f4f5]"
-            rounded="rounded-xl"
-          />
-          <div className="min-w-0 flex-1">
-            <h1 className="text-[19px] font-bold leading-snug">{outline.title}</h1>
-            <p className="text-[12.5px] text-ink-soft leading-relaxed mt-1 line-clamp-2">{outline.audience}</p>
-            <div className="flex gap-1.5 flex-wrap mt-2">
-              {outline.tags.slice(0, 4).map((tag) => (
-                <span key={tag} className="rounded-full bg-[#f4f4f5] px-2 py-0.5 text-[10.5px] text-ink-soft">
-                  {tag}
-                </span>
-              ))}
-            </div>
+    <div className="max-w-[720px] mx-auto pt-12 px-6 pb-24">
+      {/* 文档头：标题 → 受众 → 进度 → 继续学习（极简文档式：无卡片框） */}
+      <header>
+        <h1 className="text-[24px] font-bold leading-snug tracking-tight">{outline.title}</h1>
+        <p className="mt-2 text-[13.5px] text-ink-soft leading-relaxed">{outline.audience}</p>
+        {outline.tags.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[12px] text-ink-faint">
+            {outline.tags.slice(0, 5).map((tag) => (
+              <span key={tag}>#{tag}</span>
+            ))}
           </div>
-        </div>
+        )}
 
-        <div className="mt-4 flex items-center gap-3">
-          <div className="h-1.5 flex-1 rounded-full bg-[#f4f4f5] overflow-hidden">
+        <div className="mt-6 flex items-center gap-3">
+          <span className="shrink-0 text-[13px] font-medium">
+            已学 {visitedCount} / {learnableLectures.length} 讲
+          </span>
+          <div className="h-1 flex-1 rounded-full bg-[#e4e4e7] overflow-hidden">
             <div
-              className="h-full bg-accent rounded-full transition-all duration-500"
+              className="h-full rounded-full bg-accent transition-all duration-500"
               style={{ width: `${Math.max((visitedCount / Math.max(learnableLectures.length, 1)) * 100, visitedCount > 0 ? 3 : 0)}%` }}
             />
           </div>
-          <span className="shrink-0 text-[12px] text-ink-soft">
-            已学 <span className="font-medium text-ink">{visitedCount}</span> / {learnableLectures.length} 讲
+          <span className="shrink-0 text-[12px] text-ink-faint">
+            {outline.units.length} 单元 · {totalLectures} 节{totalMin > 0 ? ` · ${fmtDuration(totalMin)}` : ""}
           </span>
         </div>
-        <div className="mt-1.5 text-[12px] text-ink-faint">
-          {outline.units.length} 个单元 · {totalLectures} 个课节
-          {/* 口径统一：可学的白板讲次之外还有测验/结课环节，写清楚免得"32 节 vs 29 讲"让人犯嘀咕 */}
-          {totalLectures !== learnableLectures.length &&
-            `（含 ${totalLectures - learnableLectures.length} 节测验/结课）`}
-          {totalMin > 0 ? ` · ${fmtDuration(totalMin)}` : ""}
-        </div>
 
-        {/* 主 CTA：单行黑主按钮；下一讲标题独立放右侧截断，不再塞进按钮里 */}
-        <div className="mt-4 flex items-center gap-3 border-t border-[#f4f4f5] pt-4">
+        <div className="mt-5 flex items-center gap-3">
           {completed ? (
             <button
               onClick={() => nextLecture && openLecture(nextLecture)}
-              className="shrink-0 rounded-full border border-[#e4e4e7] bg-white px-5 py-2 text-[13px] font-medium text-ink hover:border-accent hover:text-accent transition-colors"
+              className="rounded-lg bg-[#18181b] px-4 py-2 text-[13px] font-medium text-white transition-colors hover:bg-[#3f3f46]"
             >
-              已学完 · 随意复习 →
+              🎉 已学完 · 随意复习
             </button>
           ) : (
             <>
               <button
                 onClick={() => nextLecture && openLecture(nextLecture)}
-                className="shrink-0 rounded-full bg-[#18181b] px-5 py-2 text-[13px] font-medium text-white transition-colors hover:bg-[#3f3f46]"
+                className="shrink-0 rounded-lg bg-[#18181b] px-4 py-2 text-[13px] font-medium text-white transition-colors hover:bg-[#3f3f46]"
               >
-                {visitedCount > 0 ? "继续学习" : "开始学习"} →
+                ▶ {visitedCount > 0 ? "继续学习" : "开始学习"}
               </button>
-              <div className="min-w-0 flex-1 truncate text-[12px] text-ink-faint">
-                {visitedCount > 0 ? "下一讲：" : "第 1 讲："}
-                <span className="text-ink-soft">{nextLecture?.title || ""}</span>
-              </div>
+              {nextLecture && (
+                <div className="min-w-0 truncate text-[12.5px] text-ink-faint">
+                  下一讲：<span className="text-ink-soft">{nextLecture.title}</span>
+                </div>
+              )}
             </>
           )}
         </div>
-        <div className="mt-3 flex items-center gap-4">
+
+        <div className="mt-4 flex items-center gap-4 text-[12px] text-ink-faint">
           <button
             onClick={() => materialRef.current?.click()}
             disabled={materialState === "uploading"}
-            className="flex items-center gap-1.5 text-[12px] text-ink-faint transition-colors hover:text-accent disabled:opacity-50"
+            className="transition-colors hover:text-accent disabled:opacity-50"
           >
-            <Icon name="paperclip" className="h-[13px] w-[13px]" />
             上传材料
           </button>
           {!marketOpen && (
@@ -213,9 +198,8 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
                 setMarketOpen(true);
                 setMarketState("idle");
               }}
-              className="flex items-center gap-1.5 text-[12px] text-ink-faint transition-colors hover:text-accent"
+              className="transition-colors hover:text-accent"
             >
-              <Icon name="link" className="h-[13px] w-[13px]" />
               上架到精品课程
             </button>
           )}
@@ -235,10 +219,10 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
         />
         {(materialState !== "idle" || marketState === "done") && (
           <div className="mt-3 text-[11.5px]">
-            {materialState === "done" && <div className="text-emerald-700">✓ 已解析入库《{materialName}》（纳入讲解的能力开发中，先帮你存好了）</div>}
+            {materialState === "done" && <div className="text-[#4d7c43]">✓ 已解析入库《{materialName}》（纳入讲解的能力开发中，先帮你存好了）</div>}
             {materialState === "uploading" && <div className="text-ink-faint">正在解析《{materialName}》…</div>}
             {materialState === "error" && <div className="text-red-600">《{materialName}》解析失败，换个文件试试</div>}
-            {marketState === "done" && <div className="text-emerald-700">✓ 已上架精品课程，所有访客都能看到</div>}
+            {marketState === "done" && <div className="text-[#4d7c43]">✓ 已上架精品课程，所有访客都能看到</div>}
           </div>
         )}
         {marketOpen && marketState !== "done" && (
@@ -259,7 +243,7 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
               <button
                 onClick={() => void publishToMarket()}
                 disabled={marketState === "saving"}
-                className="shrink-0 rounded-lg bg-accent px-3.5 py-1.5 text-[12px] text-white font-medium hover:opacity-90 disabled:opacity-40"
+                className="shrink-0 rounded-lg bg-[#18181b] px-3.5 py-1.5 text-[12px] text-white font-medium hover:bg-[#3f3f46] disabled:opacity-40"
               >
                 {marketState === "saving" ? "上架中…" : "确认上架"}
               </button>
@@ -270,155 +254,125 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
             {marketState === "error" && <div className="text-[11px] text-red-600">上架失败，稍后再试</div>}
           </div>
         )}
-      </section>
+      </header>
 
-      {/* 结课作品横幅：这门课的终点承诺——学完你将亲手做出的东西 */}
+      <hr className="my-9 border-[#e4e4e7]" />
+
+      {/* 结课作品：文档式一段，不是横幅卡片 */}
       {outline.capstone?.name && (
-        <div className="rounded-2xl border border-accent/30 bg-accent/5 px-5 py-4 fade-up">
-          <div className="flex items-start gap-4">
-            <div className="flex-1 min-w-0">
-              <div className="text-[11.5px] text-accent font-semibold tracking-wide mb-1">
-                结课作品 · 学完你将亲手做出
-              </div>
-              <div className="text-[15.5px] font-semibold text-ink">{outline.capstone.name}</div>
+        <section className="mb-9">
+          <div className="text-[11px] font-semibold tracking-[0.08em] text-accent">🎯 结课作品 · 学完你将亲手做出</div>
+          <div className="mt-1.5 flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <div className="text-[16px] font-semibold text-ink">{outline.capstone.name}</div>
               {outline.capstone.description && (
-                <div className="text-[12.5px] text-ink-soft mt-1 leading-relaxed">{outline.capstone.description}</div>
+                <p className="mt-1 text-[12.5px] text-ink-soft leading-relaxed">{outline.capstone.description}</p>
               )}
             </div>
             {projectLecture && (
               <button
                 onClick={() => openLecture(projectLecture)}
-                className={`shrink-0 self-center rounded-full px-4 py-2 text-[12px] font-medium transition-opacity flex items-center gap-1.5 ${
-                  capstonePassed ? "border border-accent/40 bg-white text-accent hover:bg-accent/5" : "bg-accent text-white hover:opacity-90"
+                className={`shrink-0 self-center rounded-lg px-3.5 py-2 text-[12px] font-medium transition-colors ${
+                  capstonePassed ? "border border-[#e4e4e7] text-ink-soft hover:border-accent hover:text-accent" : "bg-accent text-white hover:opacity-90"
                 }`}
               >
-                {capstonePassed ? "已结课 · 再看看" : "进入结课工坊 →"}
+                {capstonePassed ? "已结课" : "进入结课工坊 →"}
               </button>
             )}
           </div>
-        </div>
+        </section>
       )}
 
-      {/* 单元手风琴：默认只展开下一讲所在单元，行内只留讲次/标题/时长/按钮 */}
-      {outline.units.map((unit, ui) => {
-        const unitLearnable = unit.lectures.filter(isLearnable);
-        const unitVisited = unitLearnable.filter((l) => visited.has(l.id)).length;
-        const open = openUnits.has(unit.id);
-        const isCurrent = Boolean(nextLecture && unit.lectures.some((l) => l.id === nextLecture.id));
-        return (
-          <section key={unit.id} className="rounded-2xl border border-[#e4e4e7] bg-white overflow-hidden">
-            <button
-              onClick={() => toggleUnit(unit.id)}
-              className={`w-full text-left px-5 py-3.5 flex items-center gap-3 transition-colors ${
-                open ? "bg-[#fafafa]" : "hover:bg-[#fafafa]"
-              }`}
-            >
-              <span
-                className={`shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-[12px] font-semibold ${
-                  isCurrent ? "bg-accent text-white" : "bg-[#f4f4f5] text-ink-soft"
-                }`}
-              >
-                {ui + 1}
-              </span>
-              <span className="flex-1 min-w-0">
-                <span className="block text-[14px] font-semibold text-ink leading-snug">{unit.title}</span>
-                {!open && (
-                  <span className="block text-[11.5px] text-ink-faint mt-0.5">
-                    {unit.lectures.length} 个课节
-                    {unitVisited > 0 ? ` · 已学 ${unitVisited} 讲` : ""}
-                  </span>
-                )}
-              </span>
-              {unitVisited > 0 && !open && (
-                <span className="shrink-0 text-[11px] text-accent font-medium">{unitVisited}/{unitLearnable.length}</span>
-              )}
-              <span className={`shrink-0 text-ink-faint text-[11px] transition-transform ${open ? "rotate-180" : ""}`}>▼</span>
-            </button>
+      <hr className="mb-10 border-[#e4e4e7]" />
 
-            {open && (
-              <div>
-                <div className="px-5 pb-3 -mt-1">
-                  <div className="text-[12.5px] text-ink-soft leading-relaxed">{unit.summary}</div>
-                  <div className="flex gap-1.5 mt-2 flex-wrap">
-                    {unit.key_concepts.map((c) => (
-                      <span key={c} className="rounded bg-[#f4f4f5] px-2 py-0.5 text-[10.5px] text-ink-soft">
-                        {c}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                <div className="divide-y divide-[#f4f4f5] border-t border-[#f4f4f5]">
-                  {unit.lectures.map((lec, li) => {
-                    const done = visited.has(lec.id);
-                    const isNext = nextLecture?.id === lec.id;
-                    return (
-                      <div key={lec.id} className="px-5 py-3 flex items-center gap-3 hover:bg-[#fafafa] transition-colors">
-                        <span
-                          className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-[10.5px] font-medium ${
-                            done
-                              ? "bg-accent-soft text-accent"
-                              : isNext
-                                ? "text-accent bg-white"
-                                : "bg-[#f4f4f5] text-ink-faint"
+      {/* 单元目录：文档树（已学实心 / 当前高亮 / 未学空心），点行即学 */}
+      <div>
+        {outline.units.map((unit, ui) => {
+          const open = openUnits.has(unit.id);
+          const unitLearnable = unit.lectures.filter(isLearnable);
+          const unitVisited = unitLearnable.filter((l) => visited.has(l.id)).length;
+          const isCurrentUnit = Boolean(nextLecture && unit.lectures.some((l) => l.id === nextLecture.id));
+          return (
+            <section key={unit.id} className="mb-8">
+              <button onClick={() => toggleUnit(unit.id)} className="group flex w-full items-baseline gap-3 text-left">
+                <span className={`shrink-0 text-[13px] font-semibold tabular-nums ${isCurrentUnit ? "text-accent" : "text-ink-faint"}`}>
+                  {String(ui + 1).padStart(2, "0")}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="text-[15px] font-semibold leading-snug text-ink transition-colors group-hover:text-accent">
+                    {unit.title}
+                  </span>
+                  <span className="ml-2 text-[12px] text-ink-faint">
+                    {unit.lectures.length} 讲{unitVisited > 0 ? ` · 已学 ${unitVisited}` : ""}
+                  </span>
+                </span>
+                <span className={`shrink-0 text-[11px] text-ink-faint transition-transform ${open ? "rotate-180" : ""}`}>▾</span>
+              </button>
+
+              {open && (
+                <>
+                  {unit.summary && (
+                    <p className="mt-2 pl-8 text-[12.5px] leading-relaxed text-ink-soft">{unit.summary}</p>
+                  )}
+                  <div className="ml-[7px] mt-2 border-l border-[#e4e4e7]">
+                    {unit.lectures.map((lec) => {
+                      const done = visited.has(lec.id);
+                      const isNext = nextLecture?.id === lec.id;
+                      return (
+                        <div
+                          key={lec.id}
+                          onClick={() => openLecture(lec)}
+                          className={`-ml-px flex cursor-pointer items-center gap-3 border-l-2 py-2 pl-4 pr-2 transition-colors ${
+                            isNext ? "border-accent bg-accent/[0.04]" : "border-transparent hover:bg-[#fafafa]"
                           }`}
-                          style={isNext ? { boxShadow: "0 0 0 1.5px #0F6E56" } : undefined}
                         >
-                          {done ? "✓" : li + 1}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <div className={`text-[13.5px] truncate ${done ? "text-ink-faint" : "text-ink"}`}>{lec.title}</div>
-                          {(lec.ref_files ?? []).length > 0 && (
-                            <div className="text-[10.5px] text-ink-faint mt-0.5">{(lec.ref_files ?? []).join("、")}</div>
+                          <span
+                            className={`flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full text-[10px] ${
+                              done
+                                ? "bg-accent text-white"
+                                : isNext
+                                  ? "border-[1.5px] border-accent text-accent"
+                                  : "border-[1.5px] border-[#d4d4d8] text-transparent"
+                            }`}
+                            aria-hidden
+                          >
+                            {done ? "✓" : "•"}
+                          </span>
+                          <span className={`min-w-0 flex-1 truncate text-[13px] ${done ? "text-ink-faint" : isNext ? "font-medium text-ink" : "text-ink"}`}>
+                            {lec.title}
+                          </span>
+                          {lec.content_type === "quiz" ? (
+                            <span className={`shrink-0 text-[11.5px] ${quizPassed.get(lec.id) ? "text-[#4d7c43]" : "text-ink-faint"}`}>
+                              {quizPassed.get(lec.id) ? "✓ 测验通过" : "📝 单元测验"}
+                            </span>
+                          ) : lec.content_type === "project" ? (
+                            <span className={`shrink-0 text-[11.5px] ${capstonePassed ? "text-[#4d7c43]" : "text-ink-faint"}`}>
+                              {capstonePassed ? "✓ 已结课" : "🏆 结课作品"}
+                            </span>
+                          ) : (
+                            <span className="shrink-0 text-[11px] text-ink-faint">{lec.duration_min} 分钟</span>
                           )}
+                          <span
+                            className={`shrink-0 text-[12px] font-medium text-accent transition-opacity ${
+                              isNext ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                            }`}
+                          >
+                            {lec.content_type === "quiz"
+                              ? quizPassed.get(lec.id) ? "" : "去测验 →"
+                              : lec.content_type === "project"
+                                ? capstonePassed ? "" : "去结课工坊 →"
+                                : done ? "复习 →" : "▶ 学习"}
+                          </span>
                         </div>
-                        <span className="text-[11px] text-ink-faint shrink-0">
-                          {isLearnable(lec) ? `${lec.duration_min} 分钟` : ""}
-                        </span>
-                        {lec.content_type === "whiteboard" ? (
-                          <button
-                            onClick={() => openLecture(lec)}
-                            className={`shrink-0 rounded-full px-3.5 py-1.5 text-[12px] font-medium transition-colors flex items-center gap-1 ${
-                              isNext
-                                ? "bg-accent text-white hover:opacity-90"
-                                : done
-                                  ? "border border-[#e4e4e7] text-ink-soft hover:border-accent hover:text-accent"
-                                  : "border border-accent/40 text-accent hover:bg-accent/5"
-                            }`}
-                          >
-                            {done ? "复习" : isNext ? "▶ 继续学" : "▶ 学习"}
-                          </button>
-                        ) : lec.content_type === "quiz" ? (
-                          <button
-                            onClick={() => openLecture(lec)}
-                            title="单元测验：5 道场景题检验这个单元是否真的掌握，60% 过关，重考免费"
-                            className={`shrink-0 rounded-full px-3.5 py-1.5 text-[12px] font-medium transition-colors flex items-center gap-1 ${
-                              quizPassed.get(lec.id)
-                                ? "border border-accent/40 text-accent"
-                                : "bg-accent text-white hover:opacity-90"
-                            }`}
-                          >
-                            {quizPassed.get(lec.id) ? "✓ 已通过" : "测验"}
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => openLecture(lec)}
-                            title="结课作品工坊：领任务书 → 动手做 → 导师对照做成标准验收，通过即结课"
-                            className={`shrink-0 rounded-full px-3.5 py-1.5 text-[12px] font-medium transition-colors flex items-center gap-1 ${
-                              capstonePassed ? "border border-accent/40 text-accent" : "bg-accent text-white hover:opacity-90"
-                            }`}
-                          >
-                            {capstonePassed ? "已结课" : "结课作品"}
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </section>
-        );
-      })}
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </section>
+          );
+        })}
+      </div>
     </div>
   );
 }
