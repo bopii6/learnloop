@@ -35,6 +35,9 @@ const TIPS = [
   "课节越深，越建议先看「建立直觉」再进「公式推导」。",
 ];
 
+const SEARCH_STATUS = ["正在筛选权威来源", "正在阅读网页正文", "正在对比学习路径", "正在剔除低质内容"];
+const CLARIFY_STATUS = ["正在构思整体框架", "翻开了书本", "正在对照资料要点", "正在推敲下一个问题"];
+
 // F5 找回进行中的生成：courseId 落在 sessionStorage（课程号在 course_created 事件里第一时间下发）
 const RESUME_KEY = "ll:gen-course";
 
@@ -182,13 +185,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
   const [uploadError, setUploadError] = useGeneratorState<string | null>("uploadError", null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const queryRef = useRef<HTMLTextAreaElement | null>(null);
-  // 真实计时：本次生成从点击开始的时刻起算（走仓库，切 tab 回来计时不重置）
-  const [startedAt, setStartedAt] = useGeneratorState("startedAt", 0);
-  const [, forceTick] = useState(0);
-  // 澄清快速通道：剩余问题自动「跳过」，一路出到蓝图
-  const [autoSkip, setAutoSkip] = useGeneratorState("autoSkip", false);
-  // 澄清修改模式：非空 = 正在改第 N 轮（index）已提交的答案
-  const [revisingIndex, setRevisingIndex] = useGeneratorState<number | null>("revisingIndex", null);
+  const [statusLine, setStatusLine] = useGeneratorState("statusLine", 0);
   // 以下为纯本页 UI 状态：刷新后不需要恢复
   const [cancelNotice, setCancelNotice] = useState<string | null>(null);
   const [completionToast, setCompletionToast] = useState(false);
@@ -204,12 +201,12 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
 
   const abortRef = useRef<AbortController | null>(null);
 
-  // 已用时计时（1s 一跳，只在运行中跳）
+  // 运行中阶段的动态状态文案（"翻开了书本"式的推理感）
   useEffect(() => {
-    if (!loading || !startedAt) return;
-    const t = window.setInterval(() => forceTick((n) => n + 1), 1000);
+    if (!loading || step === "input") return;
+    const t = window.setInterval(() => setStatusLine((s) => s + 1), 3200);
     return () => window.clearInterval(t);
-  }, [loading, startedAt]);
+  }, [loading, step]);
 
   // 生成完成：自动把就绪卡滚进视野 + 轻提醒（完成入口曾埋在长页底部无人知晓）
   useEffect(() => {
@@ -389,7 +386,6 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
     setLoading(true);
     setError(null);
     setCancelNotice(null);
-    setStartedAt(Date.now());
     setStep("search");
     setSources([]);
     setSearchQueries([]);
@@ -406,8 +402,6 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
     setReadingDoc(textbookId ? "running" : "idle");
     setConfirmed(false);
     setSaveFailed(false);
-    setAutoSkip(false);
-    setRevisingIndex(null);
     await streamRequest({
       action: "start",
       query: query.trim() || `系统学习《${textbookTitle}》教材`,
@@ -416,74 +410,21 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
   }, [query, textbookId, textbookTitle, loading, streamRequest]);
 
   const submitAnswer = useCallback(
-    async (answerText: string, opts?: { revise?: boolean }) => {
-      if (!courseId || loading) return;
-      const revise = Boolean(opts?.revise);
-      if (!revise && !question) return;
-      if (!answerText.trim()) return;
+    async (answerText: string) => {
+      if (!question || !courseId || loading || !answerText.trim()) return;
       setLoading(true);
-      if (revise) {
-        // 修改模式：替换最后一轮快照，而不是追加
-        const baseQuestion = question || answeredRounds[answeredRounds.length - 1]?.question;
-        setAnsweredRounds((prev) => {
-          const next = prev.slice(0, -1);
-          if (!baseQuestion) return next;
-          return [
-            ...next,
-            {
-              question: baseQuestion,
-              selected: [...selectedOptions],
-              freeText: answerText,
-            },
-          ];
-        });
-      } else {
-        // 保存整轮快照（问题+选项+所选），堆叠视图按原版样式完整回显
-        const q = question;
-        if (!q) return;
-        setAnsweredRounds((prev) => [
-          ...prev,
-          { question: q, selected: [...selectedOptions], freeText: answerText },
-        ]);
-      }
-      setRevisingIndex(null);
+      // 保存整轮快照（问题+选项+所选），堆叠视图按原版样式完整回显
+      setAnsweredRounds((prev) => [
+        ...prev,
+        { question, selected: [...selectedOptions], freeText: answerText },
+      ]);
       setQuestion(null);
       setSelectedOptions([]);
       setCustomAnswer("");
-      await streamRequest({
-        action: "answer",
-        courseId,
-        answer: answerText,
-        revise: revise || undefined,
-      });
+      await streamRequest({ action: "answer", courseId, answer: answerText });
     },
-    [question, courseId, loading, streamRequest, selectedOptions, answeredRounds]
+    [question, courseId, loading, streamRequest, selectedOptions]
   );
-
-  // 快速通道：剩余问题自动跳过，一路出到蓝图（每轮到齐后由 effect 自动提交「跳过」）
-  useEffect(() => {
-    if (!autoSkip || step !== "clarify" || loading || !question) return;
-    void submitAnswer("跳过");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoSkip, step, question, loading]);
-
-  useEffect(() => {
-    if (step !== "clarify" && autoSkip) setAutoSkip(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step]);
-
-  // 修改上一轮：把那轮的问题重新打开，提交时走 revise 路径（服务端覆盖而非追加）
-  const startReviseLast = useCallback(() => {
-    if (revisingIndex !== null || answeredRounds.length === 0) return;
-    const idx = answeredRounds.length - 1;
-    const r = answeredRounds[idx];
-    setRevisingIndex(idx);
-    setQuestion(r.question);
-    setRound(idx + 1);
-    setSelectedOptions(r.selected.filter((s) => r.question.options.some((o) => o.label === s)));
-    const isPickedOption = r.question.options.some((o) => o.label === r.freeText);
-    setCustomAnswer(isPickedOption ? "" : r.freeText || "");
-  }, [revisingIndex, answeredRounds]);
 
   const confirmBlueprint = useCallback(async () => {
     if (!courseId || loading) return;
@@ -546,9 +487,6 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
     setReadingDoc("idle");
     setConfirmed(false);
     setSaveFailed(false);
-    setAutoSkip(false);
-    setRevisingIndex(null);
-    setStartedAt(0);
     setCancelNotice(
       refunded
         ? "已取消生成，本次消耗的积分已全额退回。"
@@ -568,11 +506,8 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
     }
   };
 
-  // ---- 内联阶段标题（accent 粗体 ｜ 第 N 步，共 M 步 ✓/已用时；文档建课为 5 步）----
-  // 阶段标题此前用 Hyperknow 原版的蓝色，和全站品牌绿割裂
+  // ---- 内联阶段标题（accent 粗体 ｜ 第 N 步，共 M 步 ✓/…；文档建课为 5 步）----
   const stageTotal = textbookId ? 5 : 4;
-  const elapsedSec = startedAt > 0 ? Math.max(0, Math.floor((Date.now() - startedAt) / 1000)) : 0;
-  const elapsedLabel = `${Math.floor(elapsedSec / 60)}:${String(elapsedSec % 60).padStart(2, "0")}`;
   const StageHeader = ({ title, n, state }: { title: string; n: number; state: "running" | "done" }) => (
     <div className="flex items-center gap-2.5 mb-3">
       <span className="text-[14.5px] font-bold text-accent">{title}</span>
@@ -580,73 +515,23 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
       <span className="text-[12.5px] text-ink-soft">第 {n} 步，共 {stageTotal} 步</span>
       {state === "done" ? (
         <span className="text-accent text-[13px]">✓</span>
-      ) : startedAt > 0 ? (
-        <span className="text-[12.5px] text-accent tabular-nums">已用时 {elapsedLabel}</span>
       ) : (
-        <span className="text-[13px] text-accent">…</span>
+        <span className="text-[13px] text-accent animate-pulse">…</span>
       )}
     </div>
   );
 
-  // ---- 步骤路线图：让用户一眼看清整条管线有几步、走到哪、每步叫什么 ----
-  const railSteps = textbookId
-    ? ["查看文档", "搜索资料", "澄清思路", "确认结构", "生成课程"]
-    : ["搜索资料", "澄清思路", "确认结构", "生成课程"];
-  const railIndex = (() => {
-    if (step === "search" || (step === "input" && !courseId)) return textbookId ? (readingDoc === "done" ? 1 : 0) : 0;
-    if (step === "clarify") return textbookId ? 2 : 1;
-    if (step === "blueprint") return textbookId ? 3 : 2;
-    return textbookId ? 4 : 3;
-  })();
-  const StepRail = () => (
-    <div className="mb-7 flex items-center gap-1.5 flex-wrap" aria-label="生成进度路线图">
-      {railSteps.map((s, i) => {
-        const done = i < railIndex || step === "done";
-        const current = i === railIndex && step !== "done";
-        return (
-          <span key={s} className="flex items-center gap-1.5">
-            {i > 0 && <span className="text-[#d9d6ca] text-[11px]">→</span>}
-            <span
-              className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11.5px] border transition-colors ${
-                current
-                  ? "border-accent bg-accent/10 text-accent font-medium"
-                  : done
-                    ? "border-accent/30 bg-white text-accent/80"
-                    : "border-[#e7e5dc] bg-white text-ink-faint"
-              }`}
-            >
-              {done ? "✓" : current ? <span className="stage-spinner inline-block" style={{ width: 10, height: 10 }} /> : <span className="opacity-50">{i + 1}</span>}
-              {s}
-            </span>
-          </span>
-        );
-      })}
-      {loading && startedAt > 0 && (
-        <span className="ml-auto text-[11.5px] text-ink-faint tabular-nums">已用时 {elapsedLabel}</span>
-      )}
-    </div>
-  );
-
-  // ---- 诚实状态行：只描述当前真实发生的事，不做定时轮播的假进度 ----
-  const honestStatus = (() => {
-    if (step === "search") {
-      if (searchQueries.length === 0) return "正在规划检索词…";
-      if (sources.length === 0) return "正在搜索并打开网页…";
-      return `已找到 ${sources.length} 个来源，正在阅读正文…`;
-    }
-    if (step === "clarify" && !question && loading) {
-      return autoSkip ? "正在按快速通道跳过剩余问题…" : "正在根据你的回答准备下一问…";
-    }
-    if (step === "blueprint" && loading && designNotes.length === 0) return "正在设计课程结构与结课作品…";
-    return null;
-  })();
-  const HonestStatus = () =>
-    honestStatus ? (
+  // ---- 动态状态行（"翻开了书本"式的推理感） ----
+  const LiveStatus = ({ pool }: { pool: string[] }) => {
+    const text = pool[statusLine % pool.length];
+    return (
       <div className="flex items-center gap-2 text-[12px] text-ink-faint mb-3">
-        <span className="stage-spinner inline-block shrink-0" style={{ width: 11, height: 11 }} />
-        <span>{honestStatus}</span>
+        <span className="stage-spinner inline-block shrink-0" style={{ width: 11, height: 11 }}>
+        </span>
+        <span>{text}</span>
       </div>
-    ) : null;
+    );
+  };
 
   // ---- 输入页：hero + 输入卡 + 示例主题 + 产品特性 ----
   if (step === "input") {
@@ -1064,8 +949,6 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
         </div>
       </div>
 
-      <StepRail />
-
       {/* 阶段 1（文档建课）：正在查看你的文档 */}
       {textbookId && (
         <section className="mb-8">
@@ -1089,7 +972,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
       {/* 阶段 2（文档建课）/ 1（纯文字）：搜索网络资料 */}
       <section className="mb-8">
         <StageHeader title="正在搜索网络资料" n={textbookId ? 2 : 1} state={searchDone ? "done" : "running"} />
-        {step === "search" && <HonestStatus />}
+        {step === "search" && sources.length === 0 && <LiveStatus pool={SEARCH_STATUS} />}
         {searchQueries.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-3">
             {searchQueries.map((q) => (
@@ -1133,33 +1016,19 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
       {step !== "search" && (
         <section className="mb-8">
           <StageHeader title="构思初步思路" n={textbookId ? 3 : 2} state={clarifyDone ? "done" : "running"} />
-          {step === "clarify" && !question && loading && <HonestStatus />}
+          {step === "clarify" && !question && loading && <LiveStatus pool={CLARIFY_STATUS} />}
 
-          {/* 已回答轮次：完整卡片回显（选项高亮所选）；最近一轮可修改（还没出蓝图前） */}
-          {answeredRounds.map((r, i) => {
-            const isLast = i === answeredRounds.length - 1;
-            const canRevise = isLast && step === "clarify" && revisingIndex === null && !autoSkip;
-            return (
-            <div key={i} className={`mb-5 ${canRevise ? "" : "opacity-75"}`}>
+          {/* 已回答轮次：完整卡片回显（选项高亮所选） */}
+          {answeredRounds.map((r, i) => (
+            <div key={i} className="mb-5 opacity-75">
               <div className="flex items-start justify-between mb-2">
                 <div className="text-[14px] font-medium flex-1">
                   <span className="text-ink-faint mr-2">Q{i + 1}</span>
                   {r.question.question}
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  {canRevise && (
-                    <button
-                      onClick={startReviseLast}
-                      className="text-[11px] text-ink-faint border border-[#e7e5dc] rounded px-2 py-0.5 hover:border-accent hover:text-accent transition-colors"
-                      title="改答案后，下一个问题会按新答案重新生成"
-                    >
-                      ✎ 修改
-                    </button>
-                  )}
-                  <span className="text-[11px] text-accent border border-accent/30 rounded px-2 py-0.5">
-                    ✓ 已回答
-                  </span>
-                </div>
+                <span className="text-[11px] text-accent border border-accent/30 rounded px-2 py-0.5 shrink-0">
+                  ✓ 已回答
+                </span>
               </div>
               <div className="grid gap-2 sm:grid-cols-2">
                 {r.question.options.length > 0 ? (
@@ -1184,28 +1053,11 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
                 )}
               </div>
             </div>
-            );
-          })}
+          ))}
 
           {/* 当前轮次的问题卡 */}
           {question && step === "clarify" && (
             <div className="rounded-2xl border border-[#e7e5dc] bg-white p-5 fade-up">
-              {revisingIndex !== null && (
-                <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-accent/10 px-3 py-1 text-[11.5px] text-accent">
-                  正在修改第 {revisingIndex + 1} 轮的回答 · 提交后下一个问题会重新生成
-                  <button
-                    onClick={() => {
-                      setRevisingIndex(null);
-                      setQuestion(null);
-                      setSelectedOptions([]);
-                      setCustomAnswer("");
-                    }}
-                    className="underline underline-offset-2 hover:opacity-80"
-                  >
-                    取消修改
-                  </button>
-                </div>
-              )}
               <div className="flex items-start justify-between mb-1">
                 <div className="text-[15px] font-medium flex-1">
                   <span className="text-ink-faint mr-2">Q{round}</span>
@@ -1264,28 +1116,15 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
                   />
                 </div>
               </div>
-              <div className="mt-5 flex items-center justify-between gap-3">
-                {revisingIndex === null && (
-                  <button
-                    onClick={() => setAutoSkip(true)}
-                    disabled={loading}
-                    className="text-[12px] text-ink-faint hover:text-accent transition-colors disabled:opacity-40"
-                    title="剩余问题按「跳过」处理，直接生成大纲——想快点开课就用它"
-                  >
-                    不想答了，跳过剩余问题直接生成
-                  </button>
-                )}
-                <span className="flex-1" />
+              <div className="mt-5 flex justify-end">
                 <button
                   onClick={() =>
-                    submitAnswer(customAnswer.trim() ? customAnswer.trim() : selectedOptions.join("、"), {
-                      revise: revisingIndex !== null || undefined,
-                    })
+                    submitAnswer(customAnswer.trim() ? customAnswer.trim() : selectedOptions.join("、"))
                   }
                   disabled={loading || (!customAnswer.trim() && selectedOptions.length === 0)}
                   className="rounded-full border border-[#d3d1c7] px-6 py-2 text-[13px] text-ink hover:border-accent hover:text-accent disabled:opacity-40 transition-colors"
                 >
-                  {loading ? "继续中…" : revisingIndex !== null ? "保存修改" : "继续"}
+                  {loading ? "继续中..." : "继续"}
                 </button>
               </div>
             </div>
@@ -1419,15 +1258,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
                       <span className="text-ink-faint"> · 已优化 {progress.optimized} 个课节</span>
                     )}
                   </span>
-                  <span className="tabular-nums">
-                    {Math.round((progress.current / progress.total) * 100)}%
-                    {/* 按已用时间线性估算剩余：不精确，但比"不知道要等多久"强 */}
-                    {progress.current > 0 && startedAt > 0 && (
-                      <span className="text-ink-faint">
-                        {" "}· 已用 {elapsedLabel}，剩余约 {Math.max(1, Math.round((elapsedSec / progress.current) * (progress.total - progress.current) / 60))} 分钟
-                      </span>
-                    )}
-                  </span>
+                  <span>{Math.round((progress.current / progress.total) * 100)}%</span>
                 </div>
                 <div className="h-1.5 rounded-full bg-[#f1efe8] overflow-hidden">
                   <div
