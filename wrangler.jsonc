@@ -17,7 +17,8 @@
     "CF_ACCOUNT_ID": "25a5412b3b51b03386b6945004ba381b",
     "CF_R2_BUCKET": "learnloop",
     // TAVILY_API_KEY 走 Worker secret（wrangler secret put），不能在 vars 声明——同名冲突 code 10053
-    "TTS_ENDPOINT": "https://llm-ik6blki6l4cuobxe.cn-beijing.maas.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
+    "TTS_ENDPOINT": "https://llm-ik6blki6l4cuobxe.cn-beijing.maas.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
+    "TTS_VOICE": "Bellona"
   },
   "observability": {
     "enabled": true

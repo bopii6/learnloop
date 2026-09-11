@@ -86,13 +86,6 @@ if (typeof window !== "undefined" && "speechSynthesis" in window) {
 // 表现为朗读中途静音且 onend 永不触发。持有"最近一次"的 utterance 保活即可。
 let keepAliveUtterance: SpeechSynthesisUtterance | null = null;
 
-/** 台词情绪关键词：旧剧本没有 cast 出演指令，按关键词让角色即兴反应（一拍至多一次） */
-function storyEmotion(line: string): "fail" | "happy" | null {
-  if (/崩|挂了|翻车|完蛋|事故|超卖|扣了两次|丢锁|失败|出错|被告警|告警|被@|慌/.test(line)) return "fail";
-  if (/稳了|成功|解决|搞定|通过|优雅|正确|如愿|万无一失/.test(line)) return "happy";
-  return null;
-}
-
 /** 板书文本归一化：去空白/标点后小写，只用于"是不是同一条标题/同一句话"的比对 */
 function normBoardText(s?: string | null): string {
   return (s || "").replace(/[\s，。：:、（）()[\]【】·\-—_？！?!.,'"'""]+/g, "").toLowerCase();
@@ -658,8 +651,14 @@ export function CourseSession({
       await writerRef.current?.beginBeat(sectionForBoard, boardItems.length);
       const itemAtLine = planItemLines(speechLines.length, boardItems.length);
       const nextBeatLines = queueRef.current[0] ? splitSpeechLines(queueRef.current[0].beat.say) : [];
+      // 拍开始就把本拍全部字幕行 + 下一拍首行预取掉：上一句念完时下一句音频已在手。
+      // 旧的逐行预取只提前一句、和念的耗时打平，一有抖动就得干等（实测踩过）。
+      // 静音时仍不预取：为永远不会播的句子付合成费是纯浪费，取消静音后下一拍恢复。
+      if (voiceOnRef.current) {
+        for (const line of speechLines) prefetchTts(line);
+        prefetchTts(nextBeatLines[0]);
+      }
       let drawn = 0;
-      let beatReacted = false;
       let li = 0;
       while (li < speechLines.length) {
         if (pausedRef.current || exitedRef.current) {
@@ -671,9 +670,6 @@ export function CourseSession({
           await writerRef.current?.writeItem(boardItems[drawn]);
           drawn += 1;
         }
-        // 静音时不预取：TTS 占首听成本八成，为永远不会播的句子付合成费是纯浪费；
-        // 取消静音后下一拍恢复预取，当拍首句改为即时合成（多等一两秒）
-        if (voiceOnRef.current) prefetchTts(speechLines[li + 1] ?? nextBeatLines[0]);
         await speak(speechLines[li]);
         // 重听本句：原地再讲一遍，不前进（跳过则无需标记——speak 被叫停后自然落进下一句）
         if (replayReqRef.current) {
@@ -681,14 +677,6 @@ export function CourseSession({
           continue;
         }
         li += 1;
-        // 台词命中情绪关键词 → 角色即兴反应（一拍至多一次）
-        if (!beatReacted) {
-          const emo = storyEmotion(speechLines[li - 1]);
-          if (emo) {
-            beatReacted = true;
-            writerRef.current?.characterReact(emo);
-          }
-        }
       }
       // 收尾兜底：句子里没排上的条目（超短拍/中途暂停）在本拍结束前补齐，板书不缺内容
       while (drawn < boardItems.length) {

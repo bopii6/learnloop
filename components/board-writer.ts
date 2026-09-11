@@ -73,8 +73,6 @@ export interface BoardWriter {
   writeItem(item: BoardItem): Promise<void>;
   /** 角色进入"出题"姿势（举手 + 问号）；false 还原 */
   characterAsk(on: boolean): void;
-  /** 即兴情绪反应：台词命中关键词时换 fail/happy 姿势，片刻后自动归位 */
-  characterReact(pose: "fail" | "happy"): void;
   /** 角色庆祝姿势 + 撒花（结课时调用） */
   characterCelebrate(): void;
   /** 已写下的模块名/小节名（注入学员提问上下文） */
@@ -575,21 +573,6 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
     if (!moduleUsed || castActive) return;
     eraseCharacter();
     void drawCharacter(pose);
-  }
-
-  let reactTimer: number | null = null;
-  /** 即兴情绪反应：台词命中关键词时角色换 fail/happy 姿势，片刻后归位（一拍至多一次，由调用方节流） */
-  function characterReactInternal(pose: "fail" | "happy"): void {
-    if (castActive || !moduleUsed) return;
-    if (reactTimer) window.clearTimeout(reactTimer);
-    eraseCharacter();
-    void drawCharacter(pose);
-    reactTimer = window.setTimeout(() => {
-      reactTimer = null;
-      if (castActive) return;
-      eraseCharacter();
-      void drawCharacter("normal");
-    }, 2600);
   }
 
   /** 角色随板书节奏蹦一下：每写完一条内容原地小跳（离散帧，不跑连续动画——大板书逐帧改场景会卡） */
@@ -1481,10 +1464,6 @@ export function createBoardWriter(getApi: () => any): BoardWriter {
 
     characterAsk(on: boolean) {
       setCharacterPose(on ? "ask" : "normal");
-    },
-
-    characterReact(pose: "fail" | "happy") {
-      characterReactInternal(pose);
     },
 
     characterCelebrate() {
