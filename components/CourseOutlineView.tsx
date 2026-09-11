@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { uploadTextbookPdf } from "@/lib/textbook-client";
 import { fmtDuration } from "@/lib/format";
+import { CourseCover } from "./CourseCover";
 import { Icon } from "./icons";
 
 interface CourseOutlineViewProps {
@@ -131,11 +132,19 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
   };
 
   return (
-    <div className="max-w-[720px] mx-auto pt-12 px-6 pb-24">
-      {/* 文档头：标题 → 受众 → 进度 → 继续学习（极简文档式：无卡片框） */}
-      <header>
-        <h1 className="text-[24px] font-bold leading-snug tracking-tight">{outline.title}</h1>
-        <p className="mt-2 text-[13.5px] text-ink-soft leading-relaxed">{outline.audience}</p>
+    <div className="max-w-[760px] mx-auto pt-10 px-6 pb-24">
+      {/* 封面横幅：给页面一个视觉头图（母题居中、色场铺满） */}
+      <CourseCover
+        seed={courseId}
+        title={outline.title}
+        className="h-[190px] w-full rounded-2xl border border-[#e4e4e7] shadow-[0_6px_28px_rgba(24,24,27,0.06)]"
+        rounded="rounded-2xl"
+      />
+
+      {/* 文档头：标题 → 受众 → 进度 → 继续学习 */}
+      <header className="mt-7">
+        <h1 className="text-[26px] font-bold leading-snug tracking-tight">{outline.title}</h1>
+        <p className="mt-2 text-[14px] text-ink-soft leading-relaxed">{outline.audience}</p>
         {outline.tags.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[12px] text-ink-faint">
             {outline.tags.slice(0, 5).map((tag) => (
