@@ -508,9 +508,41 @@ export async function runClarifyStep(opts: {
 
   const userMsg = `${constraintsContext}${context}${prevAnswers}${sourceContext}${excerptsContext}${profileContext}用户想学习：${query}\n\n请生成第 ${round} 个澄清问题。`;
 
+  const isValidQuestion = (q: ClarifyQuestion | null | undefined): q is ClarifyQuestion =>
+    Boolean(q && q.question && Array.isArray(q.options) && q.options.length >= 2);
+
   let question = await generateJson<ClarifyQuestion>(COURSE_CLARIFY_SYSTEM, userMsg);
 
-  if (!question || !question.question || !question.options || question.options.length < 2) {
+  // 澄清卡是产品对用户的核心承诺：模型偶发吐出坏 JSON/空对象时，重问一次而不是静默跳过
+  if (!isValidQuestion(question)) {
+    console.error(`[clarify] round ${round} 输出不合格，重试一次：`, JSON.stringify(question)?.slice(0, 300));
+    question = await generateJson<ClarifyQuestion>(
+      COURSE_CLARIFY_SYSTEM,
+      `${userMsg}
+
+⚠ 你上一次的输出不是合法的题目 JSON。重新输出：只输出一个 JSON 对象，格式为 {"question":"一句中文提问","reason":"≤40字理由","options":[{"label":"…","desc":"…"},{"label":"…","desc":"…"},{"label":"…","desc":"…"}]}，options 至少 3 个。`
+    );
+  }
+  if (!isValidQuestion(question)) {
+    // 第 1 轮绝不跳过：用户输入往往很短（如"学习AI"），澄清卡没了用户会觉得被无视。
+    // 模型连续两次输出不合格时，用保底的前置经验题兜底。
+    console.error(`[clarify] round ${round} 重试仍不合格，改用保底题`);
+    if (round === 1) {
+      const fallback: ClarifyQuestion = {
+        id: "q1",
+        question: `在这个主题上，你目前的起点更接近哪一种？`,
+        reason: "先确认起点，避免课程讲得太浅或太深",
+        multi: false,
+        skippable: true,
+        options: [
+          { label: "完全零基础", desc: "没系统接触过，想从最核心的概念开始，别一上来就堆术语" },
+          { label: "有一些了解", desc: "零散看过一些内容，想系统梳理清楚，并补上动手实操" },
+          { label: "比较熟练", desc: "有实际使用/动手经验，想直奔进阶主题和实战方法" },
+        ],
+      };
+      await emit({ type: "clarify_round", round, total_rounds: 4, question: fallback, courseId });
+      return { question: fallback, done: false };
+    }
     await emit({ type: "stage", name: "clarify_round", label: "构思初步思路", status: "end", detail: "澄清完成" });
     return { done: true };
   }
