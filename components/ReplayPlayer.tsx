@@ -9,7 +9,7 @@ import { Whiteboard } from "./Whiteboard";
 import { createBoardWriter, type BoardWriter } from "./board-writer";
 import { createTtsPlayer, fetchTtsSegments, prefetchTts, ttsUnavailable } from "@/lib/tts-client";
 import { planItemLines, splitSpeechLines } from "@/lib/speech-lines";
-import { boardCssVars, CHROME_VARS } from "@/lib/board-themes";
+import { boardCssVars, CHROME_VARS, boardColors } from "@/lib/board-themes";
 
 let cachedZhVoice: SpeechSynthesisVoice | null = null;
 function pickZhVoice(): SpeechSynthesisVoice | null {
@@ -58,6 +58,16 @@ export function ReplayPlayer({ replayId }: { replayId: string }) {
   voiceRef.current = voiceOn;
   const statusRef = useRef<Status>("loading");
   statusRef.current = status;
+
+  // SSR 水合不会重写内联 style（客户端与客户端 diff 恒等），纸面色必须挂载后直写 DOM
+  const replayRootRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = replayRootRef.current;
+    if (!el) return;
+    el.style.setProperty("--board-bg", boardColors.boardBg);
+    el.style.setProperty("--board-dot", boardColors.boardDot);
+    el.style.backgroundColor = boardColors.boardBg;
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -314,8 +324,9 @@ export function ReplayPlayer({ replayId }: { replayId: string }) {
 
   return (
     <div
-      className="classroom-sunny fixed inset-0 bg-[#fffcf4] flex flex-col z-50"
-      style={{ ...boardCssVars(), ...CHROME_VARS } as React.CSSProperties}
+      ref={replayRootRef}
+      className="classroom-sunny fixed inset-0 flex flex-col z-50"
+      style={{ ...boardCssVars(), ...CHROME_VARS, backgroundColor: "var(--board-bg)" } as React.CSSProperties}
     >
       {/* 顶栏 */}
       <div className="h-14 border-b border-[#e4e4e7] flex items-center justify-between px-4 shrink-0">

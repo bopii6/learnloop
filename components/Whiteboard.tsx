@@ -18,7 +18,6 @@ interface WhiteboardProps {
   viewMode?: boolean;
   zenMode?: boolean;
   boardFont?: string;
-  boardDots?: boolean;
 }
 
 export function Whiteboard({
@@ -29,7 +28,6 @@ export function Whiteboard({
   viewMode = true,
   zenMode = false,
   boardFont = "handwriting",
-  boardDots = true,
 }: WhiteboardProps) {
   const excalidrawRef = useRef<any>(null);
   const [Excalidraw, setExcalidraw] = useState<any>(null);
@@ -58,7 +56,7 @@ export function Whiteboard({
 
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-[#faf9f6]">
+      <div className="flex-1 flex items-center justify-center [background-color:var(--board-bg,#f6f7f9)]">
         <div className="text-[14px] text-ink-soft">正在加载白板…</div>
       </div>
     );
@@ -66,7 +64,7 @@ export function Whiteboard({
 
   if (!Excalidraw) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-3 bg-[#faf9f6]">
+      <div className="flex-1 flex flex-col items-center justify-center gap-3 [background-color:var(--board-bg,#f6f7f9)]">
         <div className="text-[14px] text-red-600">白板加载失败（网络或资源问题）</div>
         {/* 白板就绪是开讲的硬前提：失败必须给一条自助重试路，不能让课堂永远停在"正在准备白板" */}
         <button
@@ -84,7 +82,10 @@ export function Whiteboard({
   }
 
   return (
-    <div className="flex-1 relative excalidraw-host" data-board-font={boardFont} data-board-dots={boardDots ? "on" : "off"}>
+    <div
+      className="flex-1 relative excalidraw-host"
+      data-board-font={boardFont}
+    >
       <Excalidraw
         excalidrawAPI={(api: any) => {
           excalidrawRef.current = api;
@@ -114,13 +115,6 @@ export function Whiteboard({
         }}
       />
       <style>{`
-        .excalidraw-host {
-          --ws-bg-size: 28px;
-          --ws-bg-x: 0px;
-          --ws-bg-y: 0px;
-          --ws-dot-r0: 0.55px;
-          --ws-dot-r1: 1.7px;
-        }
         /* 课堂是"看"的模式：库自带的汉堡菜单 / 帮助 / 左下缩放全部隐藏，
            缩放由顶栏自研控件统一提供，避免两套 UI 并存 */
         .excalidraw-host .main-menu-trigger,
@@ -128,16 +122,8 @@ export function Whiteboard({
         .excalidraw-host .layer-ui__wrapper__footer-left {
           display: none !important;
         }
-        .excalidraw-host[data-board-dots="on"] {
-          background-color: var(--board-bg, #faf9f6);
-          background-image:
-            radial-gradient(circle at 1px 1px, var(--board-dot, #d3d1c7) var(--ws-dot-r0), transparent 0),
-            radial-gradient(circle at 14px 14px, var(--board-dot, #d3d1c7) var(--ws-dot-r1), transparent 0);
-          background-size: var(--ws-bg-size) var(--ws-bg-size);
-          background-position: var(--ws-bg-x) var(--ws-bg-y);
-        }
-        .excalidraw-host[data-board-dots="off"] {
-          background-color: var(--board-bg, #faf9f6);
+        .excalidraw-host {
+          background-color: var(--board-bg, #f6f7f9);
         }
       `}</style>
     </div>

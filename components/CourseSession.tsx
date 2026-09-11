@@ -9,7 +9,7 @@ import { useClassroomSocket, type ClassroomState } from "@/hooks/useClassroomSoc
 import { startVoiceCapture, type VoiceCapture } from "./voice-capture";
 import { consumeSse } from "@/lib/sse";
 import { planItemLines, splitSpeechLines } from "@/lib/speech-lines";
-import { boardCssVars, CHROME_VARS } from "@/lib/board-themes";
+import { boardCssVars, CHROME_VARS, boardColors } from "@/lib/board-themes";
 import { createTtsPlayer, fetchTtsSegments, prefetchTts, ttsUnavailable } from "@/lib/tts-client";
 import { exportBoardPoster, exportScriptPoster, downloadBlob, copyImageToClipboard, safeFilename } from "@/lib/board-poster";
 import { VerticalClipModal, type ClipBeat } from "./VerticalClipModal";
@@ -200,6 +200,15 @@ export function CourseSession({
   // 学员称呼：只在第一次（画像里还没有名字时）在预告卡顺口问一次，之后自动记住
   const [profileName, setProfileName] = useState<string | null>(null); // null = 还没加载
   const [introName, setIntroName] = useState("");
+  // 纸面色（卡片冷调）：SSR 水合不会重写内联 style（客户端与客户端 diff 恒等），挂载后直写 DOM
+  const classroomRootRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = classroomRootRef.current;
+    if (!el) return;
+    el.style.setProperty("--board-bg", boardColors.boardBg);
+    el.style.setProperty("--board-dot", boardColors.boardDot);
+    el.style.backgroundColor = boardColors.boardBg;
+  }, []);
   useEffect(() => {
     fetch("/api/profile")
       .then((r) => (r.ok ? r.json() : null))
@@ -1309,8 +1318,9 @@ export function CourseSession({
 
   return (
     <div
-      className="classroom-sunny fixed inset-0 bg-[#fffcf4] flex flex-col z-50"
-      style={{ ...boardCssVars(), ...CHROME_VARS } as React.CSSProperties}
+      ref={classroomRootRef}
+      className="classroom-sunny fixed inset-0 flex flex-col z-50"
+      style={{ ...boardCssVars(), ...CHROME_VARS, backgroundColor: "var(--board-bg)" } as React.CSSProperties}
     >
       {/* 顶部栏（Hyperknow 风格：标题 + 播放控制 + 缩放 + 操作） */}
       {/* 顶部栏（Hyperknow 风格：标题 + 播放控制 + 缩放 + 操作）；窄屏下控制组横向滚动，不再溢出 */}
