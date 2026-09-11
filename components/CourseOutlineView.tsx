@@ -24,18 +24,6 @@ const isLearnable = (l: LectureLike) => l.content_type === "whiteboard" || !l.co
 
 export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineViewProps) {
   const router = useRouter();
-  // 课程页三方案切换（用户选定后把选中的方案固化成唯一实现，切换器下线）
-  const [variant, setVariant] = useState<"a" | "b" | "c">(() => {
-    if (typeof window === "undefined") return "a";
-    const u = new URLSearchParams(window.location.search).get("v");
-    if (u === "b" || u === "c") return u;
-    try { const v = localStorage.getItem("ll:course-variant"); if (v === "b" || v === "c") return v; } catch {}
-    return "a";
-  });
-  const pickVariant = (v: "a" | "b" | "c") => {
-    setVariant(v);
-    try { localStorage.setItem("ll:course-variant", v); } catch {}
-  };
   // 上架到精品课程：好课标个价放进精品课，别人点开就能学
   const [marketOpen, setMarketOpen] = useState(false);
   const [marketPrice, setMarketPrice] = useState("");
@@ -143,68 +131,55 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
     router.push(`/learn/${courseId}/${lec.id}`);
   };
 
-  /* 方案 A：封面横幅 + 文档正文（当前线上版） */
-  const VariantA = () => (
-    <div className="max-w-[760px] mx-auto pt-10 px-6 pb-24">
-      {/* 封面横幅：给页面一个视觉头图（母题居中、色场铺满） */}
-      <CourseCover
-        seed={courseId}
-        title={outline.title}
-        className="h-[190px] w-full rounded-2xl border border-[#e4e4e7] shadow-[0_6px_28px_rgba(24,24,27,0.06)]"
-        rounded="rounded-2xl"
+  /* 方案 C：学习仪表盘（进度环 + 统计 + 单元卡） */
+  const pct = Math.round((visitedCount / Math.max(learnableLectures.length, 1)) * 100);
+  const Ring = () => (
+    <svg viewBox="0 0 84 84" className="h-[84px] w-[84px]">
+      <circle cx="42" cy="42" r="34" fill="none" stroke="#e4e4e7" strokeWidth="8" />
+      <circle
+        cx="42" cy="42" r="34" fill="none" stroke="rgb(var(--accent-rgb))" strokeWidth="8" strokeLinecap="round"
+        strokeDasharray={`${(213.6 * pct) / 100} 999`} transform="rotate(-90 42 42)"
       />
+      <text x="42" y="41" textAnchor="middle" className="fill-[#18181b] text-[17px] font-bold">{pct}%</text>
+      <text x="42" y="57" textAnchor="middle" className="fill-[#a1a1aa] text-[9px]">完成</text>
+    </svg>
+  );
+  const VariantC = () => (
+    <div className="min-h-screen">
+      <div className="mx-auto max-w-[840px] pt-10 px-6 pb-24">
+        <h1 className="text-[24px] font-bold leading-snug tracking-tight">{outline.title}</h1>
+        <p className="mt-1.5 text-[13px] text-ink-soft">{outline.audience}</p>
 
-      {/* 文档头：标题 → 受众 → 进度 → 继续学习 */}
-      <header className="mt-7">
-        <h1 className="text-[26px] font-bold leading-snug tracking-tight">{outline.title}</h1>
-        <p className="mt-2 text-[14px] text-ink-soft leading-relaxed">{outline.audience}</p>
-        {outline.tags.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[12px] text-ink-faint">
-            {outline.tags.slice(0, 5).map((tag) => (
-              <span key={tag}>#{tag}</span>
-            ))}
+        <div className="mt-5 grid gap-3 sm:grid-cols-3">
+          <div className="rounded-2xl border border-[#e4e4e7] bg-white p-4 flex items-center gap-3">
+            <Ring />
+            <div className="text-[12px] text-ink-faint leading-relaxed">课程进度<br /><span className="text-[13px] text-ink font-medium">已学 {visitedCount}/{learnableLectures.length} 讲</span></div>
+          </div>
+          <div className="rounded-2xl border border-[#e4e4e7] bg-white p-4">
+            <div className="text-[11px] text-ink-faint">课程体量</div>
+            <div className="mt-1.5 text-[20px] font-bold text-ink">{totalLectures} <span className="text-[12px] font-normal text-ink-faint">课节</span></div>
+            <div className="mt-1 text-[11.5px] text-ink-faint">{outline.units.length} 个单元{totalMin > 0 ? ` · ${fmtDuration(totalMin)}` : ""}</div>
+          </div>
+          <div className="rounded-2xl border border-[#e4e4e7] bg-white p-4">
+            <div className="text-[11px] text-ink-faint">结课作品</div>
+            <div className="mt-1.5 text-[13.5px] font-semibold leading-snug text-ink">{outline.capstone?.name || "—"}</div>
+            {projectLecture && !capstonePassed && (
+              <button onClick={() => openLecture(projectLecture)} className="mt-1 text-[11.5px] text-accent hover:underline">去结课工坊 →</button>
+            )}
+          </div>
+        </div>
+
+        {!completed && nextLecture && (
+          <div className="mt-4 flex items-center gap-4 rounded-2xl bg-[#18181b] p-5 text-white">
+            <div className="min-w-0 flex-1">
+              <div className="text-[11px] opacity-70">{visitedCount > 0 ? "继续学习 · 下一讲" : "开始学习 · 第 1 讲"}</div>
+              <div className="truncate text-[15px] font-semibold">{nextLecture.title}</div>
+            </div>
+            <button onClick={() => openLecture(nextLecture)} className="shrink-0 rounded-full bg-white px-4 py-2 text-[12.5px] font-semibold text-[#18181b] hover:opacity-90">
+              ▶ 开始本讲
+            </button>
           </div>
         )}
-
-        <div className="mt-6 flex items-center gap-3">
-          <span className="shrink-0 text-[13px] font-medium">
-            已学 {visitedCount} / {learnableLectures.length} 讲
-          </span>
-          <div className="h-1 flex-1 rounded-full bg-[#e4e4e7] overflow-hidden">
-            <div
-              className="h-full rounded-full bg-accent transition-all duration-500"
-              style={{ width: `${Math.max((visitedCount / Math.max(learnableLectures.length, 1)) * 100, visitedCount > 0 ? 3 : 0)}%` }}
-            />
-          </div>
-          <span className="shrink-0 text-[12px] text-ink-faint">
-            {outline.units.length} 单元 · {totalLectures} 节{totalMin > 0 ? ` · ${fmtDuration(totalMin)}` : ""}
-          </span>
-        </div>
-
-        <div className="mt-5 flex items-center gap-3">
-          {completed ? (
-            <button
-              onClick={() => nextLecture && openLecture(nextLecture)}
-              className="rounded-lg bg-[#18181b] px-4 py-2 text-[13px] font-medium text-white transition-colors hover:bg-[#3f3f46]"
-            >
-              🎉 已学完 · 随意复习
-            </button>
-          ) : (
-            <>
-              <button
-                onClick={() => nextLecture && openLecture(nextLecture)}
-                className="shrink-0 rounded-lg bg-[#18181b] px-4 py-2 text-[13px] font-medium text-white transition-colors hover:bg-[#3f3f46]"
-              >
-                ▶ {visitedCount > 0 ? "继续学习" : "开始学习"}
-              </button>
-              {nextLecture && (
-                <div className="min-w-0 truncate text-[12.5px] text-ink-faint">
-                  下一讲：<span className="text-ink-soft">{nextLecture.title}</span>
-                </div>
-              )}
-            </>
-          )}
-        </div>
 
         <div className="mt-4 flex items-center gap-4 text-[12px] text-ink-faint">
           <button
@@ -276,246 +251,6 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
             {marketState === "error" && <div className="text-[11px] text-red-600">上架失败，稍后再试</div>}
           </div>
         )}
-      </header>
-
-      <hr className="my-9 border-[#e4e4e7]" />
-
-      {/* 结课作品：文档式一段，不是横幅卡片 */}
-      {outline.capstone?.name && (
-        <section className="mb-9">
-          <div className="text-[11px] font-semibold tracking-[0.08em] text-accent">🎯 结课作品 · 学完你将亲手做出</div>
-          <div className="mt-1.5 flex items-center justify-between gap-4">
-            <div className="min-w-0">
-              <div className="text-[16px] font-semibold text-ink">{outline.capstone.name}</div>
-              {outline.capstone.description && (
-                <p className="mt-1 text-[12.5px] text-ink-soft leading-relaxed">{outline.capstone.description}</p>
-              )}
-            </div>
-            {projectLecture && (
-              <button
-                onClick={() => openLecture(projectLecture)}
-                className={`shrink-0 self-center rounded-lg px-3.5 py-2 text-[12px] font-medium transition-colors ${
-                  capstonePassed ? "border border-[#e4e4e7] text-ink-soft hover:border-accent hover:text-accent" : "bg-accent text-white hover:opacity-90"
-                }`}
-              >
-                {capstonePassed ? "已结课" : "进入结课工坊 →"}
-              </button>
-            )}
-          </div>
-        </section>
-      )}
-
-      <hr className="mb-10 border-[#e4e4e7]" />
-
-      {/* 单元目录：文档树（已学实心 / 当前高亮 / 未学空心），点行即学 */}
-      <div>
-        {outline.units.map((unit, ui) => {
-          const open = openUnits.has(unit.id);
-          const unitLearnable = unit.lectures.filter(isLearnable);
-          const unitVisited = unitLearnable.filter((l) => visited.has(l.id)).length;
-          const isCurrentUnit = Boolean(nextLecture && unit.lectures.some((l) => l.id === nextLecture.id));
-          return (
-            <section key={unit.id} className="mb-8">
-              <button onClick={() => toggleUnit(unit.id)} className="group flex w-full items-baseline gap-3 text-left">
-                <span className={`shrink-0 text-[13px] font-semibold tabular-nums ${isCurrentUnit ? "text-accent" : "text-ink-faint"}`}>
-                  {String(ui + 1).padStart(2, "0")}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="text-[15px] font-semibold leading-snug text-ink transition-colors group-hover:text-accent">
-                    {unit.title}
-                  </span>
-                  <span className="ml-2 text-[12px] text-ink-faint">
-                    {unit.lectures.length} 讲{unitVisited > 0 ? ` · 已学 ${unitVisited}` : ""}
-                  </span>
-                </span>
-                <span className={`shrink-0 text-[11px] text-ink-faint transition-transform ${open ? "rotate-180" : ""}`}>▾</span>
-              </button>
-
-              {open && (
-                <>
-                  {unit.summary && (
-                    <p className="mt-2 pl-8 text-[12.5px] leading-relaxed text-ink-soft">{unit.summary}</p>
-                  )}
-                  <div className="ml-[7px] mt-2 border-l border-[#e4e4e7]">
-                    {unit.lectures.map((lec) => {
-                      const done = visited.has(lec.id);
-                      const isNext = nextLecture?.id === lec.id;
-                      return (
-                        <div
-                          key={lec.id}
-                          onClick={() => openLecture(lec)}
-                          className={`-ml-px flex cursor-pointer items-center gap-3 border-l-2 py-2 pl-4 pr-2 transition-colors ${
-                            isNext ? "border-accent bg-accent/[0.04]" : "border-transparent hover:bg-[#fafafa]"
-                          }`}
-                        >
-                          <span
-                            className={`flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full text-[10px] ${
-                              done
-                                ? "bg-accent text-white"
-                                : isNext
-                                  ? "border-[1.5px] border-accent text-accent"
-                                  : "border-[1.5px] border-[#d4d4d8] text-transparent"
-                            }`}
-                            aria-hidden
-                          >
-                            {done ? "✓" : "•"}
-                          </span>
-                          <span className={`min-w-0 flex-1 truncate text-[13px] ${done ? "text-ink-faint" : isNext ? "font-medium text-ink" : "text-ink"}`}>
-                            {lec.title}
-                          </span>
-                          {lec.content_type === "quiz" ? (
-                            <span className={`shrink-0 text-[11.5px] ${quizPassed.get(lec.id) ? "text-[#4d7c43]" : "text-ink-faint"}`}>
-                              {quizPassed.get(lec.id) ? "✓ 测验通过" : "📝 单元测验"}
-                            </span>
-                          ) : lec.content_type === "project" ? (
-                            <span className={`shrink-0 text-[11.5px] ${capstonePassed ? "text-[#4d7c43]" : "text-ink-faint"}`}>
-                              {capstonePassed ? "✓ 已结课" : "🏆 结课作品"}
-                            </span>
-                          ) : (
-                            <span className="shrink-0 text-[11px] text-ink-faint">{lec.duration_min} 分钟</span>
-                          )}
-                          <span
-                            className={`shrink-0 text-[12px] font-medium text-accent transition-opacity ${
-                              isNext ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-                            }`}
-                          >
-                            {lec.content_type === "quiz"
-                              ? quizPassed.get(lec.id) ? "" : "去测验 →"
-                              : lec.content_type === "project"
-                                ? capstonePassed ? "" : "去结课工坊 →"
-                                : done ? "复习 →" : "▶ 学习"}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
-            </section>
-          );
-        })}
-      </div>
-    </div>
-  );
-  /* 方案 B：课堂前奏（暖阳白板语言延续到课程页） */
-  const VariantB = () => (
-    <div className="classroom-sunny min-h-screen bg-[#fffcf4]">
-      <div className="mx-auto max-w-[720px] px-6 pt-10 pb-24">
-        <div className="inline-flex items-center gap-2 rounded-full border border-[#eadfc8] bg-white px-3 py-1 text-[11.5px] text-ink-soft">
-          <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-          白板讲师课 · {visitedCount > 0 ? `已学 ${visitedCount}/${learnableLectures.length} 讲` : `${learnableLectures.length} 讲`}
-        </div>
-        <h1 className="mt-4 text-[28px] font-bold leading-snug tracking-tight text-ink">{outline.title}</h1>
-        <p className="mt-2 text-[13.5px] text-ink-soft leading-relaxed">{outline.audience}</p>
-
-        {!completed && nextLecture && (
-          <button
-            onClick={() => openLecture(nextLecture)}
-            className="mt-5 flex w-full items-center justify-between rounded-2xl bg-accent px-5 py-4 text-left text-white shadow-[0_8px_28px_rgb(var(--accent-rgb)/0.35)] transition-transform hover:-translate-y-0.5"
-          >
-            <span>
-              <span className="block text-[11px] opacity-85">{visitedCount > 0 ? "继续学习 · 下一讲" : "开始学习 · 第 1 讲"}</span>
-              <span className="block text-[14.5px] font-semibold leading-snug">{nextLecture.title}</span>
-            </span>
-            <span className="text-[20px] leading-none">▶</span>
-          </button>
-        )}
-
-        <div className="mt-6 rounded-2xl border border-[#eadfc8] bg-white p-5 shadow-[0_4px_20px_rgba(120,80,20,0.06)]">
-          <div className="text-[11px] font-semibold tracking-[0.08em] text-accent">🎯 结课作品 · 学完你将亲手做出</div>
-          <div className="mt-1.5 text-[16px] font-semibold text-ink">{outline.capstone?.name}</div>
-          {outline.capstone?.description && (
-            <p className="mt-1 text-[12.5px] leading-relaxed text-ink-soft">{outline.capstone.description}</p>
-          )}
-        </div>
-
-        <div className="mt-6 space-y-4">
-          {outline.units.map((unit, ui) => {
-            const open = openUnits.has(unit.id);
-            const unitVisited = unit.lectures.filter((l) => visited.has(l.id)).length;
-            return (
-              <div key={unit.id} className="rounded-2xl border border-[#eadfc8] bg-white p-4 shadow-[0_4px_20px_rgba(120,80,20,0.05)]">
-                <button onClick={() => toggleUnit(unit.id)} className="flex w-full items-center gap-3 text-left">
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-accent-soft text-[12px] font-bold text-accent">{ui + 1}</span>
-                  <span className="min-w-0 flex-1 text-[14px] font-semibold text-ink">{unit.title}</span>
-                  <span className="shrink-0 text-[11px] text-ink-faint">{unitVisited}/{unit.lectures.length}</span>
-                  <span className={`shrink-0 text-[11px] text-ink-faint transition-transform ${open ? "rotate-180" : ""}`}>▾</span>
-                </button>
-                {open && (
-                  <div className="mt-2 space-y-0.5 border-t border-[#f7edda] pt-2">
-                    {unit.lectures.map((lec) => {
-                      const done = visited.has(lec.id);
-                      const isNext = nextLecture?.id === lec.id;
-                      return (
-                        <div
-                          key={lec.id}
-                          onClick={() => openLecture(lec)}
-                          className={`flex cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-2 transition-colors ${isNext ? "bg-accent-soft" : "hover:bg-[#faf4ea]"}`}
-                        >
-                          <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] ${done ? "bg-accent text-white" : "border-[1.5px] border-[#e0d6c2] text-transparent"}`}>{done ? "✓" : "·"}</span>
-                          <span className={`min-w-0 flex-1 truncate text-[13px] ${done ? "text-ink-faint" : "text-ink"}`}>{lec.title}</span>
-                          <span className="shrink-0 text-[11px] text-ink-faint">{lec.duration_min} 分钟</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-  /* 方案 C：学习仪表盘（进度环 + 统计 + 单元卡） */
-  const pct = Math.round((visitedCount / Math.max(learnableLectures.length, 1)) * 100);
-  const Ring = () => (
-    <svg viewBox="0 0 84 84" className="h-[84px] w-[84px]">
-      <circle cx="42" cy="42" r="34" fill="none" stroke="#e4e4e7" strokeWidth="8" />
-      <circle
-        cx="42" cy="42" r="34" fill="none" stroke="rgb(var(--accent-rgb))" strokeWidth="8" strokeLinecap="round"
-        strokeDasharray={`${(213.6 * pct) / 100} 999`} transform="rotate(-90 42 42)"
-      />
-      <text x="42" y="41" textAnchor="middle" className="fill-[#18181b] text-[17px] font-bold">{pct}%</text>
-      <text x="42" y="57" textAnchor="middle" className="fill-[#a1a1aa] text-[9px]">完成</text>
-    </svg>
-  );
-  const VariantC = () => (
-    <div className="min-h-screen">
-      <div className="mx-auto max-w-[840px] pt-10 px-6 pb-24">
-        <h1 className="text-[24px] font-bold leading-snug tracking-tight">{outline.title}</h1>
-        <p className="mt-1.5 text-[13px] text-ink-soft">{outline.audience}</p>
-
-        <div className="mt-5 grid gap-3 sm:grid-cols-3">
-          <div className="rounded-2xl border border-[#e4e4e7] bg-white p-4 flex items-center gap-3">
-            <Ring />
-            <div className="text-[12px] text-ink-faint leading-relaxed">课程进度<br /><span className="text-[13px] text-ink font-medium">已学 {visitedCount}/{learnableLectures.length} 讲</span></div>
-          </div>
-          <div className="rounded-2xl border border-[#e4e4e7] bg-white p-4">
-            <div className="text-[11px] text-ink-faint">课程体量</div>
-            <div className="mt-1.5 text-[20px] font-bold text-ink">{totalLectures} <span className="text-[12px] font-normal text-ink-faint">课节</span></div>
-            <div className="mt-1 text-[11.5px] text-ink-faint">{outline.units.length} 个单元{totalMin > 0 ? ` · ${fmtDuration(totalMin)}` : ""}</div>
-          </div>
-          <div className="rounded-2xl border border-[#e4e4e7] bg-white p-4">
-            <div className="text-[11px] text-ink-faint">结课作品</div>
-            <div className="mt-1.5 text-[13.5px] font-semibold leading-snug text-ink">{outline.capstone?.name || "—"}</div>
-            {projectLecture && !capstonePassed && (
-              <button onClick={() => openLecture(projectLecture)} className="mt-1 text-[11.5px] text-accent hover:underline">去结课工坊 →</button>
-            )}
-          </div>
-        </div>
-
-        {!completed && nextLecture && (
-          <div className="mt-4 flex items-center gap-4 rounded-2xl bg-[#18181b] p-5 text-white">
-            <div className="min-w-0 flex-1">
-              <div className="text-[11px] opacity-70">{visitedCount > 0 ? "继续学习 · 下一讲" : "开始学习 · 第 1 讲"}</div>
-              <div className="truncate text-[15px] font-semibold">{nextLecture.title}</div>
-            </div>
-            <button onClick={() => openLecture(nextLecture)} className="shrink-0 rounded-full bg-white px-4 py-2 text-[12.5px] font-semibold text-[#18181b] hover:opacity-90">
-              ▶ 开始本讲
-            </button>
-          </div>
-        )}
 
         <div className="mt-6 space-y-3">
           {outline.units.map((unit, ui) => {
@@ -543,7 +278,17 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
                         <div key={lec.id} onClick={() => openLecture(lec)} className={`flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 transition-colors ${isNext ? "bg-accent-soft/60" : "hover:bg-[#fafafa]"}`}>
                           <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] ${done ? "bg-accent text-white" : "border-[1.5px] border-[#d4d4d8] text-transparent"}`}>{done ? "✓" : "·"}</span>
                           <span className={`min-w-0 flex-1 truncate text-[13px] ${done ? "text-ink-faint" : "text-ink"}`}>{lec.title}</span>
-                          <span className="shrink-0 text-[11px] text-ink-faint">{lec.duration_min} 分钟</span>
+                          {lec.content_type === "quiz" ? (
+                            <span className={`shrink-0 text-[11px] ${quizPassed.get(lec.id) ? "text-[#4d7c43]" : "text-ink-faint"}`}>
+                              {quizPassed.get(lec.id) ? "✓ 测验通过" : "📝 单元测验"}
+                            </span>
+                          ) : lec.content_type === "project" ? (
+                            <span className={`shrink-0 text-[11px] ${capstonePassed ? "text-[#4d7c43]" : "text-ink-faint"}`}>
+                              {capstonePassed ? "✓ 已结课" : "🏆 结课作品"}
+                            </span>
+                          ) : (
+                            <span className="shrink-0 text-[11px] text-ink-faint">{lec.duration_min} 分钟</span>
+                          )}
                         </div>
                       );
                     })}
@@ -557,25 +302,5 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
     </div>
   );
 
-  return (
-    <>
-      {variant === "a" && <VariantA />}
-      {variant === "b" && <VariantB />}
-      {variant === "c" && <VariantC />}
-
-      {/* 方案切换器：用户选定后删除 */}
-      <div className="fixed bottom-4 right-4 z-[200] flex items-center gap-1 rounded-full bg-[#18181b] p-1 shadow-xl">
-        <span className="px-2 text-[10.5px] text-white/60">课程页方案</span>
-        {(["a", "b", "c"] as const).map((v) => (
-          <button
-            key={v}
-            onClick={() => pickVariant(v)}
-            className={`h-7 min-w-7 rounded-full px-2.5 text-[11px] font-bold transition-colors ${variant === v ? "bg-white text-[#18181b]" : "text-white/70 hover:text-white"}`}
-          >
-            {v.toUpperCase()}
-          </button>
-        ))}
-      </div>
-    </>
-  );
+  return <VariantC />;
 }
