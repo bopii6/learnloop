@@ -10,7 +10,8 @@ import { startVoiceCapture, type VoiceCapture } from "./voice-capture";
 import { consumeSse } from "@/lib/sse";
 import { planItemLines, splitSpeechLines } from "@/lib/speech-lines";
 import { boardCssVars, CHROME_VARS, boardColors } from "@/lib/board-themes";
-import { createTtsPlayer, fetchTtsSegments, prefetchTts, ttsUnavailable } from "@/lib/tts-client";
+import { createTtsPlayer, fetchTtsSegments, prefetchTts, resetTtsDisabled, ttsDisabledReason, ttsUnavailable } from "@/lib/tts-client";
+import { AuthModal } from "./AuthModal";
 import { exportBoardPoster, exportScriptPoster, downloadBlob, copyImageToClipboard, safeFilename } from "@/lib/board-poster";
 import { VerticalClipModal, type ClipBeat } from "./VerticalClipModal";
 import { Icon } from "./icons";
@@ -229,6 +230,8 @@ export function CourseSession({
   // —— 讲解的细粒度控制与反馈 ——
   const [prepStage, setPrepStage] = useState<string | null>(null); // 备课进度（服务端逐片段 stage 事件）
   const [ttsIssue, setTtsIssue] = useState(false); // 云端语音连续失败：提示学员并提供自救
+  const [ttsAuthNeeded, setTtsAuthNeeded] = useState(false); // 云端音色因未登录被禁：明示学员并提供登录入口
+  const [authOpen, setAuthOpen] = useState(false); // 课堂内登录弹窗（课堂页不在 AppShell 内，没有侧栏登录入口）
   const browserVoicePrefRef = useRef(false); // 学员选择过"改用浏览器音色"
   const replayReqRef = useRef(false); // 重听本句：speak 收敛后原地重讲
   const lastSectionKeyRef = useRef(""); // 白板标题去重：最近写上的小节标题（归一化键）
@@ -541,7 +544,9 @@ export function CourseSession({
           await player.promise;
           finish();
         } else if (ttsUnavailable()) {
-          // 服务端没配云端 TTS（自部署）：回退浏览器系统音色
+          // 服务端没嘴：501=自部署没配 key（安静顶上）；401/403=未登录——必须明说，
+          // 不然学员只觉得"声音变了"，不知道登录就能换回云端讲师音色
+          if (ttsDisabledReason() === "unauthenticated") setTtsAuthNeeded(true);
           speakWithBrowser(text, spd, (stop) => {
             speechStopRef.current = stop;
           }, finish);
@@ -1826,6 +1831,29 @@ export function CourseSession({
             </button>
           )}
         </div>
+      )}
+
+      {/* 云端音色因未登录被禁：浏览器音色顶上，但必须明说 + 给登录入口，登录后当堂恢复 */}
+      {ttsAuthNeeded && !wsLost && (
+        <div className="absolute left-1/2 -translate-x-1/2 top-16 z-[75] rounded-xl bg-[#2b2a26] px-4 py-2.5 text-[12.5px] text-white shadow-xl fade-up flex items-center gap-3">
+          <span>登录后才能用云端讲师音色，现在用的是浏览器系统音色</span>
+          <button
+            onClick={() => setAuthOpen(true)}
+            className="shrink-0 underline underline-offset-2 text-[#ffd9a8] hover:opacity-80"
+          >
+            登录
+          </button>
+        </div>
+      )}
+      {authOpen && (
+        <AuthModal
+          onClose={() => setAuthOpen(false)}
+          onLoggedIn={() => {
+            setAuthOpen(false);
+            setTtsAuthNeeded(false);
+            resetTtsDisabled(); // 下一句起恢复云端音色，无需刷新页面
+          }}
+        />
       )}
 
       {/* 产物操作反馈（海报/回放）：深色 toast + 可选回放链接 */}

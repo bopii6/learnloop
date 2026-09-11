@@ -4,12 +4,26 @@
 // blob URL 进程内缓存：同一句重播/续播不再请求、不再计费。
 const cache = new Map<string, string[]>(); // 原文 -> blob URL 分段
 const inflight = new Map<string, Promise<string[] | null>>(); // 在途请求：预取与 speak 并发时去重，同句不双倍计费
-let disabled = false; // 服务端未配置（501）时置 true，本次会话不再发请求
+let disabled = false; // 服务端没嘴（501/401/403）时置 true，本次会话不再发请求
+let disabledReason: "unconfigured" | "unauthenticated" | null = null; // disabled 的原因：提示文案与恢复策略不同
 let failStreak = 0; // 连续失败计数：瞬时抖动不该把课堂拖回生硬的浏览器音色
 let failBackoffUntil = 0; // 连续失败后的快速失败窗口：先安静推进，稍后再探
 
 export function ttsUnavailable(): boolean {
   return disabled;
+}
+
+/** disabled 的原因：unconfigured=服务端没配 key（自部署）；unauthenticated=未登录（401/403） */
+export function ttsDisabledReason(): "unconfigured" | "unauthenticated" | null {
+  return disabledReason;
+}
+
+/** 登录成功后调用：清掉 401/403 置下的禁用标记，恢复云端语音（无需刷新页面） */
+export function resetTtsDisabled(): void {
+  disabled = false;
+  disabledReason = null;
+  failStreak = 0;
+  failBackoffUntil = 0;
 }
 
 /** 云端已配置但暂时连不上（连续失败后的冷却窗口内）：调用方应安静推进而不是回退浏览器音色 */
@@ -43,6 +57,7 @@ async function requestSegments(text: string): Promise<string[] | null> {
       // 服务端没嘴：501 未配置 key / 401·403 未登录（如回放页）——本会话立即禁用，不空耗重试
       if (res.status === 501 || res.status === 401 || res.status === 403) {
         disabled = true;
+        disabledReason = res.status === 501 ? "unconfigured" : "unauthenticated";
         return null;
       }
       if (!res.ok) throw new Error(`tts ${res.status}`);
