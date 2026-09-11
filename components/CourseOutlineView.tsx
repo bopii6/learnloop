@@ -8,6 +8,7 @@ import type { CourseOutline } from "@/types";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { uploadTextbookPdf } from "@/lib/textbook-client";
+import { CourseCover } from "./CourseCover";
 import { fmtDuration } from "@/lib/format";
 import { Icon } from "./icons";
 
@@ -132,74 +133,76 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
 
   return (
     <div className="max-w-3xl mx-auto pt-8 px-6 pb-16 space-y-4">
-      {/* Hero：这是什么课 + 学到哪了 + 下一讲去哪 */}
-      <section className="rounded-2xl border border-[#e4e4e7] bg-white p-6 shadow-sm relative overflow-hidden">
-        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-accent via-accent-border to-accent-soft" />
-        <h1 className="text-[22px] font-bold leading-snug">{outline.title}</h1>
-        <p className="text-[13px] text-ink-soft leading-relaxed mt-1.5">{outline.audience}</p>
-        <div className="flex gap-1.5 flex-wrap mt-2.5">
-          {outline.tags.slice(0, 4).map((tag) => (
-            <span key={tag} className="rounded-full bg-[#f4f4f5] px-2 py-0.5 text-[10.5px] text-ink-soft">
-              #{tag}
-            </span>
-          ))}
+      {/* Hero：封面锚点 + 课程信息 + 进度（Hyperknow 视觉：重排版轻装饰） */}
+      <section className="rounded-2xl border border-[#e4e4e7] bg-white p-5 shadow-sm">
+        <div className="flex gap-4">
+          <CourseCover
+            seed={courseId}
+            title={outline.title}
+            className="w-[112px] h-[112px] shrink-0 border border-[#f4f4f5]"
+            rounded="rounded-xl"
+          />
+          <div className="min-w-0 flex-1">
+            <h1 className="text-[19px] font-bold leading-snug">{outline.title}</h1>
+            <p className="text-[12.5px] text-ink-soft leading-relaxed mt-1 line-clamp-2">{outline.audience}</p>
+            <div className="flex gap-1.5 flex-wrap mt-2">
+              {outline.tags.slice(0, 4).map((tag) => (
+                <span key={tag} className="rounded-full bg-[#f4f4f5] px-2 py-0.5 text-[10.5px] text-ink-soft">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2.5 flex-wrap mt-4 text-[12.5px] text-ink-soft">
-          <span>{outline.units.length} 个单元</span>
-          <span className="text-[#d4d4d8]">·</span>
-          <span>
-            {totalLectures} 个课节
-            {/* 口径统一：可学的白板讲次之外还有测验/结课环节，写清楚免得"32 节 vs 29 讲"让人犯嘀咕 */}
-            {totalLectures !== learnableLectures.length &&
-              `（含 ${totalLectures - learnableLectures.length} 节测验/结课）`}
-          </span>
-          {totalMin > 0 && (
-            <>
-              <span className="text-[#d4d4d8]">·</span>
-              <span>{fmtDuration(totalMin)}</span>
-            </>
-          )}
-          <span className="text-[#d4d4d8]">·</span>
-          <span className={visitedCount > 0 ? "text-accent font-medium" : ""}>已学 {visitedCount} / {learnableLectures.length} 讲</span>
-        </div>
-        {visitedCount > 0 && (
-          <div className="mt-2.5 h-1.5 rounded-full bg-[#f4f4f5] overflow-hidden">
+        <div className="mt-4 flex items-center gap-3">
+          <div className="h-1.5 flex-1 rounded-full bg-[#f4f4f5] overflow-hidden">
             <div
               className="h-full bg-accent rounded-full transition-all duration-500"
-              style={{ width: `${Math.max((visitedCount / Math.max(learnableLectures.length, 1)) * 100, 3)}%` }}
+              style={{ width: `${Math.max((visitedCount / Math.max(learnableLectures.length, 1)) * 100, visitedCount > 0 ? 3 : 0)}%` }}
             />
           </div>
-        )}
+          <span className="shrink-0 text-[12px] text-ink-soft">
+            已学 <span className="font-medium text-ink">{visitedCount}</span> / {learnableLectures.length} 讲
+          </span>
+        </div>
+        <div className="mt-1.5 text-[12px] text-ink-faint">
+          {outline.units.length} 个单元 · {totalLectures} 个课节
+          {/* 口径统一：可学的白板讲次之外还有测验/结课环节，写清楚免得"32 节 vs 29 讲"让人犯嘀咕 */}
+          {totalLectures !== learnableLectures.length &&
+            `（含 ${totalLectures - learnableLectures.length} 节测验/结课）`}
+          {totalMin > 0 ? ` · ${fmtDuration(totalMin)}` : ""}
+        </div>
 
-        {/* 主 CTA：永远回答"我现在点哪里"。课程名放副行独立截断——
-            此前挤在一行里被 CSS 拦腰截断，出现「…如何衡量模型对语言的」这种半个词加悬空引号 */}
-        <div className="mt-5 flex items-center gap-3 flex-wrap">
+        {/* 主 CTA：单行黑主按钮；下一讲标题独立放右侧截断，不再塞进按钮里 */}
+        <div className="mt-4 flex items-center gap-3 border-t border-[#f4f4f5] pt-4">
           {completed ? (
             <button
               onClick={() => nextLecture && openLecture(nextLecture)}
-              className="rounded-full border border-accent/40 bg-white text-accent px-6 py-2 text-[13px] font-medium hover:bg-accent/5 transition-colors"
+              className="shrink-0 rounded-full border border-[#e4e4e7] bg-white px-5 py-2 text-[13px] font-medium text-ink hover:border-accent hover:text-accent transition-colors"
             >
               已学完 · 随意复习 →
             </button>
           ) : (
-            <button
-              onClick={() => nextLecture && openLecture(nextLecture)}
-              className="rounded-full bg-accent px-6 py-2 text-left text-white shadow-lg shadow-accent/25 hover:opacity-90 transition-opacity max-w-full"
-            >
-              <span className="block text-[13.5px] font-medium leading-tight">
-                {visitedCount > 0 ? "继续学习" : "开始学习"}
-              </span>
-              <span className="block text-[11px] leading-tight opacity-85 max-w-[320px] overflow-hidden text-ellipsis whitespace-nowrap">
+            <>
+              <button
+                onClick={() => nextLecture && openLecture(nextLecture)}
+                className="shrink-0 rounded-full bg-[#18181b] px-5 py-2 text-[13px] font-medium text-white transition-colors hover:bg-[#3f3f46]"
+              >
+                {visitedCount > 0 ? "继续学习" : "开始学习"} →
+              </button>
+              <div className="min-w-0 flex-1 truncate text-[12px] text-ink-faint">
                 {visitedCount > 0 ? "下一讲：" : "第 1 讲："}
-                {nextLecture?.title || ""}
-              </span>
-            </button>
+                <span className="text-ink-soft">{nextLecture?.title || ""}</span>
+              </div>
+            </>
           )}
+        </div>
+        <div className="mt-3 flex items-center gap-4">
           <button
             onClick={() => materialRef.current?.click()}
             disabled={materialState === "uploading"}
-            className="flex items-center gap-1.5 rounded-full border border-[#e4e4e7] bg-white px-3.5 py-2 text-[12px] text-ink-soft hover:border-accent hover:text-accent transition-colors disabled:opacity-50"
+            className="flex items-center gap-1.5 text-[12px] text-ink-faint transition-colors hover:text-accent disabled:opacity-50"
           >
             <Icon name="paperclip" className="h-[13px] w-[13px]" />
             上传材料
@@ -210,12 +213,14 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
                 setMarketOpen(true);
                 setMarketState("idle");
               }}
-              className="flex items-center gap-1.5 rounded-full border border-[#e4e4e7] bg-white px-3.5 py-2 text-[12px] text-ink-soft hover:border-accent hover:text-accent transition-colors"
+              className="flex items-center gap-1.5 text-[12px] text-ink-faint transition-colors hover:text-accent"
             >
               <Icon name="link" className="h-[13px] w-[13px]" />
               上架到精品课程
             </button>
           )}
+          <span className="flex-1" />
+          <span className="text-[10.5px] text-ink-faint/80">内容由 AI 生成，请以权威来源为准</span>
         </div>
         <input
           ref={materialRef}
@@ -265,9 +270,6 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
             {marketState === "error" && <div className="text-[11px] text-red-600">上架失败，稍后再试</div>}
           </div>
         )}
-        <div className="mt-4 pt-3 border-t border-[#f4f4f5] text-[11px] text-ink-faint">
-          内容由 AI 生成，可能存在错误，请以权威来源为准
-        </div>
       </section>
 
       {/* 结课作品横幅：这门课的终点承诺——学完你将亲手做出的东西 */}
