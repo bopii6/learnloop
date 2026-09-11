@@ -71,7 +71,7 @@ export function CollapsedTimeline({ stages }: { stages: StageRecord[] }) {
         {open ? "▾ 收起执行过程" : `▸ 查看执行过程（${stages.length} 步）`}
       </button>
       {open && (
-        <div className="mt-2 rounded-lg border border-[#e7e5dc] bg-white px-4 py-3 space-y-2 fade-up">
+        <div className="mt-2 rounded-lg border border-[#e4e4e7] bg-white px-4 py-3 space-y-2 fade-up">
           {stages.map((s, i) => (
             <div key={i} className="flex items-start gap-2.5 text-[13px]">
               <span className="mt-0.5 w-4 text-center text-accent">

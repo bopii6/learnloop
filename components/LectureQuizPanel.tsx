@@ -40,7 +40,7 @@ export function LectureQuizPanel({
 
   return (
     <div className="absolute inset-0 z-[60] flex items-center justify-center bg-[#2b2a26]/45 backdrop-blur-[2px]">
-      <div className="w-[600px] max-w-[92%] max-h-[86%] overflow-y-auto rounded-3xl border border-[#e7e5dc] bg-white shadow-2xl p-7 fade-up">
+      <div className="w-[600px] max-w-[92%] max-h-[86%] overflow-y-auto rounded-3xl border border-[#e4e4e7] bg-white shadow-2xl p-7 fade-up">
         <div className="flex items-center justify-between mb-1">
           <div className="text-[11px] text-accent font-semibold tracking-[.1em]">课后练习</div>
           <button onClick={onClose} className="text-ink-faint hover:text-ink text-[16px]" aria-label="关闭">
@@ -64,12 +64,12 @@ export function LectureQuizPanel({
             const isRight =
               [...picked].sort().join(",") === [...q.answerIndexes].sort().join(",");
             return (
-              <div key={qi} className="rounded-2xl border border-[#e7e5dc] bg-[#faf9f6] p-4">
+              <div key={qi} className="rounded-2xl border border-[#e4e4e7] bg-[#fafafa] p-4">
                 <div className="flex items-start gap-2 mb-3">
                   <span className="text-[12px] text-ink-faint shrink-0 mt-0.5">Q{qi + 1}</span>
                   <div className="text-[13.5px] font-medium leading-relaxed flex-1">{q.question}</div>
                   {q.multi && (
-                    <span className="shrink-0 text-[10.5px] text-ink-faint border border-[#d3d1c7] rounded px-1.5 py-px">
+                    <span className="shrink-0 text-[10.5px] text-ink-faint border border-[#d4d4d8] rounded px-1.5 py-px">
                       多选
                     </span>
                   )}
@@ -87,11 +87,11 @@ export function LectureQuizPanel({
                   {q.options.map((opt, oi) => {
                     const pickedThis = picked.includes(oi);
                     const isAnswer = q.answerIndexes.includes(oi);
-                    let cls = "border-[#e7e5dc] bg-white hover:border-accent/60";
+                    let cls = "border-[#e4e4e7] bg-white hover:border-accent/60";
                     if (submitted) {
                       if (isAnswer) cls = "border-emerald-400 bg-emerald-50";
                       else if (pickedThis) cls = "border-red-300 bg-red-50";
-                      else cls = "border-[#e7e5dc] bg-white opacity-70";
+                      else cls = "border-[#e4e4e7] bg-white opacity-70";
                     } else if (pickedThis) {
                       cls = "border-accent bg-accent/5";
                     }
@@ -107,7 +107,7 @@ export function LectureQuizPanel({
                   })}
                 </div>
                 {submitted && q.explain && (
-                  <div className="mt-3 rounded-xl bg-white border border-[#e7e5dc] px-3.5 py-2.5 text-[12px] text-ink-soft leading-relaxed">
+                  <div className="mt-3 rounded-xl bg-white border border-[#e4e4e7] px-3.5 py-2.5 text-[12px] text-ink-soft leading-relaxed">
                     💡 {q.explain}
                   </div>
                 )}
@@ -128,7 +128,7 @@ export function LectureQuizPanel({
           ) : (
             <button
               onClick={onClose}
-              className="rounded-full border border-[#d3d1c7] px-7 py-2.5 text-[13px] text-ink hover:border-accent transition-colors"
+              className="rounded-full border border-[#d4d4d8] px-7 py-2.5 text-[13px] text-ink hover:border-accent transition-colors"
             >
               完成练习
             </button>

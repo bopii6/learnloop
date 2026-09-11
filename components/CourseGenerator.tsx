@@ -16,6 +16,7 @@ import { BlueprintEditor } from "./BlueprintEditor";
 import { Icon } from "./icons";
 import { consumeSse } from "@/lib/sse";
 import { uploadTextbookPdf } from "@/lib/textbook-client";
+import { useRouter } from "next/navigation";
 import { resetGeneratorState, useGeneratorState } from "@/hooks/useGeneratorState";
 
 interface CourseGeneratorProps {
@@ -105,7 +106,7 @@ function BoardPreview() {
   const say = BOARD_DEMO_LINES[Math.min(phase, BOARD_DEMO_LINES.length - 1)].say;
   const writing = phase < BOARD_DEMO_LINES.length;
   return (
-    <div className="relative border-b border-[#f1efe8] bg-[linear-gradient(160deg,#fdfdfb,#f6f8f4)] p-6 sm:border-b-0 sm:border-r">
+    <div className="relative border-b border-[#f4f4f5] bg-[linear-gradient(160deg,#fdfdfb,#f6f8f4)] p-6 sm:border-b-0 sm:border-r">
       <div className="min-h-[132px] space-y-3.5 text-[12.5px] leading-relaxed text-ink/85">
         {BOARD_DEMO_LINES.map((line, i) => {
           const visible = i < visibleCount;
@@ -144,6 +145,7 @@ function BoardPreview() {
 }
 
 export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
+  const router = useRouter();
   // 全部状态走 useGeneratorState（模块级仓库）：tab 切走组件卸载后，
   // SSE 事件仍写入仓库，切回首页原样恢复进度
   const [query, setQuery] = useGeneratorState("query", "");
@@ -537,50 +539,41 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
   if (step === "input") {
     return (
       <div className="relative">
-        {/* 装饰光斑：暖阳主调，衬沙色点阵背景 */}
-        <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
-          <div className="absolute -top-32 left-1/2 h-[320px] w-[620px] -translate-x-1/2 rounded-full bg-accent-border/25 blur-[110px]" />
-          <div className="absolute top-56 -left-24 h-[280px] w-[280px] rounded-full bg-accent/10 blur-[100px]" />
-          <div className="absolute top-72 -right-20 h-[260px] w-[260px] rounded-full bg-[#f3d9ae]/40 blur-[100px]" />
-        </div>
-
-        <div className="relative mx-auto max-w-3xl px-6 pb-16 pt-14">
-          {/* Hero：贴纸徽章 + 课堂同款手绘圈划 */}
-          <div className="mb-9 text-center">
-            <div className="mb-5 inline-flex rotate-[-1.2deg] items-center gap-2 rounded-full border-[1.5px] border-[#ecc794] bg-[#fdf3e3] px-3.5 py-1.5 text-[12px] font-semibold text-accent shadow-[0_2px_0_#ecc794]">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
-              Superlearn · AI 白板讲师，把任何主题讲成一门课
+        <div className="relative mx-auto max-w-3xl px-6 pb-16 pt-16">
+          {/* Hero：模式切换 + 蓝色荧光标注（Hyperknow 同款结构） */}
+          <div className="mb-8 text-center">
+            <div className="mb-6 inline-flex items-center rounded-full bg-[#f4f4f5] p-1">
+              <span className="rounded-full bg-white px-4 py-1.5 text-[13px] font-semibold text-ink shadow-[0_1px_4px_rgba(24,24,27,0.10)] ring-1 ring-[#e4e4e7]">打造课程</span>
+              <button
+                onClick={() => router.push("/chat")}
+                className="rounded-full px-4 py-1.5 text-[13px] text-ink-soft transition-colors hover:text-ink"
+              >
+                即时协助
+              </button>
             </div>
-            <h1 className="mb-3.5 text-[38px] font-black leading-[1.3] tracking-tight text-ink">
-              一句话，生成一门
-              <br />
-              <span className="relative inline-block px-2">
-                12 小时学完
-                <svg viewBox="0 0 220 40" preserveAspectRatio="none" className="absolute -inset-x-3 -inset-y-1 h-[calc(100%+8px)] w-[calc(100%+24px)]" fill="none" aria-hidden>
-                  <path d="M14 21 C 36 5, 86 2, 126 6 C 170 10, 208 13, 209 22 C 210 32, 162 37, 106 36 C 54 35, 11 33, 14 21 Z" stroke="rgb(var(--accent-rgb))" strokeWidth="3" strokeLinecap="round" opacity="0.62" />
-                </svg>
-              </span>
-              的系统课程
+            <h1 className="mb-3 text-[30px] font-bold leading-[1.4] tracking-tight text-ink">
+              使用 <span className="inline-block align-[-0.12em] text-[26px]">🛸</span> Superlearn 打造你的
+              <span className="rounded-md bg-[linear-gradient(transparent_58%,rgb(var(--accent-border-rgb)/0.9)_58%)] px-1">专属课程</span>
             </h1>
-            <p className="text-[14.5px] text-ink-soft">
+            <p className="text-[14px] text-ink-soft">
               讲解 + 板书 + 课后练习，像一对一辅导一样系统学完一学期的内容
             </p>
           </div>
 
           {qaPending && (
-            <div className="fade-up mb-4 flex items-center gap-2 rounded-2xl border border-[#e7e5dc] bg-white px-4 py-3.5 text-[13.5px] text-ink-soft shadow-sm">
+            <div className="fade-up mb-4 flex items-center gap-2 rounded-2xl border border-[#e4e4e7] bg-white px-4 py-3.5 text-[13.5px] text-ink-soft shadow-sm">
               <span className="stage-spinner inline-block shrink-0" style={{ width: 11, height: 11 }} />
               {qaPending}
             </div>
           )}
           {qaResult && (
-            <div className="fade-up mb-4 rounded-2xl border border-[#e7e5dc] bg-white px-5 py-4 text-[13.5px] text-ink shadow-sm">
+            <div className="fade-up mb-4 rounded-2xl border border-[#e4e4e7] bg-white px-5 py-4 text-[13.5px] text-ink shadow-sm">
                 <div className="mb-1.5 text-[10.5px] tracking-wide text-ink-faint">Superlearn · 直接回答</div>
               <div className="prose-course">
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>{qaResult.reply}</ReactMarkdown>
               </div>
               {qaResult.sources.length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-1.5 border-t border-[#f1efe8] pt-2.5">
+                <div className="mt-3 flex flex-wrap gap-1.5 border-t border-[#f4f4f5] pt-2.5">
                   {qaResult.sources.map((s) => (
                     <a
                       key={s.index}
@@ -588,7 +581,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
                       target="_blank"
                       rel="noreferrer"
                       title={s.title}
-                      className="max-w-[220px] truncate rounded-full bg-[#f1efe8] px-2.5 py-0.5 text-[10.5px] text-ink-soft transition-colors hover:text-accent"
+                      className="max-w-[220px] truncate rounded-full bg-[#f4f4f5] px-2.5 py-0.5 text-[10.5px] text-ink-soft transition-colors hover:text-accent"
                     >
                       [{s.index}] {s.domain}
                     </a>
@@ -607,7 +600,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
             </div>
           )}
           {chatReply && (
-            <div className="fade-up mb-4 rounded-2xl border border-[#e7e5dc] bg-white px-5 py-4 text-[13.5px] leading-relaxed text-ink shadow-sm">
+            <div className="fade-up mb-4 rounded-2xl border border-[#e4e4e7] bg-white px-5 py-4 text-[13.5px] leading-relaxed text-ink shadow-sm">
               <div className="mb-1.5 text-[10.5px] tracking-wide text-ink-faint">Superlearn</div>
               {chatReply}
               <button
@@ -729,9 +722,8 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
               {cancelNotice}
             </div>
           )}
-          {/* 输入卡：一张便签纸——顶部胶带、聚焦亮边、暖影 */}
-          <div className="relative rounded-[26px] border border-[#eadfc8] bg-white p-5 pt-6 shadow-[0_16px_50px_rgba(96,66,22,0.10)] transition-all duration-300 focus-within:border-accent/50 focus-within:shadow-[0_18px_54px_rgba(232,89,12,0.13)]">
-            <div className="pointer-events-none absolute -top-2.5 left-1/2 h-5 w-24 -translate-x-1/2 rotate-[-2deg] rounded-sm bg-accent-soft/95 shadow-sm ring-1 ring-[#ecc794]/60" aria-hidden />
+          {/* 输入卡：Hyperknow 同款——大圆角白卡 + 卡内工具行 + 圆形提交 */}
+          <div className="rounded-[24px] border border-[#e4e4e7] bg-white px-5 py-4 shadow-[0_6px_32px_rgba(24,24,27,0.07)] transition-all duration-300 focus-within:border-[#c9c9cf] focus-within:shadow-[0_8px_36px_rgba(24,24,27,0.10)]">
             <textarea
               ref={queryRef}
               value={query}
@@ -746,10 +738,9 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
               rows={3}
               className="w-full resize-none bg-transparent px-1.5 py-1 text-[15px] leading-relaxed text-ink outline-none placeholder:text-ink-faint/80"
             />
-            <div className="my-3 h-px bg-gradient-to-r from-transparent via-[#eadfc8] to-transparent" />
-            <div className="flex items-center justify-between gap-3">
+            <div className="mt-2 flex items-center justify-between gap-3">
               {/* 文档上传：附件卡（图标+文件名+大小）+ 实时改价 10 → 13 */}
-              <div className="min-w-0">
+              <div className="flex min-w-0 items-center gap-2">
                 <input
                   ref={fileRef}
                   type="file"
@@ -761,19 +752,27 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
                     e.target.value = "";
                   }}
                 />
-                {textbookId ? (
+                {!textbookId && (
+                  <button
+                    onClick={() => fileRef.current?.click()}
+                    disabled={uploading}
+                    title="上传教材 PDF，围绕它生成课程"
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#e4e4e7] text-ink-soft transition-colors hover:border-[#c9c9cf] hover:text-ink disabled:opacity-50"
+                  >
+                    {uploading ? <span className="stage-spinner inline-block" style={{ width: 13, height: 13 }} /> : <span className="text-[16px] leading-none">+</span>}
+                  </button>
+                )}
+                {textbookId && (
                   <div className="flex items-start gap-3">
-                    <div className="inline-flex items-center gap-3 rounded-xl border border-[#e7e5dc] bg-[#f8f9fa] px-3.5 py-2.5">
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-500 text-[10px] font-bold text-white">
+                    <div className="flex min-w-0 items-center gap-2.5 rounded-xl border border-[#e4e4e7] bg-[#fafafa] px-3 py-1.5">
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-red-500 text-[9px] font-bold text-white">
                         PDF
                       </span>
-                      <span>
-                        <span className="block max-w-[240px] truncate text-[13px] font-medium leading-snug text-ink">
+                      <span className="min-w-0">
+                        <span className="block max-w-[200px] truncate text-[12.5px] font-medium leading-tight text-ink">
                           《{textbookTitle}》
                         </span>
-                        <span className="mt-0.5 block text-[11px] text-ink-faint">
-                          PDF{textbookSize ? ` • ${(textbookSize / 1024).toFixed(1)} KB` : ""}
-                          {" · "}
+                        <span className="block text-[10.5px] text-ink-faint">
                           {textbookPages} 页文本{textbookOcr ? " · 已 OCR" : ""}
                         </span>
                       </span>
@@ -796,28 +795,19 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
                       <span className="mt-1 text-[11px] leading-snug text-ink-faint">{textbookNotice}</span>
                     )}
                   </div>
-                ) : (
-                  <button
-                    onClick={() => fileRef.current?.click()}
-                    disabled={uploading}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-[#d8c49a] bg-[#fdf8ec] px-3.5 py-1.5 text-[12.5px] text-ink-soft transition-colors hover:border-accent hover:bg-accent-soft/40 hover:text-accent disabled:opacity-50"
-                  >
-                    <span className="inline-flex items-center gap-1.5"><Icon name="paperclip" className="h-[13px] w-[13px]" />{uploading ? uploadLabel || "处理中…" : "上传文档，围绕它生成课程"}</span>
-                  </button>
                 )}
-                {uploadError && <span className="ml-2 text-[11.5px] text-red-600">{uploadError}</span>}
+                {uploadError && <span className="truncate text-[11.5px] text-red-600">{uploadError}</span>}
               </div>
-              <div className="flex shrink-0 items-center gap-3">
-                {/* 实时定价徽章：文档处理费 +3 */}
+              <div className="flex shrink-0 items-center gap-2.5">
                 <span
-                  className="inline-flex cursor-help items-center gap-1 rounded-full bg-[#f1efe8] px-2.5 py-1 text-[12px] text-ink-soft"
+                  className="inline-flex cursor-help items-center gap-1 rounded-full bg-[#f4f4f5] px-2.5 py-1 text-[12px] text-ink-soft"
                   title={`生成本课程需消耗 ${textbookId ? 13 : 10} 个积分${textbookId ? "（含文档处理 3 积分）" : ""}`}
                 >
-                  ✦ {textbookId ? 13 : 10} 积分
+                  ✦ {textbookId ? 13 : 10}
                 </span>
                 <button
                   onClick={() => {
-                    // 空输入不再显示"禁用"灰态（落地页主按钮要保持可用的视觉引力），点了就聚焦输入框
+                    // 空输入不置灰（主按钮保持视觉引力），点了聚焦输入框
                     if (!query.trim() && !textbookId) {
                       queryRef.current?.focus();
                       return;
@@ -825,24 +815,36 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
                     void startGeneration();
                   }}
                   disabled={loading}
-                  className="group inline-flex items-center gap-1.5 rounded-full bg-accent px-6 py-2.5 text-[13.5px] font-medium text-white shadow-lg shadow-accent/25 transition-all hover:bg-[#c24e08] hover:shadow-accent/35 disabled:opacity-60 disabled:shadow-none"
+                  aria-label={loading ? "生成中" : "开始打造课程"}
+                  title="开始打造课程"
+                  className="flex h-10 w-10 items-center justify-center rounded-full bg-[#18181b] text-white transition-colors hover:bg-[#3f3f46] disabled:opacity-50"
                 >
-                  {loading ? "生成中…" : "开始打造课程"}
-                  <span className="transition-transform duration-200 group-hover:translate-x-0.5">→</span>
+                  {loading ? <span className="stage-spinner inline-block" style={{ width: 14, height: 14, borderTopColor: "rgba(255,255,255,0.35)" }} /> : <span className="text-[16px] leading-none">↑</span>}
                 </button>
               </div>
             </div>
+          </div>
+          <div className="mt-3 text-center text-[12px] text-ink-faint">
+            或{" "}
+            <button
+              onClick={() => fileRef.current?.click()}
+              disabled={uploading}
+              className="text-ink-soft underline decoration-[#d4d4d8] underline-offset-2 transition-colors hover:text-accent disabled:opacity-50"
+            >
+              上传你的教材 PDF
+            </button>
+            ，围绕它生成课程
           </div>
 
           {/* 示例主题 chip（点击直接填入） */}
           <div className="mt-6 text-center">
             <div className="mb-3 text-[12px] text-ink-faint">不知道从哪开始？试试这些</div>
             <div className="flex flex-wrap justify-center gap-2">
-              {["LLM Agent 的 Tool Use 设计模式", "雅思 vs 托福备考策略", "Python 数据分析入门"].map((s, i) => (
+              {["LLM Agent 的 Tool Use 设计模式", "雅思 vs 托福备考策略", "Python 数据分析入门"].map((s) => (
                 <button
                   key={s}
                   onClick={() => setQuery(`系统讲解 ${s}`)}
-                  className={`rounded-full border border-[#eadfc8] bg-white px-3.5 py-1.5 text-[12px] text-ink-soft shadow-[0_2px_0_#eadfc8] transition-all hover:-translate-y-0.5 hover:border-accent/60 hover:text-accent hover:shadow-[0_4px_10px_rgb(var(--accent-border-rgb)/0.5)] ${["rotate-[-1deg]", "rotate-[0.8deg]", "rotate-[-0.6deg]"][i]}`}
+                  className="rounded-full border border-[#e4e4e7] bg-white px-3.5 py-1.5 text-[12px] text-ink-soft transition-colors hover:border-accent/50 hover:text-accent"
                 >
                   <span className="mr-1.5 text-accent/80">✦</span>
                   {s}
@@ -868,9 +870,9 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
             {HOME_FEATURES.map((f) => (
               <div
                 key={f.title}
-                className="group rounded-2xl border border-dashed border-[#e2cfa8] bg-[#fdf8ec] px-4 py-5 text-center transition-all duration-200 hover:-translate-y-0.5 hover:border-accent/50 hover:bg-white hover:shadow-[0_10px_28px_rgba(96,66,22,0.09)]"
+                className="group rounded-2xl border border-[#e4e4e7] bg-white px-4 py-5 text-center transition-all duration-200 hover:-translate-y-0.5 hover:border-[#c9c9cf] hover:shadow-[0_8px_24px_rgba(24,24,27,0.07)]"
               >
-                <div className="mx-auto mb-3 flex h-10 w-10 rotate-[-3deg] items-center justify-center rounded-xl bg-accent-soft text-accent ring-1 ring-[#ecc794]/70 transition-all group-hover:rotate-0 group-hover:bg-accent group-hover:text-white">
+                <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-accent-soft/60 text-accent transition-colors group-hover:bg-accent group-hover:text-white">
                   <FeatureIcon name={f.icon} />
                 </div>
                 <div className="text-[13px] font-semibold text-ink">{f.title}</div>
@@ -880,11 +882,11 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
           </div>
 
           {/* 课堂演示：动画演示「边讲边画」的真实节奏，不再是挂着假文案的静态截图 */}
-          <div className="mt-10 overflow-hidden rounded-3xl border border-[#eadfc8] bg-white shadow-[0_12px_40px_rgba(96,66,22,0.09)]">
-            <div className="flex items-center gap-2 border-b border-dashed border-[#eadfc8] bg-[#fdf8ec] px-5 py-3">
-              <span className="h-2.5 w-2.5 rounded-full bg-[#ecd9b4]" />
-              <span className="h-2.5 w-2.5 rounded-full bg-[#ecd9b4]" />
-              <span className="h-2.5 w-2.5 rounded-full bg-[#ecd9b4]" />
+          <div className="mt-10 overflow-hidden rounded-3xl border border-[#e4e4e7] bg-white shadow-[0_8px_32px_rgba(24,24,27,0.06)]">
+            <div className="flex items-center gap-2 border-b border-[#f4f4f5] bg-[#fafafa] px-5 py-3">
+              <span className="h-2.5 w-2.5 rounded-full bg-[#e4e4e7]" />
+              <span className="h-2.5 w-2.5 rounded-full bg-[#e4e4e7]" />
+              <span className="h-2.5 w-2.5 rounded-full bg-[#e4e4e7]" />
               <span className="ml-3 text-[11px] text-ink-faint">白板课堂 · 交互演示</span>
             </div>
             <div className="grid sm:grid-cols-[1.35fr_1fr]">
@@ -906,20 +908,18 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
           </div>
 
           {/* 页脚：品牌 + 法务入口 */}
-          <footer className="mt-12 border-t border-dashed border-[#eadfc8] pt-5 pb-2 text-center">
+          <footer className="mt-12 border-t border-[#f4f4f5] pt-5 pb-2 text-center">
             <div className="flex items-center justify-center gap-1.5 text-[12px] font-semibold text-ink-soft">
-              {/* 简笔小人：课堂讲师来页脚打个招呼 */}
-              <svg viewBox="0 0 24 24" className="h-5 w-5 text-accent" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden>
-                <circle cx="12" cy="5.5" r="2.6" />
-                <path d="M12 8.5v6M12 11l-3.5 2M12 11l3.5 2M12 14.5l-2.5 5M12 14.5l2.5 5" />
-              </svg>
+              <span className="flex h-4 w-4 items-center justify-center rounded bg-[#18181b] text-[9px] font-bold text-white">
+                S
+              </span>
               Superlearn
             </div>
             <div className="mt-2 flex items-center justify-center gap-3 text-[11px] text-ink-faint">
               <a href="/privacy" className="transition-colors hover:text-accent">隐私政策</a>
-              <span className="text-[#d9d6ca]">·</span>
+              <span className="text-[#d4d4d8]">·</span>
               <a href="/terms" className="transition-colors hover:text-accent">服务条款</a>
-              <span className="text-[#d9d6ca]">·</span>
+              <span className="text-[#d4d4d8]">·</span>
               <span>课程内容由 AI 生成，请自行核实关键信息</span>
             </div>
           </footer>
@@ -944,7 +944,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
     <div className="max-w-3xl mx-auto pt-8 px-6 pb-24">
       {/* 任务气泡（悬右） */}
       <div className="flex justify-end mb-8">
-        <div className="rounded-2xl bg-[#f1efe8] px-4 py-2.5 text-[13.5px] text-ink max-w-[70%]">
+        <div className="rounded-2xl bg-[#f4f4f5] px-4 py-2.5 text-[13.5px] text-ink max-w-[70%]">
           {query || (textbookId ? `📖 《${textbookTitle}》教材课程` : "课程生成")}
         </div>
       </div>
@@ -953,7 +953,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
       {textbookId && (
         <section className="mb-8">
           <StageHeader title="正在查看你的文档" n={1} state={readingDoc === "done" ? "done" : "running"} />
-          <div className="inline-flex items-center gap-3 rounded-xl border border-[#e7e5dc] bg-[#f8f9fa] px-3.5 py-2.5 max-w-full fade-up">
+          <div className="inline-flex items-center gap-3 rounded-xl border border-[#e4e4e7] bg-[#fafafa] px-3.5 py-2.5 max-w-full fade-up">
             <span className="w-8 h-8 shrink-0 rounded-lg bg-red-500 text-white flex items-center justify-center text-[9px] font-bold">
               PDF
             </span>
@@ -976,7 +976,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
         {searchQueries.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-3">
             {searchQueries.map((q) => (
-              <span key={q} className="rounded-full bg-[#f1efe8] px-3 py-1 text-[12px] text-ink-soft">
+              <span key={q} className="rounded-full bg-[#f4f4f5] px-3 py-1 text-[12px] text-ink-soft">
                 {q}
               </span>
             ))}
@@ -985,7 +985,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
         {sources.length > 0 && (
           <div className="space-y-1">
             {(showAllSources ? sources : sources.slice(0, 5)).map((s) => (
-              <div key={s.index} className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-[#fafaf7] fade-up">
+              <div key={s.index} className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-[#fafafa] fade-up">
                 <span
                   className="w-4.5 h-4.5 shrink-0 rounded-full flex items-center justify-center text-[10px] font-bold text-white"
                   style={{ width: 18, height: 18, background: `hsl(${(s.index * 67) % 360} 42% 52%)` }}
@@ -993,7 +993,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
                   {s.domain[0]?.toUpperCase()}
                 </span>
                 <span className="flex-1 truncate text-[13px] text-ink">{s.title}</span>
-                <span className="shrink-0 text-[10.5px] text-ink-faint border border-[#e7e5dc] rounded px-1.5 py-px">
+                <span className="shrink-0 text-[10.5px] text-ink-faint border border-[#e4e4e7] rounded px-1.5 py-px">
                   {s.domain}
                 </span>
               </div>
@@ -1038,7 +1038,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
                       <div
                         key={opt.label}
                         className={`text-left rounded-xl border px-4 py-3 ${
-                          picked ? "border-accent bg-accent/5" : "border-[#e7e5dc] bg-[#fafaf7]"
+                          picked ? "border-accent bg-accent/5" : "border-[#e4e4e7] bg-[#fafafa]"
                         }`}
                       >
                         <div className="text-[13px] font-medium mb-0.5">{opt.label}</div>
@@ -1057,7 +1057,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
 
           {/* 当前轮次的问题卡 */}
           {question && step === "clarify" && (
-            <div className="rounded-2xl border border-[#e7e5dc] bg-white p-5 fade-up">
+            <div className="rounded-2xl border border-[#e4e4e7] bg-white p-5 fade-up">
               <div className="flex items-start justify-between mb-1">
                 <div className="text-[15px] font-medium flex-1">
                   <span className="text-ink-faint mr-2">Q{round}</span>
@@ -1065,14 +1065,14 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
                   <span className="ml-2 text-[11px] text-ink-faint font-normal">已答 {answeredRounds.length} 题 · 一般 2~4 题，答完就出蓝图</span>
                 </div>
                 <div className="flex gap-2 shrink-0 ml-4">
-                  <span className="text-[11.5px] text-ink-faint border border-[#e7e5dc] rounded px-2 py-0.5">
+                  <span className="text-[11.5px] text-ink-faint border border-[#e4e4e7] rounded px-2 py-0.5">
                     {question.multi ? "多选题" : "单选题"}
                   </span>
                   {question.skippable && (
                     <button
                       onClick={() => submitAnswer("跳过")}
                       disabled={loading}
-                      className="text-[11.5px] text-ink-faint border border-[#e7e5dc] rounded px-2 py-0.5 hover:border-accent hover:text-accent transition-colors"
+                      className="text-[11.5px] text-ink-faint border border-[#e4e4e7] rounded px-2 py-0.5 hover:border-accent hover:text-accent transition-colors"
                     >
                       跳过
                     </button>
@@ -1092,7 +1092,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
                     className={`text-left rounded-2xl border px-5 py-4 transition-colors ${
                       selectedOptions.includes(opt.label)
                         ? "border-accent bg-accent/5"
-                        : "border-[#e7e5dc] bg-white hover:border-accent/60"
+                        : "border-[#e4e4e7] bg-white hover:border-accent/60"
                     }`}
                   >
                     <div className="font-semibold text-[13.5px] mb-1">{opt.label}</div>
@@ -1101,7 +1101,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
                 ))}
                 <div
                   className={`rounded-2xl border px-5 py-4 sm:col-span-2 transition-colors ${
-                    customAnswer ? "border-accent bg-accent/5" : "border-[#e7e5dc] bg-white"
+                    customAnswer ? "border-accent bg-accent/5" : "border-[#e4e4e7] bg-white"
                   }`}
                 >
                   <div className="text-[12.5px] text-ink-soft mb-2">都不太对？写个自己的</div>
@@ -1122,7 +1122,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
                     submitAnswer(customAnswer.trim() ? customAnswer.trim() : selectedOptions.join("、"))
                   }
                   disabled={loading || (!customAnswer.trim() && selectedOptions.length === 0)}
-                  className="rounded-full border border-[#d3d1c7] px-6 py-2 text-[13px] text-ink hover:border-accent hover:text-accent disabled:opacity-40 transition-colors"
+                  className="rounded-full border border-[#d4d4d8] px-6 py-2 text-[13px] text-ink hover:border-accent hover:text-accent disabled:opacity-40 transition-colors"
                 >
                   {loading ? "继续中..." : "继续"}
                 </button>
@@ -1188,7 +1188,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
                 loading={loading}
               />
               {showFeedback && (
-                <div className="mt-4 rounded-2xl border border-[#e7e5dc] bg-white p-4 flex gap-3">
+                <div className="mt-4 rounded-2xl border border-[#e4e4e7] bg-white p-4 flex gap-3">
                   <input
                     value={feedback}
                     onChange={(e) => setFeedback(e.target.value)}
@@ -1211,7 +1211,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
                 <button
                   onClick={() => setShowFeedback((v) => !v)}
                   disabled={loading}
-                  className="rounded-full border border-[#d3d1c7] bg-white px-6 py-2.5 text-[13px] text-ink hover:border-accent transition-colors disabled:opacity-40"
+                  className="rounded-full border border-[#d4d4d8] bg-white px-6 py-2.5 text-[13px] text-ink hover:border-accent transition-colors disabled:opacity-40"
                 >
                   我想修改课程讲解结构
                 </button>
@@ -1234,7 +1234,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
         <section className="mb-8">
           <StageHeader title="完善课程" n={stageTotal} state="running" />
           {confirmed && (
-            <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-[#f8f9fa] border border-[#e7e5dc] px-3.5 py-1.5 text-[12.5px] text-ink-soft fade-up">
+            <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-[#fafafa] border border-[#e4e4e7] px-3.5 py-1.5 text-[12.5px] text-ink-soft fade-up">
               <span className="text-accent">✓</span> 已确认，正在生成完整课程…
             </div>
           )}
@@ -1248,7 +1248,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
               </ol>
             </div>
           )}
-          <div className="rounded-2xl border border-[#e7e5dc] bg-white p-6 mb-4">
+          <div className="rounded-2xl border border-[#e4e4e7] bg-white p-6 mb-4">
             {progress && progress.total > 0 && (
               <div className="mb-4">
                 <div className="flex justify-between text-[12px] text-ink-soft mb-1.5">
@@ -1260,7 +1260,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
                   </span>
                   <span>{Math.round((progress.current / progress.total) * 100)}%</span>
                 </div>
-                <div className="h-1.5 rounded-full bg-[#f1efe8] overflow-hidden">
+                <div className="h-1.5 rounded-full bg-[#f4f4f5] overflow-hidden">
                   <div
                     className="h-full bg-accent transition-all duration-500"
                     style={{ width: `${(progress.current / progress.total) * 100}%` }}
@@ -1269,12 +1269,12 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
               </div>
             )}
             <div className="animate-pulse space-y-3">
-              <div className="h-4 bg-[#e7e5dc] rounded w-2/3"></div>
-              <div className="h-4 bg-[#e7e5dc] rounded w-1/2"></div>
-              <div className="h-4 bg-[#e7e5dc] rounded w-3/5"></div>
+              <div className="h-4 bg-[#e4e4e7] rounded w-2/3"></div>
+              <div className="h-4 bg-[#e4e4e7] rounded w-1/2"></div>
+              <div className="h-4 bg-[#e4e4e7] rounded w-3/5"></div>
             </div>
           </div>
-          <div className="rounded-2xl border border-[#e7e5dc] bg-white p-5 flex gap-4 items-start">
+          <div className="rounded-2xl border border-[#e4e4e7] bg-white p-5 flex gap-4 items-start">
             <div className="text-[22px]">💡</div>
             <div>
               <div className="text-[13px] font-medium mb-1">学习小贴士</div>
@@ -1288,7 +1288,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
       {step === "done" && outline && (
         <section className="mb-8" ref={doneSectionRef}>
           <StageHeader title="完善课程" n={stageTotal} state="done" />
-          <div className="rounded-2xl border border-[#e7e5dc] bg-white p-6 relative overflow-hidden fade-up">
+          <div className="rounded-2xl border border-[#e4e4e7] bg-white p-6 relative overflow-hidden fade-up">
             <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-accent via-accent-border to-accent-soft" />
             <div className="inline-flex items-center gap-1.5 rounded-full bg-accent-soft px-3 py-1 text-[11.5px] text-accent font-medium mb-3">
               ✓ 课程已就绪
@@ -1311,7 +1311,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
             <div className="text-[13.5px] text-ink-soft mb-3 leading-relaxed">{outline.audience}</div>
             <div className="flex gap-2 flex-wrap mb-4">
               {outline.tags.map((tag) => (
-                <span key={tag} className="rounded-full bg-[#f1efe8] px-3 py-1 text-[12px] text-ink-soft">
+                <span key={tag} className="rounded-full bg-[#f4f4f5] px-3 py-1 text-[12px] text-ink-soft">
                   #{tag}
                 </span>
               ))}
@@ -1338,7 +1338,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
               );
             })()}
             {designNotes.length > 0 && (
-              <div className="mt-3 rounded-xl bg-[#fafaf7] border border-[#e7e5dc] p-3.5">
+              <div className="mt-3 rounded-xl bg-[#fafafa] border border-[#e4e4e7] p-3.5">
                 <div className="text-[11.5px] text-ink-faint mb-1.5">这门课为什么这样设计</div>
                 <ol className="space-y-1">
                   {designNotes.map((note, i) => (
@@ -1393,7 +1393,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
         <div className="mt-10 flex justify-end">
           <button
             onClick={() => void cancelGeneration()}
-            className="rounded-full border border-[#d3d1c7] px-4 py-1.5 text-[12px] text-ink-faint hover:border-red-300 hover:text-red-600 transition-colors"
+            className="rounded-full border border-[#d4d4d8] px-4 py-1.5 text-[12px] text-ink-faint hover:border-red-300 hover:text-red-600 transition-colors"
           >
             取消生成
           </button>

@@ -73,7 +73,7 @@ function ProgressBlock({ c }: { c: RecordCourse }) {
           </span>
           {c.completed && <span className="text-accent font-semibold">✓ 全部学完</span>}
         </div>
-        <div className="h-2 rounded-full bg-[#f1efe8] overflow-hidden">
+        <div className="h-2 rounded-full bg-[#f4f4f5] overflow-hidden">
           <div
             className="h-full rounded-full bg-gradient-to-r from-accent to-[#f0a04a] transition-all duration-500"
             style={{ width: `${Math.max(pct, 5)}%` }}
@@ -106,7 +106,7 @@ function CardProgress({ c }: { c: RecordCourse }) {
           已学 {visited} / {learnable} 讲
           {c.completed && <span className="text-accent font-semibold ml-1.5">✓ 学完</span>}
         </div>
-        <div className="h-2 rounded-full bg-[#f1efe8] overflow-hidden">
+        <div className="h-2 rounded-full bg-[#f4f4f5] overflow-hidden">
           <div
             className="h-full rounded-full bg-gradient-to-r from-accent to-[#f0a04a] transition-all duration-500"
             style={{ width: `${Math.max(pct, 5)}%` }}
@@ -232,7 +232,7 @@ export function CourseRecordsView({
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="搜索课程…"
-              className="w-full rounded-full border border-[#e7e5dc] bg-white pl-9 pr-3 py-2 text-[12.5px] outline-none focus:border-accent/60"
+              className="w-full rounded-full border border-[#e4e4e7] bg-white pl-9 pr-3 py-2 text-[12.5px] outline-none focus:border-accent/60"
             />
             <svg viewBox="0 0 24 24" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-faint" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="11" cy="11" r="7" />
@@ -281,7 +281,7 @@ export function CourseRecordsView({
               className={`rounded-full px-3.5 py-1.5 text-[12px] font-medium transition-colors ${
                 filter === t.key
                   ? "bg-accent text-white shadow-sm"
-                  : "bg-white border border-[#e7e5dc] text-ink-soft hover:border-accent/50 hover:text-accent"
+                  : "bg-white border border-[#e4e4e7] text-ink-soft hover:border-accent/50 hover:text-accent"
               }`}
             >
               {t.label}
@@ -292,7 +292,7 @@ export function CourseRecordsView({
             <select
               value={sort}
               onChange={(e) => setSort(e.target.value as SortKey)}
-              className="rounded-lg border border-[#e7e5dc] bg-white px-2 py-1 text-[11.5px] text-ink-soft outline-none focus:border-accent/60"
+              className="rounded-lg border border-[#e4e4e7] bg-white px-2 py-1 text-[11.5px] text-ink-soft outline-none focus:border-accent/60"
             >
               <option value="recent">最近学习</option>
               <option value="created">创建时间</option>
@@ -322,7 +322,7 @@ export function CourseRecordsView({
       {courses === null && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {[0, 1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className="rounded-2xl border border-[#e7e5dc] bg-white overflow-hidden">
+            <div key={i} className="rounded-2xl border border-[#e4e4e7] bg-white overflow-hidden">
               <div className="skeleton h-[110px] w-full" />
               <div className="p-4">
                 <div className="skeleton h-4 w-11/12 rounded mb-2" />
@@ -336,7 +336,7 @@ export function CourseRecordsView({
       )}
 
       {courses && courses.length === 0 && (
-        <div className="rounded-2xl border border-dashed border-[#d3d1c7] bg-white px-6 py-12 text-center">
+        <div className="rounded-2xl border border-dashed border-[#d4d4d8] bg-white px-6 py-12 text-center">
           <div className="text-[14px] font-medium mb-1.5">你的课程架暂时是空的</div>
           <div className="text-[12.5px] text-ink-soft mb-5 leading-relaxed">
             回首页输入一个想搞懂的主题，或者上传教材 PDF，一分钟生成一门课。
@@ -351,7 +351,7 @@ export function CourseRecordsView({
       )}
 
       {courses && courses.length > 0 && shown.length === 0 && (
-        <div className="rounded-2xl border border-dashed border-[#d3d1c7] bg-white px-6 py-8 text-center">
+        <div className="rounded-2xl border border-dashed border-[#d4d4d8] bg-white px-6 py-8 text-center">
           <div className="text-[13.5px] font-medium mb-1">没有找到匹配的课程</div>
           <div className="text-[12.5px] text-ink-soft">试试其他关键词，或清空搜索。</div>
         </div>
@@ -364,7 +364,7 @@ export function CourseRecordsView({
               <button
                 onClick={() => onOpenCourse(c.id)}
                 aria-label={`${c.started ? "继续学习" : "开始学习"}：${c.title}`}
-                className="w-full text-left rounded-2xl border border-[#e7e5dc] bg-white overflow-hidden flex flex-col transition-all duration-200 hover:-translate-y-0.5 hover:border-accent/45 hover:shadow-[0_10px_28px_rgba(26,26,24,0.09)]"
+                className="w-full text-left rounded-2xl border border-[#e4e4e7] bg-white overflow-hidden flex flex-col transition-all duration-200 hover:-translate-y-0.5 hover:border-accent/45 hover:shadow-[0_10px_28px_rgba(26,26,24,0.09)]"
               >
                 {/* 封面头图：左上角标堆（新/学完），右上角留给删除按钮 */}
                 <div className="relative shrink-0">
@@ -400,7 +400,7 @@ export function CourseRecordsView({
                 <div className="flex flex-1 flex-col px-4 pt-3.5 pb-4">
                   <div className="text-[14.5px] font-bold leading-snug line-clamp-2">{c.title}</div>
                   <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-ink-faint">
-                    <span className="rounded-full bg-[#f1efe8] px-1.5 py-px text-[10px] text-ink-soft">
+                    <span className="rounded-full bg-[#f4f4f5] px-1.5 py-px text-[10px] text-ink-soft">
                       {c.source || "AI 生成"}
                     </span>
                     <span>{fmtDate(c.createdAt || c.updatedAt)}</span>
@@ -434,7 +434,7 @@ export function CourseRecordsView({
       {pendingDelete && (
         <div className="fixed inset-0 z-[90] flex items-center justify-center bg-[#2b2a26]/45 backdrop-blur-[2px]" onClick={() => !deleting && setPendingDelete(null)}>
           <div
-            className="w-[400px] max-w-[88%] rounded-3xl border border-[#e7e5dc] bg-white shadow-2xl p-6 fade-up"
+            className="w-[400px] max-w-[88%] rounded-3xl border border-[#e4e4e7] bg-white shadow-2xl p-6 fade-up"
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-label="删除课程确认"
@@ -448,7 +448,7 @@ export function CourseRecordsView({
               <button
                 onClick={() => setPendingDelete(null)}
                 disabled={deleting}
-                className="rounded-lg border border-[#e7e5dc] px-4 py-2 text-[12.5px] text-ink-soft hover:border-accent hover:text-accent transition-colors"
+                className="rounded-lg border border-[#e4e4e7] px-4 py-2 text-[12.5px] text-ink-soft hover:border-accent hover:text-accent transition-colors"
               >
                 取消
               </button>

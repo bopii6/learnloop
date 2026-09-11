@@ -147,21 +147,21 @@ function UnitNode({ data }: NodeProps) {
         <button
           onClick={(e) => { e.stopPropagation(); setEditing(true); }}
           title="重命名单元"
-          className="w-6 h-6 rounded-full bg-white border border-[#d3d1c7] text-[11px] shadow-sm hover:border-accent hover:text-accent flex items-center justify-center nodrag"
+          className="w-6 h-6 rounded-full bg-white border border-[#d4d4d8] text-[11px] shadow-sm hover:border-accent hover:text-accent flex items-center justify-center nodrag"
         >
           ✎
         </button>
         <button
           onClick={(e) => { e.stopPropagation(); d.onSplit(); }}
           title="拆分单元"
-          className="w-6 h-6 rounded-full bg-white border border-[#d3d1c7] text-[11px] shadow-sm hover:border-accent hover:text-accent flex items-center justify-center nodrag"
+          className="w-6 h-6 rounded-full bg-white border border-[#d4d4d8] text-[11px] shadow-sm hover:border-accent hover:text-accent flex items-center justify-center nodrag"
         >
           ✂
         </button>
         <button
           onClick={(e) => { e.stopPropagation(); d.onDelete(); }}
           title="删除单元"
-          className="w-6 h-6 rounded-full bg-white border border-[#d3d1c7] text-[11px] shadow-sm hover:border-red-400 hover:text-red-500 flex items-center justify-center nodrag"
+          className="w-6 h-6 rounded-full bg-white border border-[#d4d4d8] text-[11px] shadow-sm hover:border-red-400 hover:text-red-500 flex items-center justify-center nodrag"
         >
           ×
         </button>
@@ -189,8 +189,8 @@ function LectureNode({ data }: NodeProps) {
     setEditing(false);
   };
   return (
-    <div className="rounded-xl border border-[#e7e5dc] bg-white shadow-sm p-3 w-48 relative group">
-      <Handle type="target" position={Position.Left} className="!bg-[#d3d1c7] !w-1.5 !h-1.5" />
+    <div className="rounded-xl border border-[#e4e4e7] bg-white shadow-sm p-3 w-48 relative group">
+      <Handle type="target" position={Position.Left} className="!bg-[#d4d4d8] !w-1.5 !h-1.5" />
       <div className="text-[10px] text-ink-faint mb-0.5">
         讲次 {String(d.index + 1).padStart(2, "0")}
       </div>
@@ -218,7 +218,7 @@ function LectureNode({ data }: NodeProps) {
               onClick={(e) => { e.stopPropagation(); if (editing) d.onToggleDepth(d.unitId, d.lecture.id, tag); }}
               title={editing ? "点击切换该课节的深度标签" : undefined}
               className={`rounded-full px-1.5 py-0.5 text-[9px] border transition-opacity ${
-                DEPTH_COLORS[tag] || "bg-[#f1efe8] text-ink-soft border-[#e7e5dc]"
+                DEPTH_COLORS[tag] || "bg-[#f4f4f5] text-ink-soft border-[#e4e4e7]"
               } ${active ? "" : "opacity-30"} ${editing ? "nodrag" : ""}`}
             >
               {tag}
@@ -231,14 +231,14 @@ function LectureNode({ data }: NodeProps) {
         <button
           onClick={(e) => { e.stopPropagation(); setTitle(d.lecture.title); setEditing((v) => !v); }}
           title={editing ? "完成编辑" : "改标题 / 调深度标签"}
-          className="w-5 h-5 rounded-full bg-white border border-[#d3d1c7] text-[9px] shadow-sm hover:border-accent hover:text-accent flex items-center justify-center nodrag"
+          className="w-5 h-5 rounded-full bg-white border border-[#d4d4d8] text-[9px] shadow-sm hover:border-accent hover:text-accent flex items-center justify-center nodrag"
         >
           {editing ? "✓" : "✎"}
         </button>
         <button
           onClick={(e) => { e.stopPropagation(); d.onDelete(); }}
           title="删除课节"
-          className="w-5 h-5 rounded-full bg-white border border-[#d3d1c7] text-[9px] shadow-sm hover:border-red-400 hover:text-red-500 flex items-center justify-center nodrag"
+          className="w-5 h-5 rounded-full bg-white border border-[#d4d4d8] text-[9px] shadow-sm hover:border-red-400 hover:text-red-500 flex items-center justify-center nodrag"
         >
           ×
         </button>
@@ -255,7 +255,7 @@ function DeepenNode({ data }: NodeProps) {
       <Handle type="target" position={Position.Left} className="!bg-transparent !border-none !w-0 !h-0" />
       <button
         onClick={(e) => { e.stopPropagation(); d.onClick(); }}
-        className="w-full rounded-xl border border-dashed border-[#d3d1c7] py-2 text-[11px] text-ink-faint hover:border-accent hover:text-accent transition-colors bg-white/50 nodrag"
+        className="w-full rounded-xl border border-dashed border-[#d4d4d8] py-2 text-[11px] text-ink-faint hover:border-accent hover:text-accent transition-colors bg-white/50 nodrag"
       >
         + 讲深一节
       </button>
@@ -380,8 +380,8 @@ function layoutNodes(
           source: unit.id,
           target: lec.id,
           type: "smoothstep",
-          style: { stroke: "#d3d1c7", strokeWidth: 1 },
-          markerEnd: { type: MarkerType.ArrowClosed, color: "#d3d1c7", width: 12, height: 12 },
+          style: { stroke: "#d4d4d8", strokeWidth: 1 },
+          markerEnd: { type: MarkerType.ArrowClosed, color: "#d4d4d8", width: 12, height: 12 },
         });
 
         lecY += LEC_HEIGHT;
@@ -403,7 +403,7 @@ function layoutNodes(
         source: unit.id,
         target: `deepen-${unit.id}`,
         type: "smoothstep",
-        style: { stroke: "#d3d1c7", strokeWidth: 1, strokeDasharray: "4 4" },
+        style: { stroke: "#d4d4d8", strokeWidth: 1, strokeDasharray: "4 4" },
       });
     }
 
@@ -592,10 +592,10 @@ export function BlueprintEditor({ blueprint, onChange, loading }: BlueprintEdito
 
   if (loading) {
     return (
-      <div className="rounded-2xl border border-[#e7e5dc] bg-white p-6 h-[500px] flex items-center justify-center">
+      <div className="rounded-2xl border border-[#e4e4e7] bg-white p-6 h-[500px] flex items-center justify-center">
         <div className="animate-pulse space-y-4 text-center">
-          <div className="h-5 bg-[#e7e5dc] rounded w-48 mx-auto"></div>
-          <div className="h-4 bg-[#e7e5dc] rounded w-64 mx-auto"></div>
+          <div className="h-5 bg-[#e4e4e7] rounded w-48 mx-auto"></div>
+          <div className="h-4 bg-[#e4e4e7] rounded w-64 mx-auto"></div>
           <div className="text-[13px] text-ink-soft mt-4">正在生成课程结构…</div>
         </div>
       </div>
@@ -613,7 +613,7 @@ export function BlueprintEditor({ blueprint, onChange, loading }: BlueprintEdito
       <button
         onClick={() => setExpanded((v) => !v)}
         title={expanded ? "收起" : "全屏展开"}
-        className="absolute top-3 right-3 z-10 w-8 h-8 rounded-lg border border-[#e7e5dc] bg-white shadow-sm hover:border-accent hover:text-accent text-ink-soft flex items-center justify-center"
+        className="absolute top-3 right-3 z-10 w-8 h-8 rounded-lg border border-[#e4e4e7] bg-white shadow-sm hover:border-accent hover:text-accent text-ink-soft flex items-center justify-center"
       >
         {expanded ? "⤡" : "⤢"}
       </button>
@@ -627,7 +627,7 @@ export function BlueprintEditor({ blueprint, onChange, loading }: BlueprintEdito
         {history.length > 0 && (
           <button
             onClick={undo}
-            className="shrink-0 text-[11.5px] text-ink-faint border border-[#e7e5dc] rounded-full px-3 py-1 hover:border-accent hover:text-accent transition-colors"
+            className="shrink-0 text-[11.5px] text-ink-faint border border-[#e4e4e7] rounded-full px-3 py-1 hover:border-accent hover:text-accent transition-colors"
             title="撤销上一步结构修改"
           >
             ↩ 撤销（{history.length}）
@@ -636,7 +636,7 @@ export function BlueprintEditor({ blueprint, onChange, loading }: BlueprintEdito
       </div>
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-[17px] font-bold leading-snug">{blueprint.title}</span>
-        <span className="rounded-full bg-[#f1efe8] px-2.5 py-0.5 text-[11px] text-ink-soft shrink-0">
+        <span className="rounded-full bg-[#f4f4f5] px-2.5 py-0.5 text-[11px] text-ink-soft shrink-0">
           {totalLectures} 课节
         </span>
       </div>
@@ -646,7 +646,7 @@ export function BlueprintEditor({ blueprint, onChange, loading }: BlueprintEdito
         {ALL_DEPTH_TAGS.map((tag) => (
           <span
             key={tag}
-            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] border ${DEPTH_COLORS[tag] || "bg-[#f1efe8] text-ink-soft border-[#e7e5dc]"}`}
+            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] border ${DEPTH_COLORS[tag] || "bg-[#f4f4f5] text-ink-soft border-[#e4e4e7]"}`}
           >
             <span className="w-1.5 h-1.5 rounded-full bg-current opacity-70" />
             {tag}
@@ -668,7 +668,7 @@ export function BlueprintEditor({ blueprint, onChange, loading }: BlueprintEdito
   }
 
   return (
-    <div className="rounded-2xl border border-[#e7e5dc] bg-white overflow-hidden">
+    <div className="rounded-2xl border border-[#e4e4e7] bg-white overflow-hidden">
       {cardHeader}
       {canvas}
     </div>
@@ -708,7 +708,7 @@ function FlowCanvas({
       deleteKeyCode={null}
       proOptions={{ hideAttribution: true }}
     >
-      <Background color="#e7e5dc" gap={24} size={1} />
+      <Background color="#e4e4e7" gap={24} size={1} />
       <Controls showInteractive={false} position="bottom-right" />
     </ReactFlow>
   );

@@ -93,7 +93,7 @@ export function MarketView({
   const MetaChips = ({ e }: { e: MarketEntry }) => (
     <div className="flex gap-1.5 flex-wrap">
       {(e.lectures ? [`${e.lectures} 课节`, fmtHours(e.totalMin)].filter(Boolean) : []).map((t) => (
-        <span key={t} className="rounded-full bg-[#f1efe8] px-2 py-0.5 text-[10.5px] text-ink-soft">
+        <span key={t} className="rounded-full bg-[#f4f4f5] px-2 py-0.5 text-[10.5px] text-ink-soft">
           {t}
         </span>
       ))}
@@ -116,7 +116,7 @@ export function MarketView({
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="在精品课程中搜索课程"
-            className="w-full rounded-full border border-[#e7e5dc] bg-white pl-10 pr-4 py-2.5 text-[13px] outline-none focus:border-accent/60 shadow-sm"
+            className="w-full rounded-full border border-[#e4e4e7] bg-white pl-10 pr-4 py-2.5 text-[13px] outline-none focus:border-accent/60 shadow-sm"
           />
           <svg viewBox="0 0 24 24" className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-faint" fill="none" stroke="currentColor" strokeWidth="2">
             <circle cx="11" cy="11" r="7" />
@@ -132,7 +132,7 @@ export function MarketView({
               <div key={i} className={`skeleton rounded-full h-[30px] ${w}`} />
             ))}
           </div>
-          <div className="rounded-3xl border border-[#e7e5dc] bg-white overflow-hidden flex mb-5">
+          <div className="rounded-3xl border border-[#e4e4e7] bg-white overflow-hidden flex mb-5">
             <div className="skeleton w-[280px] shrink-0 min-h-[190px]" />
             <div className="flex-1 p-6 py-5">
               <div className="flex gap-2 mb-3">
@@ -150,7 +150,7 @@ export function MarketView({
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             {[0, 1, 2, 3].map((i) => (
-              <div key={i} className="rounded-2xl border border-[#e7e5dc] bg-white overflow-hidden">
+              <div key={i} className="rounded-2xl border border-[#e4e4e7] bg-white overflow-hidden">
                 <div className="skeleton w-full h-[104px]" />
                 <div className="p-4">
                   <div className="skeleton h-3 w-24 rounded mb-2" />
@@ -169,7 +169,7 @@ export function MarketView({
 
       {entries && entries.length === 0 && (
         <div className="max-w-2xl mx-auto px-6">
-          <div className="rounded-2xl border border-dashed border-[#d3d1c7] bg-white px-6 py-12 text-center">
+          <div className="rounded-2xl border border-dashed border-[#d4d4d8] bg-white px-6 py-12 text-center">
             <div className="text-[14px] font-medium mb-1.5">精品课程还空着</div>
             <div className="text-[12.5px] text-ink-soft mb-5 leading-relaxed">
               去「课程记录」打开一门好课，在课程页点「上架到精品课程」，它就会公开出现在这里。
@@ -195,7 +195,7 @@ export function MarketView({
                 className={`rounded-full px-3.5 py-1.5 text-[12px] font-medium transition-colors ${
                   cat === t
                     ? "bg-accent text-white shadow-sm"
-                    : "bg-white border border-[#e7e5dc] text-ink-soft hover:border-accent/50 hover:text-accent"
+                    : "bg-white border border-[#e4e4e7] text-ink-soft hover:border-accent/50 hover:text-accent"
                 }`}
               >
                 {t}
@@ -213,7 +213,7 @@ export function MarketView({
           {hero && (
             <button
               onClick={() => onOpenCourse(hero.courseId)}
-              className="group w-full text-left rounded-3xl border border-[#e7e5dc] bg-white overflow-hidden flex mb-5 hover:border-accent/60 hover:shadow-[0_6px_24px_rgba(0,0,0,0.07)] transition-all fade-up"
+              className="group w-full text-left rounded-3xl border border-[#e4e4e7] bg-white overflow-hidden flex mb-5 hover:border-accent/60 hover:shadow-[0_6px_24px_rgba(0,0,0,0.07)] transition-all fade-up"
             >
               <div className="overflow-hidden">
                 <CourseCover seed={hero.courseId} title={hero.title} rounded="rounded-none" className="w-[280px] shrink-0 min-h-[190px] h-full transition-transform duration-300 group-hover:scale-[1.03]" />
@@ -248,7 +248,7 @@ export function MarketView({
               {rest.map((e) => (
                 <div
                   key={e.courseId}
-                  className="group rounded-2xl border border-[#e7e5dc] bg-white overflow-hidden flex flex-col hover:border-accent/60 hover:shadow-[0_4px_20px_rgba(0,0,0,0.06)] transition-all fade-up"
+                  className="group rounded-2xl border border-[#e4e4e7] bg-white overflow-hidden flex flex-col hover:border-accent/60 hover:shadow-[0_4px_20px_rgba(0,0,0,0.06)] transition-all fade-up"
                 >
                   <button onClick={() => onOpenCourse(e.courseId)} className="block w-full overflow-hidden text-left">
                     <CourseCover seed={e.courseId} title={e.title} rounded="rounded-none" className="w-full h-[104px] transition-transform duration-300 group-hover:scale-[1.03]" />

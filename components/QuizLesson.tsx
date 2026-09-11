@@ -132,13 +132,13 @@ export function QuizLesson({ courseId, outline, lecture, onExit }: QuizLessonPro
   };
 
   return (
-    <div className="min-h-screen bg-[#faf9f6] text-ink">
+    <div className="min-h-screen bg-[#fafafa] text-ink">
       {/* 顶栏 */}
-      <div className="sticky top-0 z-10 border-b border-[#e7e5dc] bg-[#faf9f6]/95 backdrop-blur">
+      <div className="sticky top-0 z-10 border-b border-[#e4e4e7] bg-[#fafafa]/95 backdrop-blur">
         <div className="max-w-3xl mx-auto px-5 h-14 flex items-center gap-3">
           <button
             onClick={backToCourse}
-            className="rounded-full border border-[#d3d1c7] bg-white px-3.5 py-1.5 text-[12px] text-ink-soft hover:border-accent hover:text-accent transition-colors"
+            className="rounded-full border border-[#d4d4d8] bg-white px-3.5 py-1.5 text-[12px] text-ink-soft hover:border-accent hover:text-accent transition-colors"
           >
             ← 返回课程
           </button>
@@ -176,13 +176,13 @@ export function QuizLesson({ courseId, outline, lecture, onExit }: QuizLessonPro
         </div>
 
         {phase === "loading" && (
-          <div className="rounded-2xl border border-[#e7e5dc] bg-white px-6 py-10 text-center">
+          <div className="rounded-2xl border border-[#e4e4e7] bg-white px-6 py-10 text-center">
             <span className="stage-spinner inline-block" style={{ width: 18, height: 18 }} />
           </div>
         )}
 
         {phase === "intro" && (
-          <div className="rounded-2xl border border-[#e7e5dc] bg-white px-6 py-8 text-center">
+          <div className="rounded-2xl border border-[#e4e4e7] bg-white px-6 py-8 text-center">
             <div className="text-[13px] text-ink-soft leading-relaxed max-w-md mx-auto">
               题目按本单元的课节内容现出——不是题库抽题。考的是场景判断，
               做对的标准是「换个情境你还认得出这个概念」。
@@ -209,9 +209,9 @@ export function QuizLesson({ courseId, outline, lecture, onExit }: QuizLessonPro
                 [...correctSet].sort().join(",") === [...myAnswer].sort().join(",") &&
                 myAnswer.length > 0;
               return (
-                <div key={qi} className="rounded-2xl border border-[#e7e5dc] bg-white px-6 py-5">
+                <div key={qi} className="rounded-2xl border border-[#e4e4e7] bg-white px-6 py-5">
                   <div className="flex gap-2.5">
-                    <span className="shrink-0 w-6 h-6 rounded-full bg-[#f1efe8] text-ink-soft text-[11px] flex items-center justify-center font-semibold">
+                    <span className="shrink-0 w-6 h-6 rounded-full bg-[#f4f4f5] text-ink-soft text-[11px] flex items-center justify-center font-semibold">
                       {qi + 1}
                     </span>
                     <div className="text-[13.5px] font-medium leading-relaxed">{q.question}</div>
@@ -232,10 +232,10 @@ export function QuizLesson({ courseId, outline, lecture, onExit }: QuizLessonPro
                                 ? "border-emerald-300 bg-emerald-50"
                                 : showWrong
                                   ? "border-red-300 bg-red-50"
-                                  : "border-[#e7e5dc] bg-white"
+                                  : "border-[#e4e4e7] bg-white"
                               : chosen
                                 ? "border-accent bg-accent/5"
-                                : "border-[#e7e5dc] bg-white hover:border-[#c9c7bd]"
+                                : "border-[#e4e4e7] bg-white hover:border-[#c9c7bd]"
                           } ${phase === "answering" ? "cursor-pointer" : "cursor-default"}`}
                         >
                           <span
@@ -244,7 +244,7 @@ export function QuizLesson({ courseId, outline, lecture, onExit }: QuizLessonPro
                                 ? showWrong
                                   ? "border-red-400 text-red-500"
                                   : "bg-accent border-accent text-white"
-                                : "border-[#d3d1c7] text-ink-faint"
+                                : "border-[#d4d4d8] text-ink-faint"
                             } ${q.multi ? "rounded-md" : ""}`}
                           >
                             {chosen || showCorrect ? (showWrong ? "✗" : "✓") : String.fromCharCode(65 + oi)}
@@ -306,7 +306,7 @@ export function QuizLesson({ courseId, outline, lecture, onExit }: QuizLessonPro
                 {!result?.passed && (
                   <button
                     onClick={backToCourse}
-                    className="rounded-full border border-[#d3d1c7] px-5 py-2.5 text-[13px] text-ink-soft hover:border-accent hover:text-accent transition-colors"
+                    className="rounded-full border border-[#d4d4d8] px-5 py-2.5 text-[13px] text-ink-soft hover:border-accent hover:text-accent transition-colors"
                   >
                     先回课程复习
                   </button>

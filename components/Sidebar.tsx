@@ -93,10 +93,10 @@ export function Sidebar({
 
   return (
     <aside className="w-64 shrink-0 h-full p-3">
-      <div className="h-full rounded-3xl bg-white/92 backdrop-blur border border-[#eadfc8] shadow-[0_10px_36px_rgba(90,62,20,0.09)] flex flex-col overflow-hidden">
+      <div className="h-full rounded-2xl bg-white border border-[#ececee] shadow-[0_2px_16px_rgba(24,24,27,0.05)] flex flex-col overflow-hidden">
         {/* Logo：上升台阶 + 星芒（与 favicon 同一图形） */}
         <div className="px-4 pt-4 pb-3.5 flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-accent flex items-center justify-center text-white shadow-[0_4px_12px_rgb(var(--accent-rgb)/0.35)] rotate-[-3deg]">
+          <div className="w-7.5 h-7.5 rounded-lg bg-[#18181b] flex items-center justify-center text-white" style={{width:30,height:30}}>
             <svg viewBox="0 0 24 24" fill="currentColor" className="h-[17px] w-[17px]" aria-hidden>
               <rect x="3.6" y="13.6" width="4.4" height="7" rx="1.2" />
               <rect x="9.8" y="10.2" width="4.4" height="10.4" rx="1.2" />
@@ -106,7 +106,7 @@ export function Sidebar({
           </div>
           <div>
             <span className="font-extrabold text-[15.5px] tracking-tight text-ink">Superlearn</span>
-            <div className="text-[9.5px] text-ink-faint tracking-[0.14em] leading-none mt-0.5">AI 白板讲师</div>
+            <div className="text-[9.5px] text-ink-faint tracking-[0.12em] leading-none mt-0.5">AI WHITEBOARD TUTOR</div>
           </div>
         </div>
 
@@ -120,8 +120,8 @@ export function Sidebar({
                 onClick={() => onMode(item.key as "course" | "records" | "market")}
                 className={`w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] transition-colors ${
                   active
-                    ? "bg-accent-soft text-accent font-semibold shadow-[inset_0_0_0_1.5px_#ecc794]"
-                    : "text-ink-soft hover:bg-[#faf4e8] hover:text-ink"
+                    ? "bg-accent-soft/70 text-accent font-semibold"
+                    : "text-ink-soft hover:bg-[#f4f4f5] hover:text-ink"
                 }`}
               >
                 <span className={active ? "text-accent" : "text-ink-faint"}>
@@ -134,13 +134,27 @@ export function Sidebar({
           {isAdmin && (
             <a
               href="/admin"
-              className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] text-ink-soft hover:bg-[#faf4e8] hover:text-ink transition-colors"
+              className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] text-ink-soft hover:bg-[#f4f4f5] hover:text-ink transition-colors"
             >
               <span className="text-ink-faint">⚙</span>
               运营后台
             </a>
           )}
         </nav>
+
+        {/* 继续学习（Hyperknow 同款）：最近一门课，点进课程页接着学 */}
+        {courses.length > 0 && (
+          <div className="mt-5 px-3">
+            <div className="px-1 mb-1.5 text-[11px] text-ink-faint font-medium tracking-wider">继续学习</div>
+            <a
+              href={`/course/${courses[0].id}`}
+              className="block rounded-xl border border-[#ececee] bg-white px-3 py-2.5 transition-colors hover:border-[#d4d4d8] hover:bg-[#fafafa]"
+            >
+              <div className="text-[12.5px] font-medium text-ink leading-snug line-clamp-2">{courses[0].title}</div>
+              <div className="mt-1 text-[11px] text-accent">继续学习 →</div>
+            </a>
+          </div>
+        )}
 
         {/* 历史对话 */}
         <div className="mt-5 px-4 mb-1.5 flex items-center justify-between">
@@ -158,7 +172,7 @@ export function Sidebar({
             <div
               key={c.id}
               className={`group flex items-center rounded-xl px-3 py-2 cursor-pointer transition-colors ${
-                c.id === currentId ? "bg-accent-soft/70" : "hover:bg-[#faf4e8]"
+                c.id === currentId ? "bg-accent-soft/60" : "hover:bg-[#f4f4f5]"
               }`}
               onClick={() => onSelect(c.id)}
             >
@@ -185,7 +199,7 @@ export function Sidebar({
             </div>
           ))}
           {conversations.length === 0 && (
-            <div className="mx-1 mt-1 rounded-xl border border-dashed border-[#e2d3b4] bg-[#fdf8ec] px-3 py-4 text-center">
+            <div className="mx-1 mt-1 rounded-xl border border-dashed border-[#e4e4e7] bg-[#fafafa] px-3 py-4 text-center">
               <div className="mx-auto mb-2 flex h-8 w-8 items-center justify-center rounded-full bg-accent-soft text-accent">
                 <NavIcon name="chat" />
               </div>
@@ -203,10 +217,10 @@ export function Sidebar({
         </div>
 
         {/* 登录态：课程记录/教材/上架跟着账号走 */}
-        <div className="relative px-3.5 py-3.5 border-t border-dashed border-[#eadfc8]">
+        <div className="relative px-3.5 py-3.5 border-t border-[#f4f4f5]">
           {user ? (
             <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 shrink-0 rounded-full bg-accent flex items-center justify-center text-[11px] text-white font-bold">
+              <div className="w-7 h-7 shrink-0 rounded-full bg-[#18181b] flex items-center justify-center text-[11px] text-white font-bold">
                 {user.email[0]?.toUpperCase() || "?"}
               </div>
               <div className="min-w-0 flex-1">
@@ -233,7 +247,7 @@ export function Sidebar({
           ) : (
             <button
               onClick={onLogin}
-              className="w-full rounded-xl bg-accent px-3 py-2.5 text-[12.5px] font-medium text-white shadow-sm hover:bg-[#c24e08] transition-colors"
+              className="w-full rounded-xl bg-[#18181b] px-3 py-2.5 text-[12.5px] font-medium text-white hover:bg-[#3f3f46] transition-colors"
             >
               登录 / 注册
             </button>

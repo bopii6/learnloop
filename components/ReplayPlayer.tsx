@@ -318,7 +318,7 @@ export function ReplayPlayer({ replayId }: { replayId: string }) {
       style={{ ...boardCssVars(), ...CHROME_VARS } as React.CSSProperties}
     >
       {/* 顶栏 */}
-      <div className="h-14 border-b border-[#e7e5dc] flex items-center justify-between px-4 shrink-0">
+      <div className="h-14 border-b border-[#e4e4e7] flex items-center justify-between px-4 shrink-0">
         <div className="flex items-center gap-3 min-w-0">
           <span className="w-7 h-7 rounded-lg bg-accent text-white text-[13px] font-bold flex items-center justify-center shrink-0">S</span>
           <div className="min-w-0">
@@ -354,7 +354,7 @@ export function ReplayPlayer({ replayId }: { replayId: string }) {
         {/* 开场遮罩 */}
         {(status === "ready" || status === "loading") && (
           <div className="absolute inset-0 z-40 flex items-center justify-center bg-[#2b2a26]/45 backdrop-blur-[2px]">
-            <div className="w-[400px] max-w-[88%] rounded-3xl border border-[#e7e5dc] bg-white shadow-xl p-8 text-center fade-up">
+            <div className="w-[400px] max-w-[88%] rounded-3xl border border-[#e4e4e7] bg-white shadow-xl p-8 text-center fade-up">
               <div className="text-[11px] text-ink-faint uppercase tracking-[.12em] mb-2">Superlearn 白板课回放</div>
               <div className="text-[20px] font-bold leading-snug mb-2">{reel?.lectureTitle || "加载中…"}</div>
               <div className="text-[13px] text-ink-soft leading-relaxed mb-1">{reel?.courseTitle}</div>
@@ -381,7 +381,7 @@ export function ReplayPlayer({ replayId }: { replayId: string }) {
       </div>
 
       {/* 底部：进度条 + 控制 */}
-      <div className="h-14 border-t border-[#e7e5dc] flex items-center gap-4 px-4 shrink-0">
+      <div className="h-14 border-t border-[#e4e4e7] flex items-center gap-4 px-4 shrink-0">
         <button
           onClick={() => (status === "playing" ? pause() : status === "paused" || status === "done" ? resume() : startPlay(0))}
           disabled={!beats.length}

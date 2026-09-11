@@ -63,7 +63,7 @@ export function CreditsPopover({
   }, []);
 
   return (
-    <div className="absolute bottom-full left-0 right-0 mb-2 rounded-2xl border border-[#e7e5dc] bg-white shadow-xl p-4 z-50" role="dialog" aria-label="积分明细">
+    <div className="absolute bottom-full left-0 right-0 mb-2 rounded-2xl border border-[#e4e4e7] bg-white shadow-xl p-4 z-50" role="dialog" aria-label="积分明细">
       {!data && !error && <div className="py-4 text-center text-[12px] text-ink-faint">正在加载…</div>}
       {error && <div className="py-4 text-center text-[12px] text-red-600">加载失败，请稍后再试</div>}
       {data && (

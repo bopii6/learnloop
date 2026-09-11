@@ -74,7 +74,7 @@ export function AuthModal({ onClose, onLoggedIn }: AuthModalProps) {
 
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center bg-[#2b2a26]/45 backdrop-blur-[2px]">
-      <div className="w-[400px] max-w-[90%] rounded-3xl border border-[#e7e5dc] bg-white shadow-2xl p-7 fade-up">
+      <div className="w-[400px] max-w-[90%] rounded-3xl border border-[#e4e4e7] bg-white shadow-2xl p-7 fade-up">
         <div className="flex items-center justify-between mb-1">
           <div className="text-[11px] text-accent font-semibold tracking-[.1em]">Superlearn</div>
           <button onClick={onClose} className="text-ink-faint hover:text-ink text-[16px]" aria-label="关闭">
@@ -100,7 +100,7 @@ export function AuthModal({ onClose, onLoggedIn }: AuthModalProps) {
               }}
               placeholder="you@example.com"
               autoFocus
-              className="w-full rounded-xl border border-[#d3d1c7] px-4 py-2.5 text-[14px] outline-none focus:border-accent"
+              className="w-full rounded-xl border border-[#d4d4d8] px-4 py-2.5 text-[14px] outline-none focus:border-accent"
             />
             <label className="flex items-start gap-2 text-[11.5px] text-ink-soft leading-relaxed cursor-pointer select-none">
               <input
@@ -135,7 +135,7 @@ export function AuthModal({ onClose, onLoggedIn }: AuthModalProps) {
         ) : (
           <div className="space-y-3">
             {devCode && (
-              <div className="rounded-xl bg-[#fff7d6] border border-[#f1e2ab] px-3.5 py-2.5 text-[12.5px] text-ink leading-relaxed">
+              <div className="rounded-xl bg-[#fafafa] border border-[#f1e2ab] px-3.5 py-2.5 text-[12.5px] text-ink leading-relaxed">
                 本地开发模式（未配置 SMTP），验证码直接给你：<b className="tracking-widest">{devCode}</b>
                 <div className="text-[11px] text-ink-faint mt-0.5">配好 .env 的 SMTP_* 后会改为真实发信</div>
               </div>
@@ -149,7 +149,7 @@ export function AuthModal({ onClose, onLoggedIn }: AuthModalProps) {
               }}
               placeholder="6 位验证码"
               inputMode="numeric"
-              className="w-full rounded-xl border border-[#d3d1c7] px-4 py-2.5 text-[16px] tracking-[.4em] outline-none focus:border-accent text-center"
+              className="w-full rounded-xl border border-[#d4d4d8] px-4 py-2.5 text-[16px] tracking-[.4em] outline-none focus:border-accent text-center"
             />
             <button
               onClick={() => void login()}

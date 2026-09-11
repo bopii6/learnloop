@@ -9,8 +9,8 @@
 html,
 body {
   height: 100%;
-  background: #fbf7ee;
-  color: #262019;
+  background: #ffffff;
+  color: #18181b;
 }
 
 /* 全局专业度细节：字体渲染 / 选中色 / 键盘焦点环 */
@@ -24,10 +24,10 @@ h1 {
   letter-spacing: -0.015em;
 }
 ::selection {
-  background: #fcd9b8;
+  background: #dbeafe;
 }
 :focus-visible {
-  outline: 2px solid rgba(232, 89, 12, 0.5);
+  outline: 2px solid rgba(37, 99, 235, 0.45);
   outline-offset: 2px;
 }
 /* 文本输入聚焦不画矩形框（用户要求）；键盘焦点环只留给按钮/链接 */
@@ -39,10 +39,9 @@ select:focus-visible {
 
 /* 首页主区：原版点阵背景 + 顶部浅绿渐变 */
 .home-bg main {
-  background-image:
-    radial-gradient(circle, rgba(214, 176, 118, 0.16) 1px, transparent 1px),
-    linear-gradient(180deg, rgba(253, 235, 212, 0.5) 0%, rgba(251, 247, 238, 0) 32%);
-  background-size: 22px 22px, 100% 100%;
+  background-color: #fafafa;
+  background-image: radial-gradient(circle, rgba(24, 24, 27, 0.07) 1px, transparent 1px);
+  background-size: 22px 22px;
 }
 
 /* markdown 内容样式 */
@@ -370,11 +369,11 @@ select:focus-visible {
 
 /* ---- 主题 accent（Tailwind accent 系列经这些变量取色，带透明度写法依然可用） ----
    全站默认墨绿；课堂/回放等 .classroom-sunny 作用域内整体切换暖阳手账色 */
-/* 全站默认 = 暖阳手账（与课堂同一套色）：产品只有一个设计语言 */
+/* 全站默认 = Hyperknow 式极简：白底 + 锌灰墨 + 蓝点缀；课堂作用域内切暖阳不变 */
 :root {
-  --accent-rgb: 232 89 12;
-  --accent-soft-rgb: 253 235 212;
-  --accent-border-rgb: 236 199 148;
+  --accent-rgb: 37 99 235;
+  --accent-soft-rgb: 219 234 254;
+  --accent-border-rgb: 191 219 254;
 }
 .classroom-sunny {
   --accent-rgb: 232 89 12;

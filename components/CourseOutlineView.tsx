@@ -133,13 +133,13 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
   return (
     <div className="max-w-3xl mx-auto pt-8 px-6 pb-16 space-y-4">
       {/* Hero：这是什么课 + 学到哪了 + 下一讲去哪 */}
-      <section className="rounded-2xl border border-[#e7e5dc] bg-white p-6 shadow-sm relative overflow-hidden">
+      <section className="rounded-2xl border border-[#e4e4e7] bg-white p-6 shadow-sm relative overflow-hidden">
         <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-accent via-accent-border to-accent-soft" />
         <h1 className="text-[22px] font-bold leading-snug">{outline.title}</h1>
         <p className="text-[13px] text-ink-soft leading-relaxed mt-1.5">{outline.audience}</p>
         <div className="flex gap-1.5 flex-wrap mt-2.5">
           {outline.tags.slice(0, 4).map((tag) => (
-            <span key={tag} className="rounded-full bg-[#f1efe8] px-2 py-0.5 text-[10.5px] text-ink-soft">
+            <span key={tag} className="rounded-full bg-[#f4f4f5] px-2 py-0.5 text-[10.5px] text-ink-soft">
               #{tag}
             </span>
           ))}
@@ -147,7 +147,7 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
 
         <div className="flex items-center gap-2.5 flex-wrap mt-4 text-[12.5px] text-ink-soft">
           <span>{outline.units.length} 个单元</span>
-          <span className="text-[#d9d6ca]">·</span>
+          <span className="text-[#d4d4d8]">·</span>
           <span>
             {totalLectures} 个课节
             {/* 口径统一：可学的白板讲次之外还有测验/结课环节，写清楚免得"32 节 vs 29 讲"让人犯嘀咕 */}
@@ -156,15 +156,15 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
           </span>
           {totalMin > 0 && (
             <>
-              <span className="text-[#d9d6ca]">·</span>
+              <span className="text-[#d4d4d8]">·</span>
               <span>{fmtDuration(totalMin)}</span>
             </>
           )}
-          <span className="text-[#d9d6ca]">·</span>
+          <span className="text-[#d4d4d8]">·</span>
           <span className={visitedCount > 0 ? "text-accent font-medium" : ""}>已学 {visitedCount} / {learnableLectures.length} 讲</span>
         </div>
         {visitedCount > 0 && (
-          <div className="mt-2.5 h-1.5 rounded-full bg-[#f1efe8] overflow-hidden">
+          <div className="mt-2.5 h-1.5 rounded-full bg-[#f4f4f5] overflow-hidden">
             <div
               className="h-full bg-accent rounded-full transition-all duration-500"
               style={{ width: `${Math.max((visitedCount / Math.max(learnableLectures.length, 1)) * 100, 3)}%` }}
@@ -199,7 +199,7 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
           <button
             onClick={() => materialRef.current?.click()}
             disabled={materialState === "uploading"}
-            className="flex items-center gap-1.5 rounded-full border border-[#e7e5dc] bg-white px-3.5 py-2 text-[12px] text-ink-soft hover:border-accent hover:text-accent transition-colors disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded-full border border-[#e4e4e7] bg-white px-3.5 py-2 text-[12px] text-ink-soft hover:border-accent hover:text-accent transition-colors disabled:opacity-50"
           >
             <Icon name="paperclip" className="h-[13px] w-[13px]" />
             上传材料
@@ -210,7 +210,7 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
                 setMarketOpen(true);
                 setMarketState("idle");
               }}
-              className="flex items-center gap-1.5 rounded-full border border-[#e7e5dc] bg-white px-3.5 py-2 text-[12px] text-ink-soft hover:border-accent hover:text-accent transition-colors"
+              className="flex items-center gap-1.5 rounded-full border border-[#e4e4e7] bg-white px-3.5 py-2 text-[12px] text-ink-soft hover:border-accent hover:text-accent transition-colors"
             >
               <Icon name="link" className="h-[13px] w-[13px]" />
               上架到精品课程
@@ -237,19 +237,19 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
           </div>
         )}
         {marketOpen && marketState !== "done" && (
-          <div className="mt-3 rounded-xl border border-[#e7e5dc] bg-[#faf9f6] p-3 space-y-2">
+          <div className="mt-3 rounded-xl border border-[#e4e4e7] bg-[#fafafa] p-3 space-y-2">
             <input
               value={marketNote}
               onChange={(e) => setMarketNote(e.target.value)}
               placeholder="一句话推荐语（可选）"
-              className="w-full rounded-lg border border-[#e7e5dc] px-2.5 py-1.5 text-[12px] outline-none focus:border-accent bg-white"
+              className="w-full rounded-lg border border-[#e4e4e7] px-2.5 py-1.5 text-[12px] outline-none focus:border-accent bg-white"
             />
             <div className="flex items-center gap-2">
               <input
                 value={marketPrice}
                 onChange={(e) => setMarketPrice(e.target.value.replace(/[^\d.]/g, ""))}
                 placeholder="标价，留空 = 免费"
-                className="flex-1 min-w-0 rounded-lg border border-[#e7e5dc] px-2.5 py-1.5 text-[12px] outline-none focus:border-accent bg-white"
+                className="flex-1 min-w-0 rounded-lg border border-[#e4e4e7] px-2.5 py-1.5 text-[12px] outline-none focus:border-accent bg-white"
               />
               <button
                 onClick={() => void publishToMarket()}
@@ -265,7 +265,7 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
             {marketState === "error" && <div className="text-[11px] text-red-600">上架失败，稍后再试</div>}
           </div>
         )}
-        <div className="mt-4 pt-3 border-t border-[#f1efe8] text-[11px] text-ink-faint">
+        <div className="mt-4 pt-3 border-t border-[#f4f4f5] text-[11px] text-ink-faint">
           内容由 AI 生成，可能存在错误，请以权威来源为准
         </div>
       </section>
@@ -304,16 +304,16 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
         const open = openUnits.has(unit.id);
         const isCurrent = Boolean(nextLecture && unit.lectures.some((l) => l.id === nextLecture.id));
         return (
-          <section key={unit.id} className="rounded-2xl border border-[#e7e5dc] bg-white overflow-hidden">
+          <section key={unit.id} className="rounded-2xl border border-[#e4e4e7] bg-white overflow-hidden">
             <button
               onClick={() => toggleUnit(unit.id)}
               className={`w-full text-left px-5 py-3.5 flex items-center gap-3 transition-colors ${
-                open ? "bg-[#faf9f6]" : "hover:bg-[#faf9f6]"
+                open ? "bg-[#fafafa]" : "hover:bg-[#fafafa]"
               }`}
             >
               <span
                 className={`shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-[12px] font-semibold ${
-                  isCurrent ? "bg-accent text-white" : "bg-[#f1efe8] text-ink-soft"
+                  isCurrent ? "bg-accent text-white" : "bg-[#f4f4f5] text-ink-soft"
                 }`}
               >
                 {ui + 1}
@@ -339,25 +339,25 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
                   <div className="text-[12.5px] text-ink-soft leading-relaxed">{unit.summary}</div>
                   <div className="flex gap-1.5 mt-2 flex-wrap">
                     {unit.key_concepts.map((c) => (
-                      <span key={c} className="rounded bg-[#f1efe8] px-2 py-0.5 text-[10.5px] text-ink-soft">
+                      <span key={c} className="rounded bg-[#f4f4f5] px-2 py-0.5 text-[10.5px] text-ink-soft">
                         {c}
                       </span>
                     ))}
                   </div>
                 </div>
-                <div className="divide-y divide-[#f1efe8] border-t border-[#f1efe8]">
+                <div className="divide-y divide-[#f4f4f5] border-t border-[#f4f4f5]">
                   {unit.lectures.map((lec, li) => {
                     const done = visited.has(lec.id);
                     const isNext = nextLecture?.id === lec.id;
                     return (
-                      <div key={lec.id} className="px-5 py-3 flex items-center gap-3 hover:bg-[#faf9f6] transition-colors">
+                      <div key={lec.id} className="px-5 py-3 flex items-center gap-3 hover:bg-[#fafafa] transition-colors">
                         <span
                           className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-[10.5px] font-medium ${
                             done
                               ? "bg-accent-soft text-accent"
                               : isNext
                                 ? "text-accent bg-white"
-                                : "bg-[#f1efe8] text-ink-faint"
+                                : "bg-[#f4f4f5] text-ink-faint"
                           }`}
                           style={isNext ? { boxShadow: "0 0 0 1.5px #0F6E56" } : undefined}
                         >
@@ -379,7 +379,7 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
                               isNext
                                 ? "bg-accent text-white hover:opacity-90"
                                 : done
-                                  ? "border border-[#e0ded3] text-ink-soft hover:border-accent hover:text-accent"
+                                  ? "border border-[#e4e4e7] text-ink-soft hover:border-accent hover:text-accent"
                                   : "border border-accent/40 text-accent hover:bg-accent/5"
                             }`}
                           >

@@ -213,7 +213,7 @@ export function ChatView({
         <div className="max-w-3xl mx-auto px-6 py-8 space-y-6">
           {empty && (
             <div className="pt-20 text-center fade-up">
-              <div className="inline-flex items-center gap-2 rounded-full border border-[#e7e5dc] bg-white px-3.5 py-1 text-[11.5px] text-ink-soft mb-5">
+              <div className="inline-flex items-center gap-2 rounded-full border border-[#e4e4e7] bg-white px-3.5 py-1 text-[11.5px] text-ink-soft mb-5">
                 <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
                 全网搜索 · 画像个性化 · 白板课堂
               </div>
@@ -229,7 +229,7 @@ export function ChatView({
                   <button
                     key={s}
                     onClick={() => send(s)}
-                    className="group rounded-xl border border-[#e7e5dc] bg-white px-4 py-3 text-[13.5px] text-ink transition-all text-left flex items-center gap-3 hover:-translate-y-px hover:border-accent/50 hover:shadow-sm"
+                    className="group rounded-xl border border-[#e4e4e7] bg-white px-4 py-3 text-[13.5px] text-ink transition-all text-left flex items-center gap-3 hover:-translate-y-px hover:border-accent/50 hover:shadow-sm"
                   >
                     <span className="text-accent/70 group-hover:text-accent transition-colors">✦</span>
                     <span className="flex-1">{s}</span>
@@ -289,9 +289,9 @@ export function ChatView({
         </div>
       </div>
 
-      <div className="border-t border-[#e7e5dc] bg-paper">
+      <div className="border-t border-[#e4e4e7] bg-paper">
         <div className="max-w-3xl mx-auto px-6 py-4">
-          <div className="rounded-2xl border border-[#d3d1c7] bg-white shadow-sm focus-within:border-accent transition-colors">
+          <div className="rounded-2xl border border-[#d4d4d8] bg-white shadow-sm focus-within:border-accent transition-colors">
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -312,7 +312,7 @@ export function ChatView({
               {streaming ? (
                 <button
                   onClick={stop}
-                  className="rounded-lg border border-[#d3d1c7] px-3.5 py-1.5 text-[12.5px] text-ink-soft hover:border-red-300 hover:text-red-600 transition-colors"
+                  className="rounded-lg border border-[#d4d4d8] px-3.5 py-1.5 text-[12.5px] text-ink-soft hover:border-red-300 hover:text-red-600 transition-colors"
                 >
                   ■ 停止
                 </button>

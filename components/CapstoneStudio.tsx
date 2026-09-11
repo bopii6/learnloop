@@ -158,13 +158,13 @@ export function CapstoneStudio({ courseId, outline, lecture, onExit }: CapstoneS
   const exitLabel = "返回课程";
 
   return (
-    <div className="min-h-screen bg-[#faf9f6] text-ink">
+    <div className="min-h-screen bg-[#fafafa] text-ink">
       {/* 顶栏 */}
-      <div className="sticky top-0 z-10 border-b border-[#e7e5dc] bg-[#faf9f6]/95 backdrop-blur">
+      <div className="sticky top-0 z-10 border-b border-[#e4e4e7] bg-[#fafafa]/95 backdrop-blur">
         <div className="max-w-4xl mx-auto px-5 h-14 flex items-center gap-3">
           <button
             onClick={onExit}
-            className="rounded-full border border-[#d3d1c7] bg-white px-3.5 py-1.5 text-[12px] text-ink-soft hover:border-accent hover:text-accent transition-colors"
+            className="rounded-full border border-[#d4d4d8] bg-white px-3.5 py-1.5 text-[12px] text-ink-soft hover:border-accent hover:text-accent transition-colors"
           >
             ← {exitLabel}
           </button>
@@ -197,10 +197,10 @@ export function CapstoneStudio({ courseId, outline, lecture, onExit }: CapstoneS
               { n: 3, label: "验收结课" },
             ].map((s, i) => (
               <div key={s.n} className="flex items-center gap-1.5">
-                {i > 0 && <span className="text-[#d3d1c7] mx-1">→</span>}
+                {i > 0 && <span className="text-[#d4d4d8] mx-1">→</span>}
                 <span
                   className={`rounded-full px-2.5 py-1 font-medium ${
-                    phase >= s.n ? "bg-accent text-white" : "bg-[#f1efe8] text-ink-faint"
+                    phase >= s.n ? "bg-accent text-white" : "bg-[#f4f4f5] text-ink-faint"
                   }`}
                 >
                   {s.n >= 3 && passed ? "🎉 " : ""}
@@ -246,11 +246,11 @@ export function CapstoneStudio({ courseId, outline, lecture, onExit }: CapstoneS
 
         {/* 任务书 */}
         {!loaded ? (
-          <div className="rounded-2xl border border-[#e7e5dc] bg-white px-6 py-10 text-center">
+          <div className="rounded-2xl border border-[#e4e4e7] bg-white px-6 py-10 text-center">
             <span className="stage-spinner inline-block" style={{ width: 18, height: 18 }} />
           </div>
         ) : !brief ? (
-          <div className="rounded-2xl border border-[#e7e5dc] bg-white px-6 py-8 text-center">
+          <div className="rounded-2xl border border-[#e4e4e7] bg-white px-6 py-8 text-center">
             <div className="text-[15px] font-semibold">第一步：领你的专属任务书</div>
             <div className="text-[12.5px] text-ink-soft mt-1.5 leading-relaxed max-w-md mx-auto">
               导师按这门课的做成标准和你的学习画像，把「做出{capstoneName}」拆成 4-6 步，
@@ -266,8 +266,8 @@ export function CapstoneStudio({ courseId, outline, lecture, onExit }: CapstoneS
             {briefMsg && <div className="text-[12px] text-red-600 mt-3">{briefMsg}</div>}
           </div>
         ) : (
-          <div className="rounded-2xl border border-[#e7e5dc] bg-white overflow-hidden">
-            <div className="px-6 py-4 border-b border-[#e7e5dc] bg-[#faf9f6] flex items-center gap-2">
+          <div className="rounded-2xl border border-[#e4e4e7] bg-white overflow-hidden">
+            <div className="px-6 py-4 border-b border-[#e4e4e7] bg-[#fafafa] flex items-center gap-2">
               <div className="flex-1 text-[14.5px] font-semibold">📋 {brief.title}</div>
               {regenConfirm ? (
                 <span className="flex items-center gap-1.5 text-[11.5px] text-ink-soft">
@@ -309,12 +309,12 @@ export function CapstoneStudio({ courseId, outline, lecture, onExit }: CapstoneS
                         key={i}
                         onClick={() => toggleStep(i)}
                         className={`w-full text-left rounded-xl border px-4 py-3 flex gap-3 transition-colors ${
-                          done ? "border-accent/30 bg-accent/5" : "border-[#e7e5dc] bg-white hover:border-[#c9c7bd]"
+                          done ? "border-accent/30 bg-accent/5" : "border-[#e4e4e7] bg-white hover:border-[#c9c7bd]"
                         }`}
                       >
                         <span
                           className={`shrink-0 w-5 h-5 mt-0.5 rounded-full border flex items-center justify-center text-[10px] font-bold ${
-                            done ? "bg-accent border-accent text-white" : "border-[#d3d1c7] text-ink-faint"
+                            done ? "bg-accent border-accent text-white" : "border-[#d4d4d8] text-ink-faint"
                           }`}
                         >
                           {done ? "✓" : i + 1}
@@ -338,7 +338,7 @@ export function CapstoneStudio({ courseId, outline, lecture, onExit }: CapstoneS
                   <div className="text-[12px] text-ink-faint uppercase tracking-wider mb-2">卡住了回看这几讲</div>
                   <div className="flex flex-wrap gap-1.5">
                     {brief.references.map((r, i) => (
-                      <span key={i} className="rounded-full bg-[#f1efe8] px-2.5 py-1 text-[11.5px] text-ink-soft">
+                      <span key={i} className="rounded-full bg-[#f4f4f5] px-2.5 py-1 text-[11.5px] text-ink-soft">
                         📖 {r}
                       </span>
                     ))}
@@ -349,7 +349,7 @@ export function CapstoneStudio({ courseId, outline, lecture, onExit }: CapstoneS
                 <div className="text-[12px] text-ink-faint uppercase tracking-wider mb-2">做成标准 · 验收就按这个来</div>
                 <div className="space-y-1.5">
                   {brief.criteriaCheck.map((c, i) => (
-                    <div key={i} className="rounded-lg border border-[#e7e5dc] px-3.5 py-2.5">
+                    <div key={i} className="rounded-lg border border-[#e4e4e7] px-3.5 py-2.5">
                       <div className="text-[12.5px] font-medium flex gap-2">
                         <span className="text-accent shrink-0">✓</span>
                         {c.text}
@@ -378,8 +378,8 @@ export function CapstoneStudio({ courseId, outline, lecture, onExit }: CapstoneS
 
         {/* 提交与验收 */}
         {!passed && (
-          <div className="rounded-2xl border border-[#e7e5dc] bg-white overflow-hidden">
-            <div className="px-6 py-4 border-b border-[#e7e5dc] bg-[#faf9f6] text-[14.5px] font-semibold">
+          <div className="rounded-2xl border border-[#e4e4e7] bg-white overflow-hidden">
+            <div className="px-6 py-4 border-b border-[#e4e4e7] bg-[#fafafa] text-[14.5px] font-semibold">
               {lastReview ? "🔄 改完再交，直到做成" : "做完了？交给导师验收"}
             </div>
             <div className="px-6 py-5 space-y-3">
@@ -405,13 +405,13 @@ export function CapstoneStudio({ courseId, outline, lecture, onExit }: CapstoneS
                     ? "说明这一版改了什么：对应上一条验收意见，逐条说清楚…"
                     : "描述你的作品：做了什么、怎么做的、结果如何？外人能看到/用到什么？标准逐条对照着写，验收只看证据。"
                 }
-                className="w-full rounded-xl border border-[#e7e5dc] px-4 py-3 text-[13px] leading-relaxed outline-none focus:border-accent resize-y bg-white"
+                className="w-full rounded-xl border border-[#e4e4e7] px-4 py-3 text-[13px] leading-relaxed outline-none focus:border-accent resize-y bg-white"
               />
               <input
                 value={workLink}
                 onChange={(e) => setWorkLink(e.target.value)}
                 placeholder="作品链接（部署地址 / 仓库 / 相册，选填）"
-                className="w-full rounded-xl border border-[#e7e5dc] px-4 py-2.5 text-[12.5px] outline-none focus:border-accent bg-white"
+                className="w-full rounded-xl border border-[#e4e4e7] px-4 py-2.5 text-[12.5px] outline-none focus:border-accent bg-white"
               />
               <div className="flex items-center gap-3">
                 <button
@@ -430,10 +430,10 @@ export function CapstoneStudio({ courseId, outline, lecture, onExit }: CapstoneS
 
         {/* 最近一次验收详情（未通过时展示判定细节） */}
         {lastReview && !passed && (
-          <div className="rounded-2xl border border-[#e7e5dc] bg-white px-6 py-5 space-y-2">
+          <div className="rounded-2xl border border-[#e4e4e7] bg-white px-6 py-5 space-y-2">
             <div className="text-[13px] font-semibold mb-1">最近一次验收判定</div>
             {lastReview.criteria.map((c, i) => (
-              <div key={i} className="flex gap-2.5 rounded-lg border border-[#e7e5dc] px-3.5 py-2.5">
+              <div key={i} className="flex gap-2.5 rounded-lg border border-[#e4e4e7] px-3.5 py-2.5">
                 <span className={`shrink-0 text-[13px] font-bold ${c.met ? "text-emerald-600" : "text-red-500"}`}>
                   {c.met ? "✓" : "✗"}
                 </span>

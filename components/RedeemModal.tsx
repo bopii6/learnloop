@@ -67,7 +67,7 @@ export function RedeemModal({
 
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center bg-[#2b2a26]/45 backdrop-blur-[2px]">
-      <div className="w-[400px] max-w-[90%] rounded-3xl border border-[#e7e5dc] bg-white shadow-2xl p-7 fade-up">
+      <div className="w-[400px] max-w-[90%] rounded-3xl border border-[#e4e4e7] bg-white shadow-2xl p-7 fade-up">
         <div className="flex items-center justify-between mb-1">
           <div className="text-[11px] text-accent font-semibold tracking-[.1em]">Superlearn</div>
           <button onClick={onClose} className="text-ink-faint hover:text-ink text-[16px]" aria-label="关闭">
@@ -77,10 +77,10 @@ export function RedeemModal({
         <div className="text-[19px] font-bold mb-1">兑换积分</div>
         <div className="text-[12.5px] text-ink-soft mb-4">
           当前余额 <span className="font-semibold text-accent">⚡ {balance ?? "—"}</span> 积分
-          <span className="mx-1.5 text-[#d9d6ca]">·</span>1 积分 = ¥1
+          <span className="mx-1.5 text-[#d4d4d8]">·</span>1 积分 = ¥1
         </div>
 
-        <div className="rounded-2xl bg-[#fafaf7] border border-[#e7e5dc] p-4 space-y-3">
+        <div className="rounded-2xl bg-[#fafafa] border border-[#e4e4e7] p-4 space-y-3">
           <div>
             <div className="text-[12px] text-ink-soft mb-1.5">输入管理员发给你的兑换码（支持直接粘贴）</div>
             <input
@@ -93,7 +93,7 @@ export function RedeemModal({
               placeholder="SL-XXXXX-XXXXX"
               autoFocus
               spellCheck={false}
-              className="w-full rounded-xl border border-[#e0ded3] bg-white px-3.5 py-2.5 font-mono text-[15px] tracking-wider text-ink outline-none focus:border-accent transition-colors"
+              className="w-full rounded-xl border border-[#e4e4e7] bg-white px-3.5 py-2.5 font-mono text-[15px] tracking-wider text-ink outline-none focus:border-accent transition-colors"
             />
           </div>
           <button
