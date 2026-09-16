@@ -1,10 +1,11 @@
 "use client";
 
-// 精品课程：官方精选 + 用户上架的课程。点开直接学；本机自用阶段，上架/下架即管理动作。
-// 版式对标 Hyperknow 精品课程：居中大标题 + 搜索、首条 hero 大卡、徽标（课节/时长/价格）、
-// 标签分类筛选条。评分/报名人数没有真实数据，不虚构。
+// 精品课程：货架页。定位是"课程印刷厂的书店"——用户来这里扫的是「一门门成体系的课」。
+// 页面四层：头部（定位句+搜索）→ 学习路线合集（编辑部排好的顺序，解决"22 门课我从哪开始"）
+// → 操纵台（标签筛选+排序+计数）→ 货架网格（卡片：封面/价格/标题/受众/交付承诺/进度/可展开目录）。
+// 不做置顶大卡：没有真人精选，假 curated 比没有更伤信任。
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { MarketEntry } from "@/types";
+import type { MarketCollection, MarketEntry } from "@/types";
 import { CourseCover } from "./CourseCover";
 
 const fmtHours = (min?: number) =>
@@ -12,6 +13,8 @@ const fmtHours = (min?: number) =>
 
 // 标价经 JSON 存取可能是浮点脏值（29.700000000000003），展示统一格式化
 const fmtPrice = (n: number) => `¥${n.toFixed(n % 1 === 0 ? 0 : 1)}`;
+
+type SortKey = "new" | "big" | "short";
 
 export function MarketView({
   onOpenCourse,
@@ -21,15 +24,20 @@ export function MarketView({
   onGoHome: () => void;
 }) {
   const [entries, setEntries] = useState<MarketEntry[] | null>(null);
+  const [collections, setCollections] = useState<MarketCollection[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [cat, setCat] = useState<string>("全部");
+  const [col, setCol] = useState<MarketCollection | null>(null);
+  const [sort, setSort] = useState<SortKey>("new");
+  const [openSyllabus, setOpenSyllabus] = useState<Set<string>>(new Set());
 
   const refresh = useCallback(async () => {
     try {
       const res = await fetch("/api/market");
       const d = await res.json();
       setEntries(d.entries || []);
+      setCollections(d.collections || []);
     } catch {
       setError("精品课程加载失败");
       setEntries([]);
@@ -66,14 +74,20 @@ export function MarketView({
     }
   }, []);
 
+  // 标签按出现频次排序取前 8：高频标签是真实的分类，长尾标签留在卡面上
   const cats = useMemo(() => {
-    const seen: string[] = [];
-    for (const e of entries || []) for (const t of e.tags || []) if (!seen.includes(t)) seen.push(t);
-    return seen.slice(0, 9);
-  }, [entries]);
+    const pool = col ? (entries || []).filter((e) => col.courseIds.includes(e.courseId)) : entries || [];
+    const freq = new Map<string, number>();
+    for (const e of pool) for (const t of e.tags || []) freq.set(t, (freq.get(t) || 0) + 1);
+    return [...freq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([t]) => t);
+  }, [entries, col]);
 
   const shown = useMemo(() => {
     let list = entries || [];
+    if (col) {
+      // 路线内的课按合集顺序展示（即建议的学习顺序）
+      list = col.courseIds.map((id) => list.find((e) => e.courseId === id)).filter(Boolean) as MarketEntry[];
+    }
     if (cat !== "全部") list = list.filter((e) => (e.tags || []).includes(cat));
     const kw = q.trim().toLowerCase();
     if (kw) {
@@ -81,85 +95,68 @@ export function MarketView({
         (e) =>
           e.title.toLowerCase().includes(kw) ||
           (e.note || "").toLowerCase().includes(kw) ||
-          (e.audience || "").toLowerCase().includes(kw)
+          (e.audience || "").toLowerCase().includes(kw) ||
+          (e.capstone || "").toLowerCase().includes(kw) ||
+          (e.tags || []).some((t) => t.toLowerCase().includes(kw))
       );
     }
-    return list;
-  }, [entries, q, cat]);
+    const sorted = [...list];
+    if (sort === "big") sorted.sort((a, b) => (b.lectures || 0) - (a.lectures || 0));
+    else if (sort === "short") sorted.sort((a, b) => (a.totalMin || 1e9) - (b.totalMin || 1e9));
+    else if (!col) sorted.sort((a, b) => b.addedAt - a.addedAt);
+    return sorted;
+  }, [entries, q, cat, col, sort]);
 
-  const hero = shown[0];
-  const rest = shown.slice(1);
-
-  const MetaChips = ({ e }: { e: MarketEntry }) => (
-    <div className="flex gap-1.5 flex-wrap">
-      {(e.lectures ? [`${e.lectures} 课节`, fmtHours(e.totalMin)].filter(Boolean) : []).map((t) => (
-        <span key={t} className="rounded-full bg-[#f4f4f5] px-2 py-0.5 text-[10.5px] text-ink-soft">
-          {t}
-        </span>
-      ))}
-    </div>
-  );
+  const toggleSyllabus = (courseId: string) => {
+    setOpenSyllabus((prev) => {
+      const next = new Set(prev);
+      if (next.has(courseId)) next.delete(courseId);
+      else next.add(courseId);
+      return next;
+    });
+  };
 
   return (
     <div className="pb-16">
-      {/* 头部 hero：居中大标题 + 搜索 */}
-      <div className="text-center pt-12 pb-8 px-6">
-        <h1 className="text-[30px] font-bold leading-tight mb-1.5">
-          发现最适合你的课程
-          <br />
-          <span className="bg-[linear-gradient(transparent_62%,rgba(252,190,120,0.55)_62%)] px-0.5 text-[22px] font-semibold">
-            专为你的学习方式打造
-          </span>
-        </h1>
-        <div className="max-w-md mx-auto mt-6 relative">
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="在精品课程中搜索课程"
-            className="w-full rounded-full border border-[#e4e4e7] bg-white pl-10 pr-4 py-2.5 text-[13px] outline-none focus:border-accent/60 shadow-sm"
-          />
-          <svg viewBox="0 0 24 24" className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-faint" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="11" cy="11" r="7" />
-            <path d="m20 20-3.5-3.5" />
-          </svg>
+      {/* 头部：左标题右搜索，一句话说清这里卖的是什么 */}
+      <div className="max-w-5xl mx-auto px-6 pt-10 pb-5">
+        <div className="flex items-end justify-between gap-4 flex-wrap">
+          <div>
+            <h1 className="text-[24px] font-bold tracking-tight">精品课程</h1>
+            <p className="mt-1 text-[13px] text-ink-soft">
+              每一门都是 AI 现做的体系课：有单元、有练习、有结课作品
+            </p>
+          </div>
+          <div className="relative w-full sm:w-[280px]">
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="搜索课程主题、标签…"
+              className="w-full rounded-full border border-[#e4e4e7] bg-white pl-9 pr-4 py-2 text-[13px] outline-none focus:border-accent/60 shadow-sm"
+            />
+            <svg viewBox="0 0 24 24" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-faint" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="11" cy="11" r="7" />
+              <path d="m20 20-3.5-3.5" />
+            </svg>
+          </div>
         </div>
       </div>
 
       {entries === null && (
         <div className="max-w-5xl mx-auto px-6">
-          <div className="flex gap-1.5 flex-wrap mb-5">
-            {["w-12", "w-16", "w-20", "w-14", "w-16"].map((w, i) => (
-              <div key={i} className={`skeleton rounded-full h-[30px] ${w}`} />
+          <div className="flex gap-3 flex-wrap mb-6">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="skeleton h-[84px] w-[240px] rounded-2xl" />
             ))}
           </div>
-          <div className="rounded-3xl border border-[#e4e4e7] bg-white overflow-hidden flex mb-5">
-            <div className="skeleton w-[280px] shrink-0 min-h-[190px]" />
-            <div className="flex-1 p-6 py-5">
-              <div className="flex gap-2 mb-3">
-                <div className="skeleton h-4 w-16 rounded-full" />
-                <div className="skeleton h-4 w-10 rounded-full" />
-              </div>
-              <div className="skeleton h-6 w-2/3 rounded mb-3" />
-              <div className="skeleton h-3.5 w-full rounded mb-2" />
-              <div className="skeleton h-3.5 w-4/5 rounded mb-4" />
-              <div className="flex gap-2">
-                <div className="skeleton h-4 w-14 rounded-full" />
-                <div className="skeleton h-4 w-16 rounded-full" />
-              </div>
-            </div>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            {[0, 1, 2, 3].map((i) => (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {[0, 1, 2, 3, 4, 5].map((i) => (
               <div key={i} className="rounded-2xl border border-[#e4e4e7] bg-white overflow-hidden">
-                <div className="skeleton w-full h-[104px]" />
-                <div className="p-4">
-                  <div className="skeleton h-3 w-24 rounded mb-2" />
-                  <div className="skeleton h-4 w-3/4 rounded mb-2.5" />
+                <div className="skeleton w-full h-[110px]" />
+                <div className="p-3.5">
+                  <div className="skeleton h-4 w-3/4 rounded mb-2" />
                   <div className="skeleton h-3 w-1/2 rounded mb-3" />
-                  <div className="flex gap-1.5">
-                    <div className="skeleton h-4 w-14 rounded-full" />
-                    <div className="skeleton h-4 w-16 rounded-full" />
-                  </div>
+                  <div className="skeleton h-3 w-2/3 rounded" />
                 </div>
               </div>
             ))}
@@ -186,9 +183,62 @@ export function MarketView({
 
       {entries && entries.length > 0 && (
         <div className="max-w-5xl mx-auto px-6">
-          {/* 分类筛选条 */}
-          <div className="flex gap-1.5 flex-wrap mb-5">
-            {["全部", ...cats].map((t) => (
+          {/* 学习路线：编辑部把散课排成"从入门到交付"的顺序——新客的入口，老客的导航 */}
+          {collections.length > 0 && !q && (
+            <div className="mb-6">
+              <div className="flex items-baseline justify-between mb-2.5">
+                <div className="text-[13px] font-semibold text-ink">学习路线</div>
+                <div className="text-[10.5px] text-ink-faint">按顺序学，从入门走到交付</div>
+              </div>
+              <div className="flex gap-3 overflow-x-auto pb-1.5 -mx-1 px-1">
+                {collections.map((c) => {
+                  const inCol = (entries || []).filter((e) => c.courseIds.includes(e.courseId));
+                  const totalHrs = fmtHours(inCol.reduce((s, e) => s + (e.totalMin || 0), 0));
+                  const active = col?.id === c.id;
+                  return (
+                    <button
+                      key={c.id}
+                      onClick={() => setCol(active ? null : c)}
+                      className={`shrink-0 w-[248px] text-left rounded-2xl border p-3.5 transition-all ${
+                        active
+                          ? "border-accent bg-accent-soft/50 shadow-[0_4px_16px_rgba(0,0,0,0.06)]"
+                          : "border-[#e4e4e7] bg-white hover:border-accent/50 hover:shadow-[0_4px_16px_rgba(0,0,0,0.05)]"
+                      }`}
+                    >
+                      <div className="text-[13.5px] font-semibold text-ink leading-snug">{c.name}</div>
+                      <div className="mt-1 text-[11px] text-ink-soft leading-relaxed line-clamp-2">{c.desc}</div>
+                      <div className="mt-2 text-[10.5px] text-ink-faint">
+                        {inCol.length} 门课{totalHrs ? ` · 约 ${totalHrs}` : ""}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* 操纵台：路线态 + 标签筛选 + 排序 + 计数 */}
+          <div className="flex items-center gap-2 flex-wrap mb-4">
+            {col && (
+              <button
+                onClick={() => setCol(null)}
+                className="rounded-full pl-3 pr-2 py-1.5 text-[12px] font-medium bg-accent text-white shadow-sm inline-flex items-center gap-1"
+                title="退出当前路线"
+              >
+                {col.name} <span className="opacity-80">✕</span>
+              </button>
+            )}
+            <button
+              onClick={() => setCat("全部")}
+              className={`rounded-full px-3.5 py-1.5 text-[12px] font-medium transition-colors ${
+                cat === "全部"
+                  ? "bg-accent text-white shadow-sm"
+                  : "bg-white border border-[#e4e4e7] text-ink-soft hover:border-accent/50 hover:text-accent"
+              }`}
+            >
+              全部
+            </button>
+            {cats.map((t) => (
               <button
                 key={t}
                 onClick={() => setCat(t)}
@@ -201,6 +251,17 @@ export function MarketView({
                 {t}
               </button>
             ))}
+            <span className="flex-1" />
+            <span className="text-[11.5px] text-ink-faint">{shown.length} 门课</span>
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as SortKey)}
+              className="rounded-lg border border-[#e4e4e7] bg-white px-2.5 py-1.5 text-[12px] text-ink-soft outline-none focus:border-accent/60 cursor-pointer"
+            >
+              <option value="new">最新上架</option>
+              <option value="big">课节最多</option>
+              <option value="short">时长最短</option>
+            </select>
           </div>
 
           {shown.length === 0 && (
@@ -209,98 +270,125 @@ export function MarketView({
             </div>
           )}
 
-          {/* hero 大卡：置顶的第一门课 */}
-          {hero && (
-            <button
-              onClick={() => onOpenCourse(hero.courseId)}
-              className="group w-full text-left rounded-3xl border border-[#e4e4e7] bg-white overflow-hidden flex mb-5 hover:border-accent/60 hover:shadow-[0_6px_24px_rgba(0,0,0,0.07)] transition-all fade-up"
-            >
-              <div className="overflow-hidden">
-                <CourseCover seed={hero.courseId} title={hero.title} rounded="rounded-none" className="w-[280px] shrink-0 min-h-[190px] h-full transition-transform duration-300 group-hover:scale-[1.03]" />
-              </div>
-              <div className="flex-1 min-w-0 p-6 flex flex-col">
-                <div className="flex items-center gap-2 mb-2">
-                  {hero.author === "official" && (
-                    <span className="rounded-full bg-accent-soft text-accent px-2 py-0.5 text-[10px] font-medium">官方精选</span>
-                  )}
-                  <span className={`text-[11.5px] font-semibold ${hero.price > 0 ? "text-[#b45309]" : "rounded-full bg-[#eaf3e6] px-2 py-0.5 text-[10.5px] text-[#4d7c43]"}`}>
-                    {hero.price > 0 ? fmtPrice(hero.price) : "免费"}
-                  </span>
-                </div>
-                <div className="text-[20px] font-bold leading-snug mb-2 line-clamp-2">{hero.title}</div>
-                <div className="text-[13px] text-ink-soft leading-relaxed line-clamp-3 flex-1">
-                  {hero.note || hero.audience}
-                </div>
-                <div className="mt-3">
-                  <MetaChips e={hero} />
-                </div>
-                <div className="mt-4 inline-flex items-center gap-1.5 text-[13px] text-accent font-medium">
-                  ▶ 去学习
-                  <span className="inline-block transition-transform group-hover:translate-x-0.5">→</span>
-                </div>
-              </div>
-            </button>
-          )}
-
-          {/* 其余课程网格 */}
-          {rest.length > 0 && (
-            <div className="grid gap-4 sm:grid-cols-2">
-              {rest.map((e) => (
+          {/* 货架网格 */}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {shown.map((e) => {
+              const expanded = openSyllabus.has(e.courseId);
+              return (
                 <div
                   key={e.courseId}
                   className="group rounded-2xl border border-[#e4e4e7] bg-white overflow-hidden flex flex-col hover:border-accent/60 hover:shadow-[0_4px_20px_rgba(0,0,0,0.06)] transition-all fade-up"
                 >
-                  <button onClick={() => onOpenCourse(e.courseId)} className="block w-full overflow-hidden text-left">
-                    <CourseCover seed={e.courseId} title={e.title} rounded="rounded-none" className="w-full h-[104px] transition-transform duration-300 group-hover:scale-[1.03]" />
-                  </button>
-                  <div className="p-4 flex flex-col flex-1">
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <span className="text-[11px] text-ink-faint">{e.author === "official" ? "官方精选" : "学员上架"}</span>
-                      <span className={`font-semibold ${e.price > 0 ? "text-[11.5px] text-[#b45309]" : "rounded-full bg-[#eaf3e6] px-2 py-0.5 text-[10.5px] text-[#4d7c43]"}`}>
-                        {e.price > 0 ? fmtPrice(e.price) : "免费"}
+                  <button onClick={() => onOpenCourse(e.courseId)} className="relative block w-full overflow-hidden text-left">
+                    <CourseCover seed={e.courseId} title={e.title} rounded="rounded-none" className="w-full h-[110px] transition-transform duration-300 group-hover:scale-[1.03]" />
+                    <span
+                      className={`absolute top-2 right-2 rounded-full px-2 py-0.5 text-[10.5px] font-semibold shadow-sm ${
+                        e.price > 0 ? "bg-white/95 text-[#b45309]" : "bg-white/95 text-[#4d7c43]"
+                      }`}
+                    >
+                      {e.price > 0 ? fmtPrice(e.price) : "免费"}
+                    </span>
+                    {e.author === "official" && (
+                      <span className="absolute top-2 left-2 rounded-full bg-accent px-2 py-0.5 text-[10px] font-medium text-white shadow-sm">
+                        官方精选
                       </span>
-                    </div>
-                    <button onClick={() => onOpenCourse(e.courseId)} className="text-left text-[15px] font-semibold leading-snug mb-1 line-clamp-2 hover:text-accent transition-colors">
+                    )}
+                  </button>
+                  <div className="p-3.5 flex flex-col flex-1">
+                    <button onClick={() => onOpenCourse(e.courseId)} className="text-left text-[14.5px] font-semibold leading-snug line-clamp-2 hover:text-accent transition-colors">
                       {e.title}
                     </button>
-                    {(e.note || e.audience) && (
-                      <div className="text-[12px] text-ink-soft leading-relaxed line-clamp-2 mb-2.5 flex-1">
-                        {e.note || e.audience}
+                    {e.audience && (
+                      <div className="mt-1 text-[11.5px] text-ink-faint leading-relaxed line-clamp-1" title={e.audience}>
+                        {e.audience}
                       </div>
                     )}
-                    <MetaChips e={e} />
-                    <div className="mt-3 pt-2.5 border-t border-[#f5f4ee] flex items-center justify-between">
-                      <button
-                        onClick={() => onOpenCourse(e.courseId)}
-                        className="text-[12px] text-accent font-medium hover:opacity-80"
-                      >
-                        ▶ 去学习
-                      </button>
-                      {e.canDelete ? (
+                    {e.capstone && (
+                      <div className="mt-1.5 text-[11.5px] text-ink-soft truncate" title={`结课作品：${e.capstone}`}>
+                        🎓 交付：<span className="text-ink font-medium">{e.capstone}</span>
+                      </div>
+                    )}
+                    {e.myProgress && (
+                      <div className="mt-2">
+                        <div className="h-1 rounded-full bg-[#f4f4f5] overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-accent transition-all duration-500"
+                            style={{ width: `${Math.round((e.myProgress.visited / e.myProgress.total) * 100)}%` }}
+                          />
+                        </div>
+                        <div className="mt-1 text-[10.5px] text-ink-faint">
+                          已学 {e.myProgress.visited}/{e.myProgress.total} 讲
+                        </div>
+                      </div>
+                    )}
+                    <div className="mt-auto pt-3">
+                      <div className="text-[11px] text-ink-soft">
+                        {[e.units != null ? `${e.units} 单元` : "", e.lectures ? `${e.lectures} 课节` : "", fmtHours(e.totalMin)]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </div>
+                      {(e.syllabus?.length || 0) > 0 && (
                         <button
-                          onClick={() => void removeFromMarket(e.courseId)}
-                          className="text-[11.5px] text-ink-faint hover:text-red-500 transition-colors"
-                          title="从精品课程下架（课程本身不受影响）"
+                          onClick={() => toggleSyllabus(e.courseId)}
+                          className="mt-1.5 text-[11px] text-accent hover:underline"
                         >
-                          下架
-                        </button>
-                      ) : reported.has(e.courseId) ? (
-                        <span className="text-[11.5px] text-ink-faint">已举报，待处理</span>
-                      ) : (
-                        <button
-                          onClick={() => void reportCourse(e.courseId)}
-                          className="text-[11.5px] text-ink-faint hover:text-accent transition-colors"
-                          title="内容侵权 / 违规 / 质量造假时可举报"
-                        >
-                          举报
+                          {expanded ? "收起目录 ▴" : "看目录 ▾"}
                         </button>
                       )}
+                      {expanded && e.syllabus && (
+                        <ol className="mt-1.5 space-y-1 rounded-xl bg-[#fafafa] border border-[#f4f4f5] p-2.5">
+                          {e.syllabus.map((s, i) => (
+                            <li key={i} className="flex gap-1.5 text-[11px] leading-snug text-ink-soft">
+                              <span className="shrink-0 font-bold text-accent/80">{i + 1}.</span>
+                              <span className="min-w-0">{s.title}</span>
+                            </li>
+                          ))}
+                          {e.capstone && (
+                            <li className="flex gap-1.5 border-t border-[#f0efe8] pt-1.5 mt-1.5 text-[11px] text-ink">
+                              <span className="shrink-0">🏆</span>
+                              <span className="min-w-0">交付：{e.capstone}</span>
+                            </li>
+                          )}
+                        </ol>
+                      )}
+                      <div className="mt-2 pt-2.5 border-t border-[#f5f4ee] flex items-center justify-between gap-2">
+                        <span className="min-w-0 truncate text-[10.5px] text-ink-faint/80">
+                          {(e.tags || []).slice(0, 2).join(" · ")}
+                        </span>
+                        <span className="flex shrink-0 items-center gap-2.5">
+                          {e.canDelete ? (
+                            <button
+                              onClick={() => void removeFromMarket(e.courseId)}
+                              className="text-[11.5px] text-ink-faint hover:text-red-500 transition-colors"
+                              title="从精品课程下架（课程本身不受影响）"
+                            >
+                              下架
+                            </button>
+                          ) : reported.has(e.courseId) ? (
+                            <span className="text-[11.5px] text-ink-faint">已举报</span>
+                          ) : (
+                            <button
+                              onClick={() => void reportCourse(e.courseId)}
+                              className="text-[11.5px] text-ink-faint hover:text-accent transition-colors"
+                              title="内容侵权 / 违规 / 质量造假时可举报"
+                            >
+                              举报
+                            </button>
+                          )}
+                          <button
+                            onClick={() => onOpenCourse(e.courseId)}
+                            className="text-[12px] font-medium text-accent hover:opacity-80"
+                          >
+                            {e.myProgress ? "继续学习 →" : "去学习 →"}
+                          </button>
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
+              );
+            })}
+          </div>
         </div>
       )}
 

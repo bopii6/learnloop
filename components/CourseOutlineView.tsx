@@ -108,6 +108,14 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
     });
   };
 
+  // 体系门面（学习路径条）的跳转：没展开先展开，再滚到对应单元卡
+  const jumpToUnit = (unitId: string) => {
+    if (!openUnits.has(unitId)) toggleUnit(unitId);
+    window.setTimeout(() => {
+      document.getElementById(`unit-${unitId}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 80);
+  };
+
   const publishToMarket = async () => {
     setMarketState("saving");
     try {
@@ -165,6 +173,37 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
             <div className="mt-1.5 text-[13.5px] font-semibold leading-snug text-ink">{outline.capstone?.name || "—"}</div>
             {projectLecture && !capstonePassed && (
               <button onClick={() => openLecture(projectLecture)} className="mt-1 text-[11.5px] text-accent hover:underline">去结课工坊 →</button>
+            )}
+          </div>
+        </div>
+
+        {/* 体系门面：这门课不是一堆视频，是一条设计好的路——从哪起步、分几步、走到哪个作品 */}
+        <div className="mt-4 rounded-2xl border border-[#e4e4e7] bg-white p-4">
+          <div className="flex items-baseline justify-between gap-3">
+            <div className="text-[11px] font-medium text-ink-faint">学习路径</div>
+            <div className="text-[10.5px] text-ink-faint/80">共 {outline.units.length} 个单元 · 按顺序学完即达结课作品</div>
+          </div>
+          <div className="mt-2.5 flex flex-wrap items-center gap-y-2">
+            {outline.units.map((unit, ui) => (
+              <span key={unit.id} className="flex items-center">
+                {ui > 0 && <span className="mx-1 text-[11px] text-[#d4d4d8]">→</span>}
+                <button
+                  onClick={() => jumpToUnit(unit.id)}
+                  title={unit.title}
+                  className="max-w-[230px] truncate rounded-full border border-[#e4e4e7] bg-[#fafafa] px-3 py-1.5 text-left text-[12px] text-ink transition-colors hover:border-accent hover:text-accent"
+                >
+                  <span className="mr-1 font-bold text-accent">{ui + 1}</span>
+                  {unit.title}
+                </button>
+              </span>
+            ))}
+            {outline.capstone?.name && (
+              <span className="flex items-center">
+                <span className="mx-1 text-[11px] text-[#d4d4d8]">→</span>
+                <span className="max-w-[220px] truncate rounded-full bg-accent-soft/70 px-3 py-1.5 text-[12px] font-medium text-ink">
+                  🏆 结课作品 · {outline.capstone.name}
+                </span>
+              </span>
             )}
           </div>
         </div>
@@ -259,7 +298,7 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
             const unitVisited = unitLearnable.filter((l) => visited.has(l.id)).length;
             const unitPct = Math.round((unitVisited / Math.max(unitLearnable.length, 1)) * 100);
             return (
-              <div key={unit.id} className="rounded-2xl border border-[#e4e4e7] bg-white p-4">
+              <div key={unit.id} id={`unit-${unit.id}`} className="scroll-mt-6 rounded-2xl border border-[#e4e4e7] bg-white p-4">
                 <button onClick={() => toggleUnit(unit.id)} className="flex w-full items-center gap-3 text-left">
                   <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#f4f4f5] text-[12px] font-bold text-ink">{ui + 1}</span>
                   <span className="min-w-0 flex-1 text-[14px] font-semibold text-ink">{unit.title}</span>

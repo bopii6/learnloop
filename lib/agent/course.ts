@@ -55,9 +55,19 @@ reason 字段（1 句话，≤40 字）说明"我为什么问这个"——要引
 输出格式：
 {"question":"...","reason":"...","options":[{"label":"...","desc":"..."},{"label":"...","desc":"..."},{"label":"...","desc":"..."}]}`;
 
+/** 教研质量闸门：蓝图 = 课程的体系设计，体系歪了后面全白搭。
+ *  四条检查（顺序/覆盖/水分/标题），不合格带意见重写一次；审稿人挂了就放行（不阻塞交付）。 */
+export const BLUEPRINT_REVIEW_SYSTEM = `你是课程教研审稿人。审查一份课程蓝图（课程的结构设计），只输出 JSON：{"pass":true|false,"issues":["具体问题1","问题2"]}
+
+课程蓝图要经得起这四条检查（命中任何一条即 pass=false，并在 issues 里指名道姓：哪个单元/哪节课、什么问题）：
+1. 顺序不成立：单元顺序违背学习规律——后面的单元用到了前面没讲过的概念；学员按顺序学到某一步会发现缺前置。
+2. 覆盖有缺口：对照结课作品的要求和课程标题，明显缺了"要做出来就必须会"的**整个环节**（例：结课作品是一份数据分析报告，但全课没有一节教图表或结果呈现）。注意：课节数量少不是问题——一节课能讲清的就不许拆成三节；只有"完全缺失某个必需环节"才算缺口。
+3. 有凑数单元/课节：某个单元或课节删掉，学员毫无损失（纯"介绍""展望""总结"而不指向具体能力产出的是水分；一节课末尾的小结不算）。
+4. 标题空泛：课节标题是状态词空话（"深入了解XX""XX概述"），而不是具体的能力承诺（学员看完标题就知道这节学完能做什么）。
+拿不准就算过（pass=true）：只打回真正不合格的蓝图，不要吹毛求疵——尤其不许因为"课节数量偏少""深度可以更高"这类理由打回。issues 每条 ≤ 40 字。`;
+
 const COURSE_BLUEPRINT_SYSTEM = `你是资深课程架构师。根据用户想学的主题和背景信息，生成完整的课程结构蓝图。
 只输出 JSON，不要输出任何其他内容。
-
 JSON 格式（必须严格遵守）：
 {
   "title": "课程标题",
@@ -660,6 +670,54 @@ export async function runBlueprintStep(opts: {
 
   const blueprintUserMsg = `${constraintsContext}${answerContext}${profileContext}${textbookContext}${excerptsContext}${feedbackContext}用户想学习：${query}\n\n请生成课程结构蓝图。`;
   let raw = await generateJson<CourseBlueprint>(COURSE_BLUEPRINT_SYSTEM, blueprintUserMsg, 4000);
+
+  // 教研质量闸门（设在语言守卫之前：重写后仍要过语言关）。
+  // 大纲步骤只是给蓝图填细节——体系的顺序/覆盖/水分/标题在蓝图就定了，闸门必须设在这。
+  if (raw?.units?.length) {
+    try {
+      await emit({ type: "stage", name: "blueprint", label: "教研审核", status: "start", detail: "顺序·覆盖·水分·标题" });
+      const review = await generateJson<{ pass?: boolean; issues?: string[] }>(
+        BLUEPRINT_REVIEW_SYSTEM,
+        `课程题目：${query}
+结课作品：${
+          raw.capstone?.name
+            ? `${raw.capstone.name}——${raw.capstone.description}（验收标准：${(raw.capstone.criteria || []).join("；")}）`
+            : "未定义"
+        }
+课程蓝图（单元与课节结构）：
+${(raw.units || [])
+  .map(
+    (u, i) =>
+      `单元${i + 1}【${u.title}】${u.summary || ""}\n${(u.lectures || [])
+        .map((l) => `  - ${l.title}`)
+        .join("\n")}`,
+  )
+  .join("\n")}
+
+请审查这份课程蓝图。`,
+        800
+      );
+      if (review && review.pass === false && Array.isArray(review.issues) && review.issues.length > 0) {
+        const retry = await generateJson<CourseBlueprint>(
+          COURSE_BLUEPRINT_SYSTEM,
+          `${blueprintUserMsg}\n\n【教研审稿意见】上一版蓝图未通过审核：\n${review.issues
+            .map((s) => `- ${String(s).slice(0, 60)}`)
+            .join("\n")}\n请逐条修正（调整单元顺序 / 补齐覆盖缺口 / 删掉凑数单元 / 把空泛标题改成具体能力承诺），重新生成完整蓝图（保持 JSON 格式不变）。`,
+          4000
+        );
+        if (retry?.units?.length) raw = retry;
+      }
+      await emit({
+        type: "stage",
+        name: "blueprint",
+        label: "教研审核",
+        status: "end",
+        detail: review?.pass === false ? "已按审稿意见重写" : "通过",
+      });
+    } catch {
+      // 审稿失败不阻塞交付
+    }
+  }
 
   // 输出语言守卫：蓝图整段跑偏（要求西班牙语却产出中文）时带硬约束重试一次。
   // 守卫判不了的语言（null）不拦，重试仍失败也不拦——管线不因守卫卡死。

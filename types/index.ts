@@ -249,6 +249,7 @@ export type WhiteboardEvent =
       pointIndex?: number; // 当前片段对应到第几个步骤
     }
   | { type: "token"; text: string } // 学员提问的流式回答
+  | { type: "board_aside"; title: string; items: BoardItem[] } // 「没跟上」补课卡：钉在白板上的大白话版小结
   | { type: "achievement"; title: string; desc: string } // 答对课堂练习的成就徽章（原版同款）
   | { type: "lecture_quiz"; quiz: LectureQuizItem[] } // 课后练习：整节课讲完后下发 3-5 道题
   | { type: "done"; sessionId: string }
@@ -382,4 +383,17 @@ export interface MarketEntry {
   units?: number;
   lectures?: number;
   totalMin?: number;
+  // GET 响应附带的体系预览与交付承诺（书架上"看目录"用）
+  syllabus?: { title: string; lecs: number }[];
+  capstone?: string | null;
+  // GET 响应附带：当前用户在这门课上的学习进度（没学过为 null）
+  myProgress?: { visited: number; total: number } | null;
+}
+
+/** 学习路线合集：编辑部把货架上的课排成"从入门到交付"的顺序 */
+export interface MarketCollection {
+  id: string;
+  name: string;
+  desc: string;
+  courseIds: string[]; // 有序：即建议的学习顺序
 }

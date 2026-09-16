@@ -16,13 +16,15 @@ function hashSeed(seed: string): number {
 
 /** 主题关键词 → 纹样 + 色相带。全族统一在暖阳手账色域（陶土 8-14 / 橙 16-28 / 琥珀金 30-52）。主题差异靠纹样与明度，不靠色相打架 */
 const THEME_RULES: { kw: RegExp; motif: Motif; hues: number[] }[] = [
-  { kw: /python|java|代码|编程|源码|开发|工程|部署|调试|closure|装饰器/i, motif: "terminal", hues: [30, 40, 24] },
-  { kw: /agent|tool|llm|大模型|transformer|rag|prompt|ai\b|机器学习|深度学习|神经网络/i, motif: "nodes", hues: [18, 26, 46] },
-  { kw: /英语|雅思|托福|语言|沟通|口语|写作|翻译/i, motif: "chat", hues: [42, 50, 34] },
-  { kw: /数据|分析|报表|统计|可视化|商业智能|bi\b/i, motif: "chart", hues: [22, 32, 12] },
-  { kw: /摄影|相机|镜头|光线|构图|人像/i, motif: "aperture", hues: [16, 26, 8] },
-  { kw: /redis|分布式|后端|系统|架构|网络|数据库|并发|锁/i, motif: "layers", hues: [10, 20, 32] },
-  { kw: /雅思|留学|备考|考试/i, motif: "flag", hues: [38, 48, 28] },
+  // 顺序即优先级：具体名词在前，泛词（工程/部署/开发）不许排前面——否则 Redis 课被标题里的
+  // "Java"、AI 课被"部署"整体抢走，主题化形同虚设（实测踩过）
+  { kw: /redis|分布式锁|分布式/i, motif: "layers", hues: [10, 20, 32] },
+  { kw: /摄影|相机|镜头|光线|构图|人像|取景/i, motif: "aperture", hues: [16, 26, 8] },
+  { kw: /数据|分析|报表|统计|可视化|商业智能|bi\b|sql\b/i, motif: "chart", hues: [22, 32, 12] },
+  { kw: /python|装饰器|闭包|closure|源码|编程|代码/i, motif: "terminal", hues: [30, 40, 24] },
+  { kw: /agent|tool|llm|大模型|transformer|rag|prompt|ai\b|机器学习|深度学习|神经网络|模型/i, motif: "nodes", hues: [18, 26, 46] },
+  { kw: /雅思|托福|留学|备考|考试|英语|沟通|口语|写作|翻译|语言/i, motif: "chat", hues: [42, 50, 34] },
+  { kw: /简历|面试|职场/i, motif: "flag", hues: [38, 48, 28] },
 ];
 
 type Motif = "orbit" | "nodes" | "layers" | "wave" | "grid" | "terminal" | "chat" | "chart" | "aperture" | "flag";

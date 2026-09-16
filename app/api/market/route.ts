@@ -2,15 +2,16 @@
 // GET 列出（公开条目全网可见 + 自己的未公开条目）/ POST 上架（=公开发布） / DELETE ?courseId= 下架
 // 登记表经存储抽象层持久化（本地 data/ 或 Cloudflare R2，见 lib/storage.ts）
 import { NextRequest, NextResponse } from "next/server";
-import type { MarketEntry } from "@/types";
+import type { MarketCollection, MarketEntry } from "@/types";
 import { isAdminUser, userFromCookieHeader } from "@/lib/auth";
 import { getCourseState, metaKey, type CourseMeta } from "@/lib/agent/course";
-import { readJson, writeJson, storageMode } from "@/lib/storage";
+import { listKeys, readJson, writeJson, storageMode } from "@/lib/storage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const MARKET_KEY = "marketplace.json";
+const COLLECTIONS_KEY = "market-collections.json";
 
 interface OwnedEntry extends MarketEntry {
   ownerId?: string;
@@ -33,7 +34,37 @@ export async function GET(req: NextRequest) {
     (e) => !e.ownerId || e.isPublic === true || (me && e.ownerId === me.id)
   );
   visible.sort((a, b) => b.addedAt - a.addedAt);
-  // 从 course-meta 小索引并行带出课程规模（集市卡徽标用；索引缺失就静默省略）
+
+  // 我的进度：扫课堂快照（与 /api/courses 同口径）。快照名 = courseId+unitId+lecId，
+  // 本地模式快照在 data/classrooms/，R2 模式也是本地写——两路并一份再归课。
+  const visitedByCourse = new Map<string, Set<string>>();
+  try {
+    const roomItems = await listKeys("classrooms/").catch(() => []);
+    let localKeys: string[] = [];
+    try {
+      const { promises: fs } = await import("fs");
+      const path = await import("path");
+      const dir = path.join(process.cwd(), "data", "classrooms");
+      localKeys = (await fs.readdir(dir)).map((n) => `classrooms/${n}`);
+    } catch {
+      // 本地目录不存在（R2 部署）时忽略
+    }
+    for (const key of [...roomItems.map((i) => i.key), ...localKeys]) {
+      const name = key.split("/").pop()!.replace(/\.json$/, "");
+      const unitIdx = name.indexOf("unit-");
+      const lecIdx = name.indexOf("lec-");
+      if (unitIdx <= 0 || lecIdx <= unitIdx) continue;
+      const courseId = name.slice(0, unitIdx);
+      const lectureId = name.slice(lecIdx);
+      if (!visitedByCourse.has(courseId)) visitedByCourse.set(courseId, new Set());
+      visitedByCourse.get(courseId)!.add(lectureId);
+    }
+  } catch {
+    // 快照不可用时进度为空，货架照常
+  }
+
+  // 从 course-meta 小索引并行带出课程规模（集市卡徽标用；索引缺失就静默省略），
+  // 再回读课程文件补两样货架上的"硬货"：体系目录（syllabus）与交付承诺（capstone）
   const enriched = await Promise.all(
     visible.map(async (e) => {
       let meta: CourseMeta | null = null;
@@ -42,6 +73,22 @@ export async function GET(req: NextRequest) {
       } catch {
         meta = null;
       }
+      let syllabus: { title: string; lecs: number }[] | undefined;
+      let capstone: string | null | undefined;
+      try {
+        const st = await getCourseState(e.courseId);
+        const units = st?.outline?.units;
+        if (st && Array.isArray(units)) {
+          syllabus = units.map((u) => ({ title: String(u.title || ""), lecs: u.lectures?.length || 0 }));
+          const cap = (st.outline as { capstone?: { name?: string } } | undefined)?.capstone;
+          capstone = cap?.name || null;
+        }
+      } catch {
+        // 课程文件读不到时目录留空，卡片照常
+      }
+      const total = meta?.lecs?.length || 0;
+      const visitedSet = visitedByCourse.get(e.courseId);
+      const visited = visitedSet ? meta?.lecs?.filter((l) => visitedSet.has(l.id)).length || 0 : 0;
       return {
         ...e,
         canDelete:
@@ -53,10 +100,17 @@ export async function GET(req: NextRequest) {
         // 课节数口径与课程记录页一致：只数可学的白板课节（lecs），不含测验/项目
         lectures: meta?.lecs?.length || meta?.lectures,
         totalMin: meta?.totalMin,
+        syllabus,
+        capstone,
+        myProgress: total > 0 && visited > 0 ? { visited, total } : null,
       };
     })
   );
-  return NextResponse.json({ entries: enriched });
+
+  // 学习路线合集：编辑部排好的顺序，前端按它组织货架
+  const collections = await readJson<{ collections: MarketCollection[] } | null>(COLLECTIONS_KEY, null);
+
+  return NextResponse.json({ entries: enriched, collections: collections?.collections || [] });
 }
 
 export async function POST(req: NextRequest) {

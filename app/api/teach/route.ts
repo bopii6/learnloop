@@ -7,7 +7,7 @@ import { getProfile } from "@/lib/profile";
 import { userFromCookieHeader } from "@/lib/auth";
 import { CHAT_LIMIT_PER_LECTURE, COST_TEACHING_SESSION, refundCredits, trySpend } from "@/lib/credits";
 import { storageMode } from "@/lib/storage";
-import { drainToUsage, ipSubject, logOpsError } from "@/lib/ops";
+import { drainToUsage, ipSubject, logOpsError, logStruggle } from "@/lib/ops";
 import { bumpChatCount, loadTeachScript, saveTeachScript } from "@/lib/teach-cache";
 import { pagesForLecture } from "@/lib/textbook";
 import type { WhiteboardEvent } from "@/types";
@@ -28,6 +28,7 @@ export async function POST(req: NextRequest) {
       boardOutline?: string;
       checkpointQuestion?: string;
       checkpointOptions?: string[];
+      simpler?: boolean; // 「没跟上」：原地用大白话重讲刚讲完的那一段
     };
   };
   try {
@@ -67,6 +68,21 @@ export async function POST(req: NextRequest) {
         // 建课时的用户要求（输出语言/硬性约束）跟着课堂走：大纲没带的退回状态层
         if (!ctx.outputLanguage && state.outputLanguage) ctx.outputLanguage = state.outputLanguage;
         if (!ctx.constraints?.length && state.constraints?.length) ctx.constraints = state.constraints;
+
+        // 学员的结课作品（澄清轮选的 + 蓝图定的）：讲解例子尽量落在这个作品场景里。
+        // 这是"冲着这个学员讲"的最大杠杆——澄清轮问了"你要亲手做出什么"，课堂必须用上这个答案。
+        const capstone = (state.outline as { capstone?: { name?: string; description?: string } } | undefined)?.capstone
+          || (state.blueprint as { capstone?: { name?: string; description?: string } } | undefined)?.capstone;
+        if (capstone?.name) {
+          const clarifyHit = (state.clarifyAnswers || []).find((a) => /亲手做出|结课作品/.test(a.question || ""));
+          ctx.capstoneGoal = [
+            clarifyHit?.answer && clarifyHit.answer !== capstone.name ? clarifyHit.answer : capstone.name,
+            capstone.description,
+          ]
+            .filter(Boolean)
+            .join("——")
+            .slice(0, 300);
+        }
 
         // 讲解的事实来源。教材模式：按本节课挑最相关的教材页（词命中优先，
         // 全书均摊兜底——保证整本书都会被讲到）；摘录带页码，讲师会自然报页码。
@@ -189,6 +205,17 @@ export async function POST(req: NextRequest) {
             await send({ type: "error", message: `本节课的提问已达上限（${CHAT_LIMIT_PER_LECTURE} 条）。换个课节继续，或明天再来复习巩固。` });
             controller.close();
             return;
+          }
+          // 「没跟上」埋点：学员举手说"听不懂"的原始信号。哪一讲哪一段举手最多，
+          // 就是导演层最该重写的地方（比起靠创始人自己听课猜，这是可排序的真实数据）。
+          if (body.context?.simpler) {
+            await logStruggle({
+              userId: me?.id,
+              courseId: body.courseId || "",
+              unitId: body.unitId || "",
+              lectureId: body.lectureId || "",
+              segment: body.context?.segmentTitle,
+            }).catch(() => {});
           }
           await runTeachChat({
             ctx,

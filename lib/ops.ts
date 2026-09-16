@@ -142,8 +142,32 @@ export async function logOpsError(entry: OpsErrorEntry): Promise<void> {
   });
 }
 
-export async function recentOpsErrors(count = 30): Promise<OpsErrorEntry[]> {
+export interface StruggleEntry {
+  at?: number; // 落档时自动生成
+  userId?: string;
+  courseId: string;
+  unitId?: string;
+  lectureId: string;
+  segment?: string; // 学员举手时正在听的片段
+}
+
+const STRUGGLE_CAP = 1000;
+
+/** 「没跟上」埋点：学员举手说"听不懂"的瞬间。
+ *  哪一讲、哪一段最常被举手，就是导演层最该重写的地方——把"听不明白"从体感变成可排序的数据。 */
+export async function logStruggle(entry: Omit<StruggleEntry, "at">): Promise<void> {
   const d = new Date();
+  const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  const key = `ops/struggle/${month}.json`;
+  await withFileLock(key, async () => {
+    const log = await readJson<StruggleEntry[]>(key, []);
+    log.push({ at: Date.now(), ...entry });
+    if (log.length > STRUGGLE_CAP) log.splice(0, log.length - STRUGGLE_CAP);
+    await writeJson(key, log);
+  });
+}
+
+export async function recentOpsErrors(count = 30): Promise<OpsErrorEntry[]> {  const d = new Date();
   const months = [
     `ops/errors/${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}.json`,
     (() => {
