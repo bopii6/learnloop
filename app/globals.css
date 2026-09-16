@@ -148,7 +148,7 @@ select:focus-visible {
 .agent-connector { position: absolute; top: 17px; bottom: -12px; width: 1px; background: rgb(var(--accent-border-rgb) / .5); }
 .agent-pulse { width: 7px; height: 7px; border-radius: 999px; background: rgb(var(--accent-rgb)); box-shadow: 0 0 0 4px rgb(var(--accent-border-rgb) / .35); }
 .agent-journey { display: flex; align-items: flex-start; gap: 0; width: 100%; }
-.agent-journey-step { position: relative; display: flex; align-items: center; gap: 7px; color: #a3a19a; font-size: 11px; white-space: nowrap; }
+.agent-journey-step { position: relative; display: flex; align-items: center; gap: 7px; color: #9aa0a6; font-size: 11px; white-space: nowrap; }
 .agent-journey-step:not(:last-child) { flex: 1; }
 .agent-journey-dot { display: inline-flex; width: 24px; height: 24px; align-items: center; justify-content: center; border: 1px solid #d3d1c7; border-radius: 999px; background: #fafaf7; font-size: 10px; }
 .agent-journey-step.is-active { color: #1a1a18; font-weight: 600; }
@@ -219,7 +219,7 @@ select:focus-visible {
   padding: 12px 20px;
   border-radius: 16px;
   background: rgba(255, 255, 255, .96);
-  border: 1px solid #e7e5dc;
+  border: 1px solid #e6e8eb;
   box-shadow: 0 6px 24px rgba(26, 26, 24, .10);
   font-size: 14px;
   line-height: 1.7;
@@ -227,7 +227,7 @@ select:focus-visible {
   pointer-events: auto;
 }
 .board-subtitle-label { flex-shrink: 0; color: var(--accent); font-weight: 600; font-size: 12px; letter-spacing: .04em; }
-.board-subtitle-idle { color: #a3a19a; font-size: 13px; }
+.board-subtitle-idle { color: #9aa0a6; font-size: 13px; }
 
 /* 课堂练习卡：独立成卡悬在字幕上方，答题时字幕仍可见 */
 .board-quiz {
@@ -237,7 +237,7 @@ select:focus-visible {
   padding: 14px 22px;
   border-radius: 16px;
   background: rgba(255, 255, 255, .98);
-  border: 1px solid #eadfc8;
+  border: 1px solid #e6e8eb;
   box-shadow: 0 10px 32px rgba(26, 26, 24, .14);
 }
 .board-quiz-title {
@@ -250,7 +250,7 @@ select:focus-visible {
 .board-quiz-q { font-weight: 600; font-size: 14.5px; margin-bottom: 10px; }
 .board-quiz-options { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
 .board-quiz-option {
-  border: 1px solid #e0d6c2;
+  border: 1px solid #e6e8eb;
   background: #fff;
   border-radius: 999px;
   padding: 6px 18px;
@@ -268,13 +268,13 @@ select:focus-visible {
   padding: 7px 16px;
   border-radius: 999px;
   background: rgba(255, 255, 255, .96);
-  border: 1px solid #e7e5dc;
+  border: 1px solid #e6e8eb;
   box-shadow: 0 6px 20px rgba(26, 26, 24, .10);
   font-size: 13px;
 }
 .board-voice-heard-label { color: var(--accent); font-weight: 600; font-size: 11px; letter-spacing: .04em; margin-right: 6px; }
 .board-voice-heard-text { color: #1a1a18; }
-.board-voice-heard-note { color: #a3a19a; font-size: 11px; margin-left: 6px; }
+.board-voice-heard-note { color: #9aa0a6; font-size: 11px; margin-left: 6px; }
 
 .board-resume-btn {
   pointer-events: auto;
@@ -289,6 +289,16 @@ select:focus-visible {
   transition: background .2s, color .2s;
 }
 .board-resume-btn:hover { background: var(--accent); color: #fff; }
+
+/* 「没跟上」：听懂救援按钮。比句级控制更显眼一点（它是学员卡住时的第一反应），
+   但仍留在字幕行内，不抢讲解的视觉焦点。 */
+.board-stuck-btn {
+  border-color: #d8dbdf;
+  color: #4b5563;
+  background: #f3f4f6;
+  font-weight: 600;
+}
+.board-stuck-btn:hover { background: #1f3a5f; color: #fff; border-color: #1f3a5f; }
 
 
 /* 字幕条提问入口（无对话面板设计）：提问按钮 / 输入行 / 回答流式文字 */
@@ -315,10 +325,10 @@ select:focus-visible {
   font-size: 14px;
   color: #1a1a18;
 }
-.board-ask-input::placeholder { color: #a3a19a; }
+.board-ask-input::placeholder { color: #9aa0a6; }
 .board-ask-mic {
   flex-shrink: 0;
-  border: 1px solid #e0d6c2;
+  border: 1px solid #e6e8eb;
   background: #fff;
   border-radius: 999px;
   width: 32px;
@@ -329,7 +339,7 @@ select:focus-visible {
 }
 .board-ask-mic:hover { border-color: var(--accent); color: var(--accent); }
 .board-ask-mic.listening { border-color: #f87171; color: #dc2626; background: #fef2f2; animation: pulse 1.2s ease-in-out infinite; }
-.board-ask-cancel { border-color: #e0d6c2 !important; color: #8a8880 !important; }
+.board-ask-cancel { border-color: #e6e8eb !important; color: #8a8880 !important; }
 .board-ask-cancel:hover { background: #f7edda !important; color: #5f5e5a !important; }
 .board-answer-text {
   display: -webkit-box;
@@ -349,15 +359,15 @@ select:focus-visible {
 
 /* 白板课堂互动提问卡片 */
 .checkpoint-card {
-  border: 1px solid #f0d98c;
-  background: #fff7d6;
+  border: 1px solid #e6e8eb;
+  background: #f3f4f6;
   border-radius: 12px;
   padding: 10px 12px;
   font-size: 13px;
   line-height: 1.6;
 }
 .checkpoint-option {
-  border: 1px solid #e0d6c2;
+  border: 1px solid #e6e8eb;
   background: #fff;
   border-radius: 999px;
   padding: 4px 12px;
@@ -368,17 +378,18 @@ select:focus-visible {
 .checkpoint-option:hover { border-color: var(--accent); color: var(--accent); }
 
 /* ---- 主题 accent（Tailwind accent 系列经这些变量取色，带透明度写法依然可用） ----
-   全站默认墨绿；课堂/回放等 .classroom-sunny 作用域内整体切换暖阳手账色 */
-/* 全站默认 = Hyperknow 式极简：白底 + 锌灰墨 + 蓝点缀；课堂作用域内切暖阳不变 */
+   全站默认蓝点缀；课堂/回放等 .classroom-sunny 作用域内切到墨纸主题的深墨蓝 */
+/* 全站默认 = 白底 + 锌灰墨 + 蓝点缀 */
 :root {
   --accent-rgb: 37 99 235;
   --accent-soft-rgb: 219 234 254;
   --accent-border-rgb: 191 219 254;
 }
+/* 类名保留（历史），取值已随墨纸主题改为深墨蓝 */
 .classroom-sunny {
-  --accent-rgb: 232 89 12;
-  --accent-soft-rgb: 253 235 212;
-  --accent-border-rgb: 236 199 148;
+  --accent-rgb: 31 58 95;
+  --accent-soft-rgb: 237 241 246;
+  --accent-border-rgb: 205 214 226;
 }
 
 /* 滚动条 */
@@ -395,7 +406,7 @@ select:focus-visible {
   background: #f1efe8; border-radius: 4px; padding: 1px 5px; font-size: 12px;
 }
 .prose-course pre {
-  background: #faf9f6; border: 1px solid #e7e5dc; border-radius: 10px;
+  background: #faf9f6; border: 1px solid #e6e8eb; border-radius: 10px;
   padding: 10px 12px; overflow-x: auto; margin: 0.5em 0;
 }
 .prose-course pre code { background: transparent; padding: 0; }

@@ -1,6 +1,6 @@
-// 白板配色：卡片冷调（定稿，参考自扁平粉彩卡片信息图）。
-// 近白灰纸面 + 藏蓝粗标题 + 粉蓝粉彩卡 + 编号圆徽 + 直线页眉；同一套交互（逐条书写/跟拍/角色）。
-// 差异三件事：模块强调色按页轮换（accents）、图元上色块（nodeFills/表格头/金句底/判断行底）、纸面底色。
+// 白板配色：墨纸（v3）。白纸黑字 + 单一深墨强调 + 大量留白，卡片靠细线与字重分层，不靠粉彩色块。
+// 高级感的来源是"克制"：一颗强调色（深墨蓝）、中性灰阶、无彩色糖果、无大圆角。
+// 差异三件事：模块强调色按页轮换（accents，这里只有一颗，恒定）、图元素色（nodeFills/表格头）、纸面底色。
 // 已有旧课堂（经典墨绿配色）经 recolorMapsBetween(CLASSIC, 当前色) 的映射整体重着色。
 
 export interface BoardColors {
@@ -65,50 +65,54 @@ const CLASSIC: BoardColors = {
   backdropStroke: "#1e1e1e1f",
 };
 
-const CARD_COOL: BoardColors = {
-  boardBg: "#f6f7f9",
-  boardDot: "#e2e5eb",
-  ink: "#1e3354",
-  mute: "#7c8aa5",
-  faint: "#c3cddc",
-  accents: ["#5b87d4", "#7048e8", "#2f9e44", "#f08c00"],
-  accent: "#5b87d4",
-  diagramStroke: "#3b5175",
-  chartAxis: "#a5b1c5",
-  nodeFills: ["#dbe7fa", "#d3f9d8", "#fff3bf", "#fcc2d7"],
-  tableHeadBg: "#dbe7fa",
-  tableHeadStroke: "#e2e5eb",
-  tableRowStroke: "#eceef3",
-  quoteBg: "#5b87d41f",
-  quoteStroke: "#5b87d4",
-  judgeStroke: "#1e335414",
-  judgeGoodBg: "#d3f9d8",
-  judgeBadBg: "#ffe3e3",
-  semGood: "#2f9e44",
-  semBad: "#e03131",
+// 墨纸（v3）：白纸 + 近黑墨字 + 一颗深墨蓝强调色 + 中性灰阶图元
+const INK_PAPER: BoardColors = {
+  boardBg: "#fbfbfa",
+  boardDot: "#e8e8e5",
+  ink: "#17181a",
+  mute: "#6b7076",
+  faint: "#c4c7cc",
+  // 只有一颗强调色：模块之间不换色。印刷品的高级感来自一致性，不是彩虹
+  accents: ["#1f3a5f"],
+  accent: "#1f3a5f",
+  diagramStroke: "#4b5563",
+  chartAxis: "#9ca3af",
+  // 图元底色：近中性浅灰（同一色系里极轻的层次差），不再有粉蓝粉绿
+  nodeFills: ["#f3f4f6", "#eef0f2", "#f5f4f1", "#eceff1"],
+  tableHeadBg: "#f3f4f6",
+  tableHeadStroke: "#d8dbdf",
+  tableRowStroke: "#e6e8eb",
+  quoteBg: "transparent",
+  quoteStroke: "#1f3a5f",
+  judgeStroke: "#dee1e5",
+  judgeGoodBg: "transparent",
+  judgeBadBg: "transparent",
+  semGood: "#1b7a4b",
+  semBad: "#a4342a",
   vsBadgeBg: "#ffffff",
-  vsBadgeStroke: "#c3cddc",
-  vsText: "#7c8aa5",
+  vsBadgeStroke: "#d8dbdf",
+  vsText: "#9aa0a6",
   backdropBg: "#ffffff",
-  backdropStroke: "#1e335414",
+  backdropStroke: "#e6e8eb",
 };
 
 // 共享可写色板对象：writer 持有它的引用，模块强调色轮换（beginSegment）原地改写、所有闭包即时可见
 export const boardColors: BoardColors = {
-  ...CARD_COOL,
-  accents: [...CARD_COOL.accents],
-  nodeFills: [...CARD_COOL.nodeFills],
+  ...INK_PAPER,
+  accents: [...INK_PAPER.accents],
+  nodeFills: [...INK_PAPER.nodeFills],
 };
 
 export function getBoardTheme(): { colors: BoardColors } {
   return { colors: boardColors };
 }
 
-/** 课堂 chrome 的主题色（Tailwind accent 经 --accent-rgb 系列变量引用，见 globals.css 的 .classroom-sunny） */
+/** 课堂 chrome 的主题色（Tailwind accent 经 --accent-rgb 系列变量引用，见 globals.css 的 .classroom-sunny）
+ *  跟随墨纸主题：深墨蓝取代原来的暖橙，课堂外壳与白板同一套语言 */
 export const CHROME_VARS: Record<string, string> = {
-  "--accent-rgb": "232 89 12",
-  "--accent-soft-rgb": "253 235 212",
-  "--accent-border-rgb": "236 199 148",
+  "--accent-rgb": "31 58 95",
+  "--accent-soft-rgb": "237 241 246",
+  "--accent-border-rgb": "205 214 226",
 };
 
 const STROKE_KEYS: (keyof BoardColors)[] = [

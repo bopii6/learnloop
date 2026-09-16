@@ -18,6 +18,7 @@ export default function LecturePage({
   const { courseId, lectureId } = use(params);
   const router = useRouter();
   const [outline, setOutline] = useState<CourseOutline | null>(null);
+  const [visited, setVisited] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -28,7 +29,10 @@ export default function LecturePage({
         return r.json();
       })
       .then((d) => {
-        if (alive) setOutline(d.course.outline);
+        if (alive) {
+          setOutline(d.course.outline);
+          if (Array.isArray(d.visited)) setVisited(d.visited);
+        }
       })
       .catch((e) => {
         if (alive) setError(e instanceof Error ? e.message : String(e));
@@ -97,6 +101,7 @@ export default function LecturePage({
       unitId={unit.id}
       lectureId={lectureId}
       lectureTitle={lecture.title}
+      visited={visited}
       onExit={() => router.push(`/course/${courseId}`)}
     />
   );

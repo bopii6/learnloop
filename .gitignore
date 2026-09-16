@@ -15,3 +15,11 @@ data/
 
 # 本地备份的 R2 凭证，严禁入库
 .env.r2-backup
+
+# 生成的漫画分格图缓存（按提示词哈希落盘，可重生成，别塞进库）
+public/comics/
+
+# 本地调试产物
+.verify/
+tmp-tts-audition/
+scripts/tmp-*

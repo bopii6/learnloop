@@ -1,7 +1,9 @@
 // POST /api/tts —— 云端语音合成（白板播报用，比浏览器系统音色自然得多）
 // 供应商：阿里云百炼 qwen3-tts-flash（0.8 元/万字符，1 个汉字算 2 字符；
 // 开通百炼后每款 TTS 模型送 1 万字符免费额度）。
-// 环境变量：DASHSCOPE_API_KEY（必填）；TTS_MODEL / TTS_VOICE（可选，默认 qwen3-tts-flash / Cherry）。
+// 环境变量：DASHSCOPE_API_KEY（必填）；TTS_MODEL / TTS_VOICE / TTS_INSTRUCTIONS（可选）。
+// 音色建议 Elias（墨讲师，唯一为"讲课"设计的音色）；模型用 qwen3-tts-instruct-flash + 语气指令，
+// 同价但能压住"播音腔/表演腔"——只有 instruct 系列模型认 instructions 参数。
 // 未配置时返回 501，客户端自动回退浏览器 speechSynthesis，功能不受影响。
 import { NextRequest } from "next/server";
 import { createHash } from "crypto";
@@ -26,16 +28,22 @@ const PERSIST_PREFIX = "tts-cache/";
 
 const cache = new Map<string, string[]>(); // cacheKey -> base64 wav 分段
 
-function persistentKey(model: string, voice: string, text: string): string {
-  const hash = createHash("sha256").update(`${model}|${voice}|${text}`).digest("hex").slice(0, 32);
+function persistentKey(model: string, voice: string, instructions: string, text: string): string {
+  const hash = createHash("sha256").update(`${model}|${voice}|${instructions}|${text}`).digest("hex").slice(0, 32);
   return `${PERSIST_PREFIX}${hash}.json`;
 }
 
 function defaults() {
   return {
     model: process.env.TTS_MODEL || "qwen3-tts-flash",
-    voice: process.env.TTS_VOICE || "Cherry",
+    voice: process.env.TTS_VOICE || "Elias",
+    instructions: process.env.TTS_INSTRUCTIONS || "",
   };
+}
+
+/** 只有 instruct 系列模型认 instructions 参数，别的模型带上会报 InvalidParameter */
+function supportsInstructions(model: string): boolean {
+  return model.includes("instruct");
 }
 
 /** 按句末标点切块，每块不超过 MAX_CHUNK（qwen3-tts 输入上限） */
@@ -57,17 +65,19 @@ function splitText(text: string): string[] {
 }
 
 async function synthesizeChunk(chunk: string): Promise<string> {
-  const { model, voice } = defaults();
+  const { model, voice, instructions } = defaults();
+  const input: Record<string, unknown> = { text: chunk, voice, language_type: "Chinese" };
+  if (instructions && supportsInstructions(model)) {
+    input.instructions = instructions;
+    input.optimize_instructions = true; // 让模型自己把指令润色成更适合合成的内部描述
+  }
   const res = await fetch(ENDPOINT, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${process.env.DASHSCOPE_API_KEY}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      model,
-      input: { text: chunk, voice, language_type: "Chinese" },
-    }),
+    body: JSON.stringify({ model, input }),
     signal: AbortSignal.timeout(30000),
   });
   if (!res.ok) {
@@ -113,12 +123,13 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { model, voice } = defaults();
-  const cacheKey = `${model}|${voice}|${text}`;
+  const { model, voice, instructions } = defaults();
+  // 语气指令参与缓存键：改指令后不能命中旧音频
+  const cacheKey = `${model}|${voice}|${instructions}|${text}`;
   let segments: string[] | null | undefined = cache.get(cacheKey);
   if (!segments) {
     // 二级缓存：落盘的历史合成结果（跨进程/跨部署命中，重听零成本）
-    segments = await readJson<string[] | null>(persistentKey(model, voice, text), null);
+    segments = await readJson<string[] | null>(persistentKey(model, voice, instructions, text), null);
     if (segments) cache.set(cacheKey, segments);
   }
   if (!segments) {
@@ -142,7 +153,7 @@ export async function POST(req: NextRequest) {
     }
     if (cache.size >= CACHE_MAX) cache.clear();
     cache.set(cacheKey, segments);
-    await writeJson(persistentKey(model, voice, text), segments).catch(() => {
+    await writeJson(persistentKey(model, voice, instructions, text), segments).catch(() => {
       // 缓存落盘失败不影响本次播放，代价只是下次重合成
     });
   }

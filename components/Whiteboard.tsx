@@ -4,8 +4,8 @@ import { useEffect, useRef, useState } from "react";
 // Excalidraw 的样式是独立 CSS 文件（非 CSS-in-JS），不导入会渲染成无样式裸文本
 import "@excalidraw/excalidraw/index.css";
 
-// 白板字体（含中文手写体 Xiaolai）自托管：默认从 esm.sh CDN 拉，国内不稳定且会导致
-// CJK 手写体静默回退成系统印刷体。字体文件拷贝在 public/excalidraw-assets/fonts/。
+// 白板字体资源自托管（避免默认从 esm.sh CDN 拉导致 CJK 静默回退）。
+// 墨纸主题起板书一律用无衬线（family 2，中文走系统黑体）：手写体是"低龄感"的主要来源，已停用。
 if (typeof window !== "undefined") {
   (window as any).EXCALIDRAW_ASSET_PATH = "/excalidraw-assets/";
 }
@@ -18,6 +18,8 @@ interface WhiteboardProps {
   viewMode?: boolean;
   zenMode?: boolean;
   boardFont?: string;
+  /** 点击白板（非拖拽平移）→ 回调场景坐标。白板可点（点哪条讲哪条）的入口 */
+  onBoardClick?: (sceneX: number, sceneY: number) => void;
 }
 
 export function Whiteboard({
@@ -27,12 +29,34 @@ export function Whiteboard({
   onZoomChange,
   viewMode = true,
   zenMode = false,
-  boardFont = "handwriting",
+  boardFont = "clean",
+  onBoardClick,
 }: WhiteboardProps) {
   const excalidrawRef = useRef<any>(null);
+  const v2sRef = useRef<((p: { clientX: number; clientY: number }, appState: any) => { x: number; y: number }) | null>(null);
   const [Excalidraw, setExcalidraw] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [retrySeed, setRetrySeed] = useState(0); // 加载失败后的手动重试计数（重触发动态导入）
+  // 区分"点一下"和"拖拽平移"：按下位置离抬起位置太远就当平移，不触发点击回调
+  const pressPointRef = useRef<{ x: number; y: number } | null>(null);
+
+  const handleBoardClick = (e: { clientX: number; clientY: number }) => {
+    if (!onBoardClick) return;
+    const press = pressPointRef.current;
+    pressPointRef.current = null;
+    if (!press) return;
+    if (Math.abs(e.clientX - press.x) + Math.abs(e.clientY - press.y) > 6) return; // 拖拽平移
+    const v2s = v2sRef.current;
+    const api = excalidrawRef.current;
+    if (!v2s || !api) return;
+    try {
+      // viewportCoordsToSceneCoords 是包的导出工具（不在 api 对象上），坐标换算要带当前 appState
+      const p = v2s({ clientX: e.clientX, clientY: e.clientY }, api.getAppState());
+      onBoardClick(p.x, p.y);
+    } catch {
+      // 坐标换算失败（场景重置中）忽略
+    }
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -41,6 +65,7 @@ export function Whiteboard({
         const mod = await import("@excalidraw/excalidraw");
         if (mounted) {
           setExcalidraw(() => mod.Excalidraw);
+          v2sRef.current = mod.viewportCoordsToSceneCoords || null;
           setLoading(false);
         }
       } catch (e) {
@@ -85,6 +110,10 @@ export function Whiteboard({
     <div
       className="flex-1 relative excalidraw-host"
       data-board-font={boardFont}
+      onPointerDown={(e) => {
+        pressPointRef.current = { x: e.clientX, y: e.clientY };
+      }}
+      onClick={handleBoardClick}
     >
       <Excalidraw
         excalidrawAPI={(api: any) => {
@@ -95,7 +124,7 @@ export function Whiteboard({
           elements: initialElements,
           appState: {
             viewBackgroundColor: "transparent",
-            // Excalidraw 0.18：CJK 手写回退链（Xiaolai）只挂在 family 5（Excalifont）上，1 是无中文的 Virgil
+            // 墨纸主题：板书统一无衬线 family 2。family 5 是手写体（Excalifont/Xiaolai），已停用
             currentItemFontFamily: boardFont === "handwriting" ? 5 : 2,
           },
         }}
