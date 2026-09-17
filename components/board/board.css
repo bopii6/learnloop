@@ -1,0 +1,172 @@
+/* 白板（对标 Hyperknow）样式：手写字体 + 卡片 + 逐字落字 + 圈画 + 字幕 + 答案解析 */
+
+/* 手写字体：拉丁字符走 Excalifont（与画布同一支笔），中文回退系统字体 */
+@font-face {
+  font-family: "Excalifont";
+  src: url("/excalidraw-assets/fonts/Excalifont/Excalifont-Regular-a88b72a24fb54c9f94e3b5fdaa7481c9.woff2")
+    format("woff2");
+  font-display: swap;
+}
+
+.wb-hand {
+  font-family: "Excalifont", var(--wb-cjk-font, "Segoe UI"), "PingFang SC", "Microsoft YaHei", system-ui,
+    sans-serif;
+}
+
+/* ---- 画布底：近白 + 点阵（与 Hyperknow 相同语言） ---- */
+.wb-dotfield {
+  background-color: #fcfcfc;
+  background-image: radial-gradient(circle, var(--ws-dot-color, #d4d4d4) var(--ws-dot-r0, 0.39px), transparent var(--ws-dot-r1, 1.19px));
+  background-size: var(--ws-bg-size, 20px) var(--ws-bg-size, 20px);
+  background-position: var(--ws-bg-x, 0px) var(--ws-bg-y, 0px);
+}
+.wb-dotfield[data-dots="off"] {
+  background-image: none;
+}
+
+/* ---- 卡片 ---- */
+.board-note-card {
+  position: absolute;
+  box-sizing: border-box;
+  color: #17181a;
+  pointer-events: none;
+}
+.board-note-body {
+  position: relative;
+  padding: 0 13px 4px;
+  font-size: var(--board-body-fs, 20px);
+  line-height: 1.62;
+}
+.board-note-body h1,
+.board-note-body h2,
+.board-note-body h3 {
+  font-size: var(--board-title-fs, 24px);
+  font-weight: 700;
+  line-height: 1.35;
+  margin: 0.1em 0 0.35em;
+}
+.board-note-body h2 { font-size: calc(var(--board-title-fs, 24px) * 0.92); }
+.board-note-body h3 { font-size: calc(var(--board-title-fs, 24px) * 0.84); }
+.board-note-body p { margin: 0.18em 0; }
+.board-note-body ul,
+.board-note-body ol { margin: 0.18em 0; padding-left: 1.25em; }
+.board-note-body li { margin: 0.12em 0; }
+.board-note-body strong { font-weight: 700; }
+.board-note-body code {
+  font-family: "Cascadia Code", ui-monospace, monospace;
+  font-size: calc(var(--board-body-fs, 20px) * 0.82);
+  background: #0000000d;
+  border-radius: 4px;
+  padding: 0 4px;
+}
+.board-note-body table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.3em 0;
+  font-size: calc(var(--board-body-fs, 20px) * 0.86);
+}
+.board-note-body th,
+.board-note-body td {
+  border: 1.4px solid #c9c4ba;
+  padding: 5px 8px;
+  text-align: left;
+}
+.board-note-body th { font-weight: 700; background: #00000008; }
+.board-note-body .katex { font-size: 1.02em; }
+
+/* 标题标记条（chrome：跟着字写完才扫入） */
+.overlay-note-title-highlight {
+  background: linear-gradient(transparent 58%, #fde68a 58%, #fde68a 92%, transparent 92%);
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+}
+.overlay-note-title-highlight.tw-chrome-off { background-size: 0% 100%; }
+.overlay-note-title-highlight.tw-chrome-in { animation: tw-marker-swipe 420ms ease both; }
+@keyframes tw-marker-swipe {
+  from { background-size: 0% 100%; }
+  to { background-size: 100% 100%; }
+}
+
+/* ---- 逐字落字（打字机） ---- */
+.tw-char.tw-hidden,
+.tw-unit.tw-hidden { opacity: 0; }
+.tw-char.tw-shown { animation: tw-dissolve 360ms ease both; }
+.tw-unit.tw-shown { animation: tw-fade 280ms ease both; }
+@keyframes tw-dissolve {
+  from { opacity: 0; filter: blur(3px); }
+  to { opacity: 1; filter: blur(0); }
+}
+@keyframes tw-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.tw-chrome-off { opacity: 0; }
+.tw-chrome-in { animation: tw-fade 280ms ease both; }
+
+/* 笔形光标：贴着正在写的字 */
+.board-write-pen {
+  position: absolute;
+  z-index: 30;
+  pointer-events: none;
+  transition: left 60ms linear, top 60ms linear;
+}
+
+/* ---- 圈画 / 高亮（SVG 文本锚定） ---- */
+.board-note-annotations {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 18;
+}
+.board-circle-draw {
+  animation: board-circle-draw 1.8s ease forwards;
+}
+@keyframes board-circle-draw {
+  to { stroke-dashoffset: 0; }
+}
+.board-highlight-rect {
+  animation: board-highlight-in 600ms ease forwards;
+}
+@keyframes board-highlight-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ---- 图片卡 / 动画卡 ---- */
+.board-media-card { position: absolute; box-sizing: border-box; pointer-events: auto; }
+.board-media-img {
+  width: 100%;
+  display: block;
+  border-radius: 2px;
+  border: 1px solid #e6e8eb;
+  background: #fff;
+}
+.board-media-caption {
+  margin-top: 6px;
+  text-align: center;
+  color: #6b7076;
+  font-size: calc(var(--board-body-fs, 20px) * 0.72);
+}
+.board-media-pending {
+  width: 100%;
+  border: 1.5px dashed #d8dbdf;
+  border-radius: 4px;
+  background: #fafafa;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9aa0a6;
+  font-size: calc(var(--board-body-fs, 20px) * 0.7);
+  animation: wb-pulse 1.4s ease-in-out infinite;
+}
+@keyframes wb-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+.board-anim-frame {
+  width: 100%;
+  border: 1px solid #e6e8eb;
+  border-radius: 4px;
+  background: #fff;
+}

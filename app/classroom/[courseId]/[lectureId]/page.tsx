@@ -1,12 +1,13 @@
 "use client";
 
-// /learn/[courseId]/[lectureId] —— 课节入口路由：按课节类型分流。
-// 白板课 → 白板课堂；测验课 → 单元测验；项目课 → 结课作品工坊。
-// 每次进入重新开讲（复习免费）；退出回课程详情页。
+// /classroom/[courseId]/[lectureId] —— 课节入口路由：按课节类型分流。
+// 白板课 → 白板课堂（v2，对标 Hyperknow 交互逻辑）；测验课 → 单元测验；项目课 → 结课作品工坊。
+// ?v1=1 可回退到旧版课堂。退出回课程详情页。
 import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { CourseOutline } from "@/types";
 import { CourseSession } from "@/components/CourseSession";
+import { WhiteboardSession } from "@/components/WhiteboardSession";
 import { CapstoneStudio } from "@/components/CapstoneStudio";
 import { QuizLesson } from "@/components/QuizLesson";
 
@@ -17,6 +18,14 @@ export default function LecturePage({
 }) {
   const { courseId, lectureId } = use(params);
   const router = useRouter();
+  const [useLegacy, setUseLegacy] = useState(false);
+  useEffect(() => {
+    try {
+      setUseLegacy(new URLSearchParams(window.location.search).get("v1") === "1");
+    } catch {
+      // ignore
+    }
+  }, []);
   const [outline, setOutline] = useState<CourseOutline | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -85,6 +94,18 @@ export default function LecturePage({
         outline={outline}
         unitId={unit.id}
         lecture={lecture}
+        onExit={() => router.push(`/course/${courseId}`)}
+      />
+    );
+  }
+
+  if (!useLegacy) {
+    return (
+      <WhiteboardSession
+        courseId={courseId}
+        unitId={unit.id}
+        lectureId={lectureId}
+        lectureTitle={lecture.title}
         onExit={() => router.push(`/course/${courseId}`)}
       />
     );

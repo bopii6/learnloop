@@ -59,13 +59,48 @@ export async function generateJson<T>(
 
 /** 从模型输出中容错提取 JSON（模型常带 ```json 包裹或多余文字） */
 export function extractJson<T>(text: string): T | null {
-  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  const candidate = fence ? fence[1] : text;
+  // 只在明确 ```json 围栏时先剥壳：卡面正文里的 ```python 之类代码块不能当围栏
+  const fenced = text.match(/```json\s*([\s\S]*?)```/i);
+  const candidate = fenced ? fenced[1] : text;
   const start = candidate.search(/[{[]/);
   if (start === -1) return null;
-  // 从后往前找匹配的闭合符
   const openChar = candidate[start];
   const closeChar = openChar === "{" ? "}" : "]";
+  // 括号平衡扫描（字符串/转义感知）：正文里的花括号、反引号都不干扰
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  for (let i = start; i < candidate.length; i++) {
+    const ch = candidate[i];
+    if (inStr) {
+      if (esc) {
+        esc = false;
+        continue;
+      }
+      if (ch === "\\") {
+        esc = true;
+        continue;
+      }
+      if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') {
+      inStr = true;
+      continue;
+    }
+    if (ch === openChar) depth++;
+    else if (ch === closeChar) {
+      depth--;
+      if (depth === 0) {
+        try {
+          return JSON.parse(candidate.slice(start, i + 1)) as T;
+        } catch {
+          break;
+        }
+      }
+    }
+  }
+  // 兜底：从后往前找闭合符（截断/轻微畸形时仍尽力解析）
   const end = candidate.lastIndexOf(closeChar);
   if (end <= start) return null;
   try {

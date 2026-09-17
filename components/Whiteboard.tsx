@@ -10,11 +10,21 @@ if (typeof window !== "undefined") {
   (window as any).EXCALIDRAW_ASSET_PATH = "/excalidraw-assets/";
 }
 
+export interface WhiteboardCamera {
+  scrollX: number;
+  scrollY: number;
+  zoom: number;
+  vpW: number;
+  vpH: number;
+}
+
 interface WhiteboardProps {
   initialElements?: any[];
   onElementsChange?: (elements: any[]) => void;
   onReady?: (api: any) => void;
   onZoomChange?: (zoom: number) => void;
+  /** 相机状态（场景坐标/缩放/视口）：DOM 卡片层按它做平移与缩放 */
+  onCameraChange?: (cam: WhiteboardCamera) => void;
   viewMode?: boolean;
   zenMode?: boolean;
   boardFont?: string;
@@ -27,12 +37,14 @@ export function Whiteboard({
   onElementsChange,
   onReady,
   onZoomChange,
+  onCameraChange,
   viewMode = true,
   zenMode = false,
   boardFont = "clean",
   onBoardClick,
 }: WhiteboardProps) {
   const excalidrawRef = useRef<any>(null);
+  const lastCamRef = useRef<WhiteboardCamera | null>(null);
   const v2sRef = useRef<((p: { clientX: number; clientY: number }, appState: any) => { x: number; y: number }) | null>(null);
   const [Excalidraw, setExcalidraw] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -131,6 +143,27 @@ export function Whiteboard({
         onChange={(elements: any[], appState: any) => {
           onElementsChange?.(elements);
           onZoomChange?.(appState?.zoom?.value ?? 1);
+          if (onCameraChange) {
+            const next = {
+              scrollX: typeof appState?.scrollX === "number" ? appState.scrollX : 0,
+              scrollY: typeof appState?.scrollY === "number" ? appState.scrollY : 0,
+              zoom: appState?.zoom?.value ?? 1,
+              vpW: appState?.width ?? 1200,
+              vpH: appState?.height ?? 700,
+            };
+            const prev = lastCamRef.current;
+            if (
+              !prev ||
+              Math.abs(prev.scrollX - next.scrollX) > 0.5 ||
+              Math.abs(prev.scrollY - next.scrollY) > 0.5 ||
+              Math.abs(prev.zoom - next.zoom) > 0.001 ||
+              prev.vpW !== next.vpW ||
+              prev.vpH !== next.vpH
+            ) {
+              lastCamRef.current = next;
+              onCameraChange(next);
+            }
+          }
         }}
         viewModeEnabled={viewMode}
         zenModeEnabled={zenMode}
