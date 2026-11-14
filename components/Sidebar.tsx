@@ -93,39 +93,31 @@ export function Sidebar({
   ];
 
   return (
-    <aside className="w-64 shrink-0 h-full p-3">
-      <div className="h-full rounded-2xl bg-white border border-[#ececee] shadow-[0_2px_16px_rgba(24,24,27,0.05)] flex flex-col overflow-hidden">
-        {/* Logo：上升台阶 + 星芒（与 favicon 同一图形） */}
-        <div className="px-4 pt-4 pb-3.5 flex items-center gap-2.5">
-          <div className="w-7.5 h-7.5 rounded-lg bg-[#18181b] flex items-center justify-center text-white" style={{width:30,height:30}}>
-            <svg viewBox="0 0 24 24" fill="currentColor" className="h-[17px] w-[17px]" aria-hidden>
-              <rect x="3.6" y="13.6" width="4.4" height="7" rx="1.2" />
-              <rect x="9.8" y="10.2" width="4.4" height="10.4" rx="1.2" />
-              <rect x="16" y="6.8" width="4.4" height="13.8" rx="1.2" />
-              <path d="M18.2 1.2l0.9 1.9 1.9 0.9-1.9 0.9-0.9 1.9-0.9-1.9-1.9-0.9 1.9-0.9z" />
-            </svg>
+    <aside className="w-[248px] shrink-0 h-full border-r border-line bg-paper">
+      <div className="h-full flex flex-col overflow-hidden">
+        {/* 字标：衬线 Superlearn + 一个朱红句点——红笔的第一笔 */}
+        <a href="/" className="px-5 pt-6 pb-5 block" aria-label="Superlearn 首页">
+          <div className="font-display text-[27px] leading-none tracking-[-0.01em] text-ink">
+            Superlearn<span className="text-accent">.</span>
           </div>
-          <div>
-            <span className="font-extrabold text-[15.5px] tracking-tight text-ink">Superlearn</span>
-            <div className="text-[9.5px] text-ink-faint tracking-[0.12em] leading-none mt-0.5">AI WHITEBOARD TUTOR</div>
-          </div>
-        </div>
+          <div className="mt-1.5 text-[12px] text-ink-faint tracking-[0.06em]">AI 私教 · 白板课 · 作品验收</div>
+        </a>
 
         {/* 主导航 */}
-        <nav className="px-2.5 space-y-1">
+        <nav className="px-3 space-y-0.5">
           {navItems.map((item) => {
             const active = mode === item.key;
             return (
               <button
                 key={item.key}
                 onClick={() => onMode(item.key as "course" | "records" | "market")}
-                className={`w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] transition-colors ${
-                  active
-                    ? "bg-accent-soft/70 text-accent font-semibold"
-                    : "text-ink-soft hover:bg-[#f4f4f5] hover:text-ink"
+                aria-current={active ? "page" : undefined}
+                className={`relative w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-[14px] transition-colors ${
+                  active ? "bg-sunken text-ink font-semibold" : "text-ink-soft hover:bg-sunken/70 hover:text-ink"
                 }`}
               >
-                <span className={active ? "text-accent" : "text-ink-faint"}>
+                {active && <span className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full bg-accent" aria-hidden />}
+                <span className={active ? "text-ink" : "text-ink-faint"}>
                   <NavIcon name={item.icon} />
                 </span>
                 {item.label}
@@ -135,7 +127,7 @@ export function Sidebar({
           {isAdmin && (
             <a
               href="/admin"
-              className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] text-ink-soft hover:bg-[#f4f4f5] hover:text-ink transition-colors"
+              className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-[14px] text-ink-soft hover:bg-sunken hover:text-ink transition-colors"
             >
               <span className="text-ink-faint">⚙</span>
               运营后台
@@ -146,20 +138,20 @@ export function Sidebar({
         {/* 继续学习（Hyperknow 同款）：最近一门课，点进课程页接着学 */}
         {courses.length > 0 && (
           <div className="mt-5 px-3">
-            <div className="px-1 mb-1.5 text-[11px] text-ink-faint font-medium tracking-wider">继续学习</div>
+            <div className="px-1 mb-2 text-[12px] text-ink-faint font-semibold tracking-[0.12em]">继续学习</div>
             <a
               href={`/course/${courses[0].id}`}
-              className="block rounded-xl border border-[#ececee] bg-white px-3 py-2.5 transition-colors hover:border-[#d4d4d8] hover:bg-[#fafafa]"
+              className="block rounded-xl border border-line bg-surface px-3.5 py-3 shadow-card transition-all hover:-translate-y-px hover:border-ink"
             >
-              <div className="text-[12.5px] font-medium text-ink leading-snug line-clamp-2">{courses[0].title}</div>
-              <div className="mt-1 text-[11px] text-accent">继续学习 →</div>
+              <div className="text-[14px] font-semibold text-ink leading-snug line-clamp-2">{courses[0].title}</div>
+              <div className="mt-1.5 text-[13px] font-medium text-accent">接着上课 →</div>
             </a>
           </div>
         )}
 
         {/* 历史对话 */}
         <div className="mt-5 px-4 mb-1.5 flex items-center justify-between">
-          <div className="text-[11px] text-ink-faint font-medium tracking-wider">历史对话</div>
+          <div className="text-[12px] text-ink-faint font-semibold tracking-[0.12em]">历史对话</div>
           <button
             onClick={() => onMode("chat")}
             title="新对话"
@@ -173,17 +165,17 @@ export function Sidebar({
             <div
               key={c.id}
               className={`group flex items-center rounded-xl px-3 py-2 cursor-pointer transition-colors ${
-                c.id === currentId ? "bg-accent-soft/60" : "hover:bg-[#f4f4f5]"
+                c.id === currentId ? "bg-accent-soft/60" : "hover:bg-sunken"
               }`}
               onClick={() => onSelect(c.id)}
             >
               <div className="min-w-0 flex-1">
                 <div
-                  className={`text-[12px] truncate ${c.id === currentId ? "text-accent font-medium" : "text-ink"}`}
+                  className={`text-[13px] truncate ${c.id === currentId ? "text-accent font-medium" : "text-ink"}`}
                 >
                   {c.title}
                 </div>
-                <div className="text-[10px] text-ink-faint">
+                <div className="text-[11px] text-ink-faint">
                   {new Date(c.updatedAt).toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" })} · {c.messageCount} 条
                 </div>
               </div>
@@ -192,7 +184,7 @@ export function Sidebar({
                   e.stopPropagation();
                   onDelete(c.id);
                 }}
-                className="opacity-0 group-hover:opacity-100 text-ink-faint hover:text-red-600 text-[12px] px-1 transition-opacity"
+                className="opacity-0 group-hover:opacity-100 text-ink-faint hover:text-red-600 text-[13px] px-1 transition-opacity"
                 title="删除"
               >
                 ×
@@ -200,16 +192,16 @@ export function Sidebar({
             </div>
           ))}
           {conversations.length === 0 && (
-            <div className="mx-1 mt-1 rounded-xl border border-dashed border-[#e4e4e7] bg-[#fafafa] px-3 py-4 text-center">
+            <div className="mx-1 mt-1 rounded-xl border border-dashed border-line bg-sunken px-3 py-4 text-center">
               <div className="mx-auto mb-2 flex h-8 w-8 items-center justify-center rounded-full bg-accent-soft text-accent">
                 <NavIcon name="chat" />
               </div>
-              <div className="text-[11.5px] text-ink-soft leading-relaxed mb-2">
+              <div className="text-[12.5px] text-ink-soft leading-relaxed mb-2">
                 学习卡住了？随时问助手，不用等下一节课
               </div>
               <button
                 onClick={() => onMode("chat")}
-                className="text-[11.5px] font-semibold text-accent hover:opacity-80 transition-opacity"
+                className="text-[12.5px] font-semibold text-accent hover:opacity-80 transition-opacity"
               >
                 ＋ 发起新对话
               </button>
@@ -218,14 +210,14 @@ export function Sidebar({
         </div>
 
         {/* 登录态：课程记录/教材/上架跟着账号走 */}
-        <div className="relative px-3.5 py-3.5 border-t border-[#f4f4f5]">
+        <div className="relative px-4 py-4 border-t border-line">
           {user ? (
             <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 shrink-0 rounded-full bg-[#18181b] flex items-center justify-center text-[11px] text-white font-bold">
+              <div className="w-7 h-7 shrink-0 rounded-full bg-ink flex items-center justify-center text-[12px] text-white font-bold">
                 {user.email[0]?.toUpperCase() || "?"}
               </div>
               <div className="min-w-0 flex-1">
-                <div className="text-[12px] text-ink font-medium truncate" title={user.email}>
+                <div className="text-[13px] text-ink font-medium truncate" title={user.email}>
                   {user.email}
                 </div>
                 <div className="flex items-center gap-2">
@@ -233,13 +225,13 @@ export function Sidebar({
                     <button
                       onClick={() => setCreditsOpen((v) => !v)}
                       aria-expanded={creditsOpen}
-                      className="rounded-full bg-accent-soft px-1.5 py-px text-[10px] font-semibold text-accent hover:opacity-80 transition-opacity"
+                      className="inline-flex items-baseline gap-0.5 rounded-md px-1 -mx-1 text-[12px] text-ink-soft hover:bg-sunken transition-colors"
                       title="积分余额与明细：怎么扣的、花在哪，点开一目了然"
                     >
-                      ⚡ {credits} 积分
+                      <span className="font-display text-[16px] leading-none text-accent">{credits}</span> 积分
                     </button>
                   )}
-                  <button onClick={onLogout} className="text-[10.5px] text-ink-faint hover:text-red-500 transition-colors">
+                  <button onClick={onLogout} className="text-[11.5px] text-ink-faint hover:text-red-500 transition-colors">
                     退出
                   </button>
                 </div>
@@ -249,11 +241,11 @@ export function Sidebar({
             <>
               <button
                 onClick={onLogin}
-                className="w-full rounded-xl bg-[#18181b] px-3 py-2.5 text-[12.5px] font-medium text-white hover:bg-[#3f3f46] transition-colors"
+                className="w-full rounded-xl bg-ink px-3 py-2.5 text-[13.5px] font-medium text-white hover:bg-ink/85 transition-colors"
               >
                 登录 / 注册
               </button>
-              <a href="/pricing" className="mt-2 block text-center text-[11px] text-ink-faint hover:text-accent">
+              <a href="/pricing" className="mt-2 block text-center text-[12px] text-ink-faint hover:text-accent">
                 注册送 {NEW_USER_GRANT} 积分 · 查看积分与价格
               </a>
             </>

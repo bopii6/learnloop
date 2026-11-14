@@ -42,12 +42,12 @@ function CourseRootNode({ data }: NodeProps) {
       <div className="text-[15px] font-bold leading-snug mb-2">{d.title}</div>
       <div className="flex gap-1 flex-wrap mb-2">
         {d.tags.map((t) => (
-          <span key={t} className="rounded-full bg-accent/10 text-accent px-2 py-0.5 text-[10px]">
+          <span key={t} className="rounded-full bg-accent/10 text-accent px-2 py-0.5 text-[11px]">
             {t}
           </span>
         ))}
       </div>
-      <div className="text-[11px] text-ink-faint">{d.totalLectures} 个课节</div>
+      <div className="text-[12px] text-ink-faint">{d.totalLectures} 个课节</div>
     </div>
   );
 }
@@ -94,10 +94,10 @@ function UnitNode({ data }: NodeProps) {
       <Handle type="target" position={Position.Left} className="!bg-accent/60 !w-2 !h-2" />
       <Handle type="source" position={Position.Right} className="!bg-accent/60 !w-2 !h-2" />
       <div className="flex items-center justify-between mb-0.5">
-        <div className="text-[11px] text-accent font-semibold">
+        <div className="text-[12px] text-accent font-semibold">
           单元 {String(d.index + 1).padStart(2, "0")}
         </div>
-        <div className="text-[10px] text-ink-faint">
+        <div className="text-[11px] text-ink-faint">
           {d.expanded ? "▾" : "▸"} {d.lectureCount} 讲
         </div>
       </div>
@@ -109,13 +109,13 @@ function UnitNode({ data }: NodeProps) {
           onClick={(e) => e.stopPropagation()}
           onBlur={commitTitle}
           onKeyDown={(e) => { if (e.key === "Enter") commitTitle(); if (e.key === "Escape") { setTitle(d.unit.title); setEditing(false); } }}
-          className="w-full text-[13px] font-semibold leading-snug border border-accent rounded px-1 py-0.5 outline-none nodrag"
+          className="w-full text-[14px] font-semibold leading-snug border border-accent rounded px-1 py-0.5 outline-none nodrag"
         />
       ) : (
-        <div className="text-[13px] font-semibold leading-snug">{d.unit.title}</div>
+        <div className="text-[14px] font-semibold leading-snug">{d.unit.title}</div>
       )}
       {!d.expanded && !editingSummary && (
-        <div className="text-[10.5px] text-ink-soft mt-1 leading-relaxed line-clamp-2">
+        <div className="text-[11.5px] text-ink-soft mt-1 leading-relaxed line-clamp-2">
           {d.unit.summary}
         </div>
       )}
@@ -129,14 +129,14 @@ function UnitNode({ data }: NodeProps) {
             onChange={(e) => setSummary(e.target.value)}
             onBlur={commitSummary}
             onKeyDown={(e) => { if (e.key === "Escape") { setSummary(d.unit.summary || ""); setEditingSummary(false); } }}
-            className="w-full mt-1 text-[10.5px] text-ink-soft leading-relaxed border border-accent rounded px-1 py-0.5 outline-none resize-none nodrag"
+            className="w-full mt-1 text-[11.5px] text-ink-soft leading-relaxed border border-accent rounded px-1 py-0.5 outline-none resize-none nodrag"
             placeholder="这个单元学完学员能做什么"
           />
         ) : (
           <button
             onClick={(e) => { e.stopPropagation(); setSummary(d.unit.summary || ""); setEditingSummary(true); }}
             title="编辑单元简介"
-            className={`mt-1 text-left text-[10.5px] text-ink-soft leading-relaxed line-clamp-3 w-full rounded hover:bg-accent/10 px-0.5 -mx-0.5 ${HOVER_OPS} nodrag`}
+            className={`mt-1 text-left text-[11.5px] text-ink-soft leading-relaxed line-clamp-3 w-full rounded hover:bg-accent/10 px-0.5 -mx-0.5 ${HOVER_OPS} nodrag`}
           >
             ✎ {d.unit.summary || "补充单元简介…"}
           </button>
@@ -147,21 +147,21 @@ function UnitNode({ data }: NodeProps) {
         <button
           onClick={(e) => { e.stopPropagation(); setEditing(true); }}
           title="重命名单元"
-          className="w-6 h-6 rounded-full bg-white border border-[#d4d4d8] text-[11px] shadow-sm hover:border-accent hover:text-accent flex items-center justify-center nodrag"
+          className="w-6 h-6 rounded-full bg-white border border-line-strong text-[12px] shadow-sm hover:border-accent hover:text-accent flex items-center justify-center nodrag"
         >
           ✎
         </button>
         <button
           onClick={(e) => { e.stopPropagation(); d.onSplit(); }}
           title="拆分单元"
-          className="w-6 h-6 rounded-full bg-white border border-[#d4d4d8] text-[11px] shadow-sm hover:border-accent hover:text-accent flex items-center justify-center nodrag"
+          className="w-6 h-6 rounded-full bg-white border border-line-strong text-[12px] shadow-sm hover:border-accent hover:text-accent flex items-center justify-center nodrag"
         >
           ✂
         </button>
         <button
           onClick={(e) => { e.stopPropagation(); d.onDelete(); }}
           title="删除单元"
-          className="w-6 h-6 rounded-full bg-white border border-[#d4d4d8] text-[11px] shadow-sm hover:border-red-400 hover:text-red-500 flex items-center justify-center nodrag"
+          className="w-6 h-6 rounded-full bg-white border border-line-strong text-[12px] shadow-sm hover:border-red-400 hover:text-red-500 flex items-center justify-center nodrag"
         >
           ×
         </button>
@@ -189,9 +189,9 @@ function LectureNode({ data }: NodeProps) {
     setEditing(false);
   };
   return (
-    <div className="rounded-xl border border-[#e4e4e7] bg-white shadow-sm p-3 w-48 relative group">
-      <Handle type="target" position={Position.Left} className="!bg-[#d4d4d8] !w-1.5 !h-1.5" />
-      <div className="text-[10px] text-ink-faint mb-0.5">
+    <div className="rounded-xl border border-line bg-white shadow-sm p-3 w-48 relative group">
+      <Handle type="target" position={Position.Left} className="!bg-line-strong !w-1.5 !h-1.5" />
+      <div className="text-[11px] text-ink-faint mb-0.5">
         讲次 {String(d.index + 1).padStart(2, "0")}
       </div>
       {editing ? (
@@ -202,10 +202,10 @@ function LectureNode({ data }: NodeProps) {
           onClick={(e) => e.stopPropagation()}
           onBlur={commitTitle}
           onKeyDown={(e) => { if (e.key === "Enter") commitTitle(); if (e.key === "Escape") { setTitle(d.lecture.title); setEditing(false); } }}
-          className="w-full text-[12px] font-medium leading-snug border border-accent rounded px-1 py-0.5 outline-none nodrag"
+          className="w-full text-[13px] font-medium leading-snug border border-accent rounded px-1 py-0.5 outline-none nodrag"
         />
       ) : (
-        <div className="text-[12px] font-medium leading-snug mb-1.5">
+        <div className="text-[13px] font-medium leading-snug mb-1.5">
           {d.lecture.title}
         </div>
       )}
@@ -217,8 +217,8 @@ function LectureNode({ data }: NodeProps) {
               key={tag}
               onClick={(e) => { e.stopPropagation(); if (editing) d.onToggleDepth(d.unitId, d.lecture.id, tag); }}
               title={editing ? "点击切换该课节的深度标签" : undefined}
-              className={`rounded-full px-1.5 py-0.5 text-[9px] border transition-opacity ${
-                DEPTH_COLORS[tag] || "bg-[#f4f4f5] text-ink-soft border-[#e4e4e7]"
+              className={`rounded-full px-1.5 py-0.5 text-[10px] border transition-opacity ${
+                DEPTH_COLORS[tag] || "bg-sunken text-ink-soft border-line"
               } ${active ? "" : "opacity-30"} ${editing ? "nodrag" : ""}`}
             >
               {tag}
@@ -231,14 +231,14 @@ function LectureNode({ data }: NodeProps) {
         <button
           onClick={(e) => { e.stopPropagation(); setTitle(d.lecture.title); setEditing((v) => !v); }}
           title={editing ? "完成编辑" : "改标题 / 调深度标签"}
-          className="w-5 h-5 rounded-full bg-white border border-[#d4d4d8] text-[9px] shadow-sm hover:border-accent hover:text-accent flex items-center justify-center nodrag"
+          className="w-5 h-5 rounded-full bg-white border border-line-strong text-[10px] shadow-sm hover:border-accent hover:text-accent flex items-center justify-center nodrag"
         >
           {editing ? "✓" : "✎"}
         </button>
         <button
           onClick={(e) => { e.stopPropagation(); d.onDelete(); }}
           title="删除课节"
-          className="w-5 h-5 rounded-full bg-white border border-[#d4d4d8] text-[9px] shadow-sm hover:border-red-400 hover:text-red-500 flex items-center justify-center nodrag"
+          className="w-5 h-5 rounded-full bg-white border border-line-strong text-[10px] shadow-sm hover:border-red-400 hover:text-red-500 flex items-center justify-center nodrag"
         >
           ×
         </button>
@@ -255,7 +255,7 @@ function DeepenNode({ data }: NodeProps) {
       <Handle type="target" position={Position.Left} className="!bg-transparent !border-none !w-0 !h-0" />
       <button
         onClick={(e) => { e.stopPropagation(); d.onClick(); }}
-        className="w-full rounded-xl border border-dashed border-[#d4d4d8] py-2 text-[11px] text-ink-faint hover:border-accent hover:text-accent transition-colors bg-white/50 nodrag"
+        className="w-full rounded-xl border border-dashed border-line-strong py-2 text-[12px] text-ink-faint hover:border-accent hover:text-accent transition-colors bg-white/50 nodrag"
       >
         + 讲深一节
       </button>
@@ -592,11 +592,11 @@ export function BlueprintEditor({ blueprint, onChange, loading }: BlueprintEdito
 
   if (loading) {
     return (
-      <div className="rounded-2xl border border-[#e4e4e7] bg-white p-6 h-[500px] flex items-center justify-center">
+      <div className="rounded-2xl border border-line bg-white p-6 h-[500px] flex items-center justify-center">
         <div className="animate-pulse space-y-4 text-center">
-          <div className="h-5 bg-[#e4e4e7] rounded w-48 mx-auto"></div>
-          <div className="h-4 bg-[#e4e4e7] rounded w-64 mx-auto"></div>
-          <div className="text-[13px] text-ink-soft mt-4">正在生成课程结构…</div>
+          <div className="h-5 bg-line rounded w-48 mx-auto"></div>
+          <div className="h-4 bg-line rounded w-64 mx-auto"></div>
+          <div className="text-[14px] text-ink-soft mt-4">正在生成课程结构…</div>
         </div>
       </div>
     );
@@ -613,7 +613,7 @@ export function BlueprintEditor({ blueprint, onChange, loading }: BlueprintEdito
       <button
         onClick={() => setExpanded((v) => !v)}
         title={expanded ? "收起" : "全屏展开"}
-        className="absolute top-3 right-3 z-10 w-8 h-8 rounded-lg border border-[#e4e4e7] bg-white shadow-sm hover:border-accent hover:text-accent text-ink-soft flex items-center justify-center"
+        className="absolute top-3 right-3 z-10 w-8 h-8 rounded-lg border border-line bg-white shadow-sm hover:border-accent hover:text-accent text-ink-soft flex items-center justify-center"
       >
         {expanded ? "⤡" : "⤢"}
       </button>
@@ -623,11 +623,11 @@ export function BlueprintEditor({ blueprint, onChange, loading }: BlueprintEdito
   const cardHeader = (
     <div className="p-5 pb-3">
       <div className="flex items-center justify-between gap-3">
-        <div className="text-[12px] text-accent font-medium mb-1">课程讲解结构 · 悬停或点击单元/课节可删除、拆分、改名、调深度</div>
+        <div className="text-[13px] text-accent font-medium mb-1">课程讲解结构 · 悬停或点击单元/课节可删除、拆分、改名、调深度</div>
         {history.length > 0 && (
           <button
             onClick={undo}
-            className="shrink-0 text-[11.5px] text-ink-faint border border-[#e4e4e7] rounded-full px-3 py-1 hover:border-accent hover:text-accent transition-colors"
+            className="shrink-0 text-[12.5px] text-ink-faint border border-line rounded-full px-3 py-1 hover:border-accent hover:text-accent transition-colors"
             title="撤销上一步结构修改"
           >
             ↩ 撤销（{history.length}）
@@ -636,17 +636,17 @@ export function BlueprintEditor({ blueprint, onChange, loading }: BlueprintEdito
       </div>
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-[17px] font-bold leading-snug">{blueprint.title}</span>
-        <span className="rounded-full bg-[#f4f4f5] px-2.5 py-0.5 text-[11px] text-ink-soft shrink-0">
+        <span className="rounded-full bg-sunken px-2.5 py-0.5 text-[12px] text-ink-soft shrink-0">
           {totalLectures} 课节
         </span>
       </div>
-      <div className="text-[12.5px] text-ink-soft mt-1">{blueprint.audience}</div>
+      <div className="text-[13.5px] text-ink-soft mt-1">{blueprint.audience}</div>
       <div className="flex items-center gap-2 flex-wrap mt-3">
-        <span className="text-[11px] text-ink-faint mr-1">课节深度</span>
+        <span className="text-[12px] text-ink-faint mr-1">课节深度</span>
         {ALL_DEPTH_TAGS.map((tag) => (
           <span
             key={tag}
-            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] border ${DEPTH_COLORS[tag] || "bg-[#f4f4f5] text-ink-soft border-[#e4e4e7]"}`}
+            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[12px] border ${DEPTH_COLORS[tag] || "bg-sunken text-ink-soft border-line"}`}
           >
             <span className="w-1.5 h-1.5 rounded-full bg-current opacity-70" />
             {tag}
@@ -668,7 +668,7 @@ export function BlueprintEditor({ blueprint, onChange, loading }: BlueprintEdito
   }
 
   return (
-    <div className="rounded-2xl border border-[#e4e4e7] bg-white overflow-hidden">
+    <div className="rounded-2xl border border-line bg-white overflow-hidden">
       {cardHeader}
       {canvas}
     </div>

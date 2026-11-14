@@ -122,7 +122,7 @@ export function MarketView({
         <div className="flex items-end justify-between gap-4 flex-wrap">
           <div>
             <h1 className="text-[24px] font-bold tracking-tight">精品课程</h1>
-            <p className="mt-1 text-[13px] text-ink-soft">
+            <p className="mt-1 text-[14px] text-ink-soft">
               每一门都是 AI 现做的体系课：有单元、有练习、有结课作品
             </p>
           </div>
@@ -131,7 +131,7 @@ export function MarketView({
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="搜索课程主题、标签…"
-              className="w-full rounded-full border border-[#e4e4e7] bg-white pl-9 pr-4 py-2 text-[13px] outline-none focus:border-accent/60 shadow-sm"
+              className="w-full rounded-full border border-line bg-white pl-9 pr-4 py-2 text-[14px] outline-none focus:border-accent/60 shadow-sm"
             />
             <svg viewBox="0 0 24 24" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-faint" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="11" cy="11" r="7" />
@@ -150,7 +150,7 @@ export function MarketView({
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {[0, 1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="rounded-2xl border border-[#e4e4e7] bg-white overflow-hidden">
+              <div key={i} className="rounded-2xl border border-line bg-white overflow-hidden">
                 <div className="skeleton w-full h-[110px]" />
                 <div className="p-3.5">
                   <div className="skeleton h-4 w-3/4 rounded mb-2" />
@@ -165,14 +165,14 @@ export function MarketView({
 
       {entries && entries.length === 0 && (
         <div className="max-w-2xl mx-auto px-6">
-          <div className="rounded-2xl border border-dashed border-[#d4d4d8] bg-white px-6 py-12 text-center">
+          <div className="rounded-2xl border border-dashed border-line-strong bg-white px-6 py-12 text-center">
             <div className="text-[14px] font-medium mb-1.5">精品课程还空着</div>
-            <div className="text-[12.5px] text-ink-soft mb-5 leading-relaxed">
+            <div className="text-[13.5px] text-ink-soft mb-5 leading-relaxed">
               去「课程记录」打开一门好课，在课程页点「上架到精品课程」，它就会公开出现在这里。
             </div>
             <button
               onClick={onGoHome}
-              className="rounded-full bg-accent px-5 py-2 text-[12.5px] text-white font-medium hover:opacity-90"
+              className="rounded-full bg-accent px-5 py-2 text-[13.5px] text-white font-medium hover:opacity-90"
             >
               回首页做一门课 →
             </button>
@@ -186,8 +186,8 @@ export function MarketView({
           {collections.length > 0 && !q && (
             <div className="mb-6">
               <div className="flex items-baseline justify-between mb-2.5">
-                <div className="text-[13px] font-semibold text-ink">学习路线</div>
-                <div className="text-[10.5px] text-ink-faint">按顺序学，从入门走到交付</div>
+                <div className="text-[14px] font-semibold text-ink">学习路线</div>
+                <div className="text-[11.5px] text-ink-faint">按顺序学，从入门走到交付</div>
               </div>
               <div className="flex gap-3 overflow-x-auto pb-1.5 -mx-1 px-1">
                 {collections.map((c) => {
@@ -201,12 +201,12 @@ export function MarketView({
                       className={`shrink-0 w-[248px] text-left rounded-2xl border p-3.5 transition-all ${
                         active
                           ? "border-accent bg-accent-soft/50 shadow-[0_4px_16px_rgba(0,0,0,0.06)]"
-                          : "border-[#e4e4e7] bg-white hover:border-accent/50 hover:shadow-[0_4px_16px_rgba(0,0,0,0.05)]"
+                          : "border-line bg-white hover:border-accent/50 hover:shadow-[0_4px_16px_rgba(0,0,0,0.05)]"
                       }`}
                     >
-                      <div className="text-[13.5px] font-semibold text-ink leading-snug">{c.name}</div>
-                      <div className="mt-1 text-[11px] text-ink-soft leading-relaxed line-clamp-2">{c.desc}</div>
-                      <div className="mt-2 text-[10.5px] text-ink-faint">
+                      <div className="text-[14.5px] font-semibold text-ink leading-snug">{c.name}</div>
+                      <div className="mt-1 text-[12px] text-ink-soft leading-relaxed line-clamp-2">{c.desc}</div>
+                      <div className="mt-2 text-[11.5px] text-ink-faint">
                         {inCol.length} 门课{totalHrs ? ` · 约 ${totalHrs}` : ""}
                       </div>
                     </button>
@@ -221,7 +221,7 @@ export function MarketView({
             {col && (
               <button
                 onClick={() => setCol(null)}
-                className="rounded-full pl-3 pr-2 py-1.5 text-[12px] font-medium bg-accent text-white shadow-sm inline-flex items-center gap-1"
+                className="rounded-full pl-3 pr-2 py-1.5 text-[13px] font-medium bg-accent text-white shadow-sm inline-flex items-center gap-1"
                 title="退出当前路线"
               >
                 {col.name} <span className="opacity-80">✕</span>
@@ -229,10 +229,10 @@ export function MarketView({
             )}
             <button
               onClick={() => setCat("全部")}
-              className={`rounded-full px-3.5 py-1.5 text-[12px] font-medium transition-colors ${
+              className={`rounded-full px-3.5 py-1.5 text-[13px] font-medium transition-colors ${
                 cat === "全部"
                   ? "bg-accent text-white shadow-sm"
-                  : "bg-white border border-[#e4e4e7] text-ink-soft hover:border-accent/50 hover:text-accent"
+                  : "bg-white border border-line text-ink-soft hover:border-accent/50 hover:text-accent"
               }`}
             >
               全部
@@ -241,21 +241,21 @@ export function MarketView({
               <button
                 key={t}
                 onClick={() => setCat(t)}
-                className={`rounded-full px-3.5 py-1.5 text-[12px] font-medium transition-colors ${
+                className={`rounded-full px-3.5 py-1.5 text-[13px] font-medium transition-colors ${
                   cat === t
                     ? "bg-accent text-white shadow-sm"
-                    : "bg-white border border-[#e4e4e7] text-ink-soft hover:border-accent/50 hover:text-accent"
+                    : "bg-white border border-line text-ink-soft hover:border-accent/50 hover:text-accent"
                 }`}
               >
                 {t}
               </button>
             ))}
             <span className="flex-1" />
-            <span className="text-[11.5px] text-ink-faint">{shown.length} 门课</span>
+            <span className="text-[12.5px] text-ink-faint">{shown.length} 门课</span>
             <select
               value={sort}
               onChange={(e) => setSort(e.target.value as SortKey)}
-              className="rounded-lg border border-[#e4e4e7] bg-white px-2.5 py-1.5 text-[12px] text-ink-soft outline-none focus:border-accent/60 cursor-pointer"
+              className="rounded-lg border border-line bg-white px-2.5 py-1.5 text-[13px] text-ink-soft outline-none focus:border-accent/60 cursor-pointer"
             >
               <option value="new">最新上架</option>
               <option value="big">课节最多</option>
@@ -264,7 +264,7 @@ export function MarketView({
           </div>
 
           {shown.length === 0 && (
-            <div className="text-[13px] text-ink-faint py-8 text-center">
+            <div className="text-[14px] text-ink-faint py-8 text-center">
               {cat !== "全部" ? `分类「${cat}」下暂无课程` : `没有匹配「${q}」的课程`}
             </div>
           )}
@@ -276,16 +276,16 @@ export function MarketView({
               return (
                 <div
                   key={e.courseId}
-                  className="group rounded-2xl border border-[#e4e4e7] bg-white overflow-hidden flex flex-col hover:border-accent/60 hover:shadow-[0_4px_20px_rgba(0,0,0,0.06)] transition-all fade-up"
+                  className="group rounded-2xl border border-line bg-white overflow-hidden flex flex-col hover:border-accent/60 hover:shadow-[0_4px_20px_rgba(0,0,0,0.06)] transition-all fade-up"
                 >
                   <button onClick={() => onOpenCourse(e.courseId)} className="relative block w-full overflow-hidden text-left">
                     <CourseCover seed={e.courseId} title={e.title} rounded="rounded-none" className="w-full h-[110px] transition-transform duration-300 group-hover:scale-[1.03]" />
                     {/* 只有一种货币（积分）：货架上的课免费浏览，第一次上某节课才扣 1 积分 */}
-                    <span className="absolute top-2 right-2 rounded-full bg-white/95 px-2 py-0.5 text-[10.5px] font-semibold text-[#4d7c43] shadow-sm">
+                    <span className="absolute top-2 right-2 rounded-full bg-white/95 px-2 py-0.5 text-[11.5px] font-semibold text-pass shadow-sm">
                       免费浏览
                     </span>
                     {e.author === "official" && (
-                      <span className="absolute top-2 left-2 rounded-full bg-accent px-2 py-0.5 text-[10px] font-medium text-white shadow-sm">
+                      <span className="absolute top-2 left-2 rounded-full bg-accent px-2 py-0.5 text-[11px] font-medium text-white shadow-sm">
                         官方精选
                       </span>
                     )}
@@ -295,30 +295,30 @@ export function MarketView({
                       {e.title}
                     </button>
                     {e.audience && (
-                      <div className="mt-1 text-[11.5px] text-ink-faint leading-relaxed line-clamp-1" title={e.audience}>
+                      <div className="mt-1 text-[12.5px] text-ink-faint leading-relaxed line-clamp-1" title={e.audience}>
                         {e.audience}
                       </div>
                     )}
                     {e.capstone && (
-                      <div className="mt-1.5 text-[11.5px] text-ink-soft truncate" title={`结课作品：${e.capstone}`}>
+                      <div className="mt-1.5 text-[12.5px] text-ink-soft truncate" title={`结课作品：${e.capstone}`}>
                         🎓 交付：<span className="text-ink font-medium">{e.capstone}</span>
                       </div>
                     )}
                     {e.myProgress && (
                       <div className="mt-2">
-                        <div className="h-1 rounded-full bg-[#f4f4f5] overflow-hidden">
+                        <div className="h-1 rounded-full bg-sunken overflow-hidden">
                           <div
                             className="h-full rounded-full bg-accent transition-all duration-500"
                             style={{ width: `${Math.round((e.myProgress.visited / e.myProgress.total) * 100)}%` }}
                           />
                         </div>
-                        <div className="mt-1 text-[10.5px] text-ink-faint">
+                        <div className="mt-1 text-[11.5px] text-ink-faint">
                           已学 {e.myProgress.visited}/{e.myProgress.total} 讲
                         </div>
                       </div>
                     )}
                     <div className="mt-auto pt-3">
-                      <div className="text-[11px] text-ink-soft">
+                      <div className="text-[12px] text-ink-soft">
                         {[e.units != null ? `${e.units} 单元` : "", e.lectures ? `${e.lectures} 课节` : "", fmtHours(e.totalMin)]
                           .filter(Boolean)
                           .join(" · ")}
@@ -326,21 +326,21 @@ export function MarketView({
                       {(e.syllabus?.length || 0) > 0 && (
                         <button
                           onClick={() => toggleSyllabus(e.courseId)}
-                          className="mt-1.5 text-[11px] text-accent hover:underline"
+                          className="mt-1.5 text-[12px] text-accent hover:underline"
                         >
                           {expanded ? "收起目录 ▴" : "看目录 ▾"}
                         </button>
                       )}
                       {expanded && e.syllabus && (
-                        <ol className="mt-1.5 space-y-1 rounded-xl bg-[#fafafa] border border-[#f4f4f5] p-2.5">
+                        <ol className="mt-1.5 space-y-1 rounded-xl bg-sunken border border-sunken p-2.5">
                           {e.syllabus.map((s, i) => (
-                            <li key={i} className="flex gap-1.5 text-[11px] leading-snug text-ink-soft">
+                            <li key={i} className="flex gap-1.5 text-[12px] leading-snug text-ink-soft">
                               <span className="shrink-0 font-bold text-accent/80">{i + 1}.</span>
                               <span className="min-w-0">{s.title}</span>
                             </li>
                           ))}
                           {e.capstone && (
-                            <li className="flex gap-1.5 border-t border-[#f0efe8] pt-1.5 mt-1.5 text-[11px] text-ink">
+                            <li className="flex gap-1.5 border-t border-[#f0efe8] pt-1.5 mt-1.5 text-[12px] text-ink">
                               <span className="shrink-0">🏆</span>
                               <span className="min-w-0">交付：{e.capstone}</span>
                             </li>
@@ -348,24 +348,24 @@ export function MarketView({
                         </ol>
                       )}
                       <div className="mt-2 pt-2.5 border-t border-[#f5f4ee] flex items-center justify-between gap-2">
-                        <span className="min-w-0 truncate text-[10.5px] text-ink-faint/80">
+                        <span className="min-w-0 truncate text-[11.5px] text-ink-faint/80">
                           {(e.tags || []).slice(0, 2).join(" · ")}
                         </span>
                         <span className="flex shrink-0 items-center gap-2.5">
                           {e.canDelete ? (
                             <button
                               onClick={() => void removeFromMarket(e.courseId)}
-                              className="text-[11.5px] text-ink-faint hover:text-red-500 transition-colors"
+                              className="text-[12.5px] text-ink-faint hover:text-red-500 transition-colors"
                               title="从精品课程下架（课程本身不受影响）"
                             >
                               下架
                             </button>
                           ) : reported.has(e.courseId) ? (
-                            <span className="text-[11.5px] text-ink-faint">已举报</span>
+                            <span className="text-[12.5px] text-ink-faint">已举报</span>
                           ) : (
                             <button
                               onClick={() => void reportCourse(e.courseId)}
-                              className="text-[11.5px] text-ink-faint hover:text-accent transition-colors"
+                              className="text-[12.5px] text-ink-faint hover:text-accent transition-colors"
                               title="内容侵权 / 违规 / 质量造假时可举报"
                             >
                               举报
@@ -373,7 +373,7 @@ export function MarketView({
                           )}
                           <button
                             onClick={() => onOpenCourse(e.courseId)}
-                            className="text-[12px] font-medium text-accent hover:opacity-80"
+                            className="text-[13px] font-medium text-accent hover:opacity-80"
                           >
                             {e.myProgress ? "继续学习 →" : "去学习 →"}
                           </button>
@@ -390,7 +390,7 @@ export function MarketView({
 
       {error && (
         <div className="max-w-5xl mx-auto px-6 mt-4">
-          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700">{error}</div>
+          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-[14px] text-red-700">{error}</div>
         </div>
       )}
     </div>

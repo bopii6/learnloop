@@ -213,7 +213,7 @@ export function ChatView({
         <div className="max-w-3xl mx-auto px-6 py-8 space-y-6">
           {empty && (
             <div className="pt-20 text-center fade-up">
-              <div className="inline-flex items-center gap-2 rounded-full border border-[#e4e4e7] bg-white px-3.5 py-1 text-[11.5px] text-ink-soft mb-5">
+              <div className="inline-flex items-center gap-2 rounded-full border border-line bg-white px-3.5 py-1 text-[12.5px] text-ink-soft mb-5">
                 <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
                 全网搜索 · 画像个性化 · 白板课堂
               </div>
@@ -229,7 +229,7 @@ export function ChatView({
                   <button
                     key={s}
                     onClick={() => send(s)}
-                    className="group rounded-xl border border-[#e4e4e7] bg-white px-4 py-3 text-[13.5px] text-ink transition-all text-left flex items-center gap-3 hover:-translate-y-px hover:border-accent/50 hover:shadow-sm"
+                    className="group rounded-xl border border-line bg-white px-4 py-3 text-[14.5px] text-ink transition-all text-left flex items-center gap-3 hover:-translate-y-px hover:border-accent/50 hover:shadow-sm"
                   >
                     <span className="text-accent/70 group-hover:text-accent transition-colors">✦</span>
                     <span className="flex-1">{s}</span>
@@ -277,7 +277,7 @@ export function ChatView({
           )}
 
           {error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700">
+            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-[14px] text-red-700">
               出错了：{error}
               {error.includes("LLM") || error.includes("401") || error.includes("apikey") ? (
                 <div className="mt-1 text-red-500">
@@ -289,9 +289,9 @@ export function ChatView({
         </div>
       </div>
 
-      <div className="border-t border-[#e4e4e7] bg-paper">
+      <div className="border-t border-line bg-paper">
         <div className="max-w-3xl mx-auto px-6 py-4">
-          <div className="rounded-2xl border border-[#d4d4d8] bg-white shadow-sm focus-within:border-accent transition-colors">
+          <div className="rounded-2xl border border-line-strong bg-white shadow-sm focus-within:border-accent transition-colors">
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -306,13 +306,13 @@ export function ChatView({
               className="w-full resize-none rounded-t-2xl px-4 pt-3 pb-1 text-[14px] outline-none bg-transparent"
             />
             <div className="flex items-center justify-between px-3 pb-2.5">
-              <span className="text-[11px] text-ink-faint">
+              <span className="text-[12px] text-ink-faint">
                 {streaming ? "Agent 正在工作…" : "深度搜索 · 带引用回答"}
               </span>
               {streaming ? (
                 <button
                   onClick={stop}
-                  className="rounded-lg border border-[#d4d4d8] px-3.5 py-1.5 text-[12.5px] text-ink-soft hover:border-red-300 hover:text-red-600 transition-colors"
+                  className="rounded-lg border border-line-strong px-3.5 py-1.5 text-[13.5px] text-ink-soft hover:border-red-300 hover:text-red-600 transition-colors"
                 >
                   ■ 停止
                 </button>
@@ -320,7 +320,7 @@ export function ChatView({
                 <button
                   onClick={() => send(input)}
                   disabled={!input.trim()}
-                  className="rounded-lg bg-accent px-4 py-1.5 text-[12.5px] text-white font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
+                  className="rounded-lg bg-accent px-4 py-1.5 text-[13.5px] text-white font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
                 >
                   发送 ↑
                 </button>

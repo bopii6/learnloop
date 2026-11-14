@@ -142,7 +142,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       {/* 积分变动 toast：扣了/加了都吱一声 */}
       {creditToast && (
-        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[95] rounded-xl bg-[#2b2a26] px-4 py-2.5 text-[12.5px] text-white shadow-xl fade-up">
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[95] rounded-xl bg-ink px-4 py-2.5 text-[13.5px] text-white shadow-xl fade-up">
           {creditToast.delta < 0
             ? `已消耗 ${-creditToast.delta} 积分，余额 ${creditToast.balance}`
             : `积分 +${creditToast.delta}，余额 ${creditToast.balance}`}

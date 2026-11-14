@@ -73,10 +73,10 @@ export function AuthModal({ onClose, onLoggedIn }: AuthModalProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-[#2b2a26]/45 backdrop-blur-[2px]">
-      <div className="w-[400px] max-w-[90%] rounded-3xl border border-[#e4e4e7] bg-white shadow-2xl p-7 fade-up">
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-ink/45 backdrop-blur-[2px]">
+      <div className="w-[400px] max-w-[90%] rounded-3xl border border-line bg-white shadow-2xl p-7 fade-up">
         <div className="flex items-center justify-between mb-1">
-          <div className="text-[11px] text-accent font-semibold tracking-[.1em]">Superlearn</div>
+          <div className="text-[12px] text-accent font-semibold tracking-[.1em]">Superlearn</div>
           <button onClick={onClose} className="text-ink-faint hover:text-ink text-[16px]" aria-label="关闭">
             ×
           </button>
@@ -84,7 +84,7 @@ export function AuthModal({ onClose, onLoggedIn }: AuthModalProps) {
         <div className="text-[19px] font-bold mb-1">
           {step === "email" ? "登录 / 注册" : "输入验证码"}
         </div>
-        <div className="text-[12.5px] text-ink-soft mb-5 leading-relaxed">
+        <div className="text-[13.5px] text-ink-soft mb-5 leading-relaxed">
           {step === "email"
             ? "邮箱验证码登录，没有账号会自动创建。课程记录、上传的教材都跟着账号走。"
             : `验证码已发到 ${email}，10 分钟内有效。`}
@@ -100,9 +100,9 @@ export function AuthModal({ onClose, onLoggedIn }: AuthModalProps) {
               }}
               placeholder="you@example.com"
               autoFocus
-              className="w-full rounded-xl border border-[#d4d4d8] px-4 py-2.5 text-[14px] outline-none focus:border-accent"
+              className="w-full rounded-xl border border-line-strong px-4 py-2.5 text-[14px] outline-none focus:border-accent"
             />
-            <label className="flex items-start gap-2 text-[11.5px] text-ink-soft leading-relaxed cursor-pointer select-none">
+            <label className="flex items-start gap-2 text-[12.5px] text-ink-soft leading-relaxed cursor-pointer select-none">
               <input
                 type="checkbox"
                 checked={agreed}
@@ -127,7 +127,7 @@ export function AuthModal({ onClose, onLoggedIn }: AuthModalProps) {
             <button
               onClick={() => void requestCode()}
               disabled={!email.includes("@") || !agreed || busy}
-              className="w-full rounded-xl bg-accent py-2.5 text-[13.5px] text-white font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
+              className="w-full rounded-xl bg-accent py-2.5 text-[14.5px] text-white font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
             >
               {busy ? "发送中…" : "发送验证码"}
             </button>
@@ -135,9 +135,9 @@ export function AuthModal({ onClose, onLoggedIn }: AuthModalProps) {
         ) : (
           <div className="space-y-3">
             {devCode && (
-              <div className="rounded-xl bg-[#fafafa] border border-[#f1e2ab] px-3.5 py-2.5 text-[12.5px] text-ink leading-relaxed">
+              <div className="rounded-xl bg-sunken border border-[#f1e2ab] px-3.5 py-2.5 text-[13.5px] text-ink leading-relaxed">
                 本地开发模式（未配置 SMTP），验证码直接给你：<b className="tracking-widest">{devCode}</b>
-                <div className="text-[11px] text-ink-faint mt-0.5">配好 .env 的 SMTP_* 后会改为真实发信</div>
+                <div className="text-[12px] text-ink-faint mt-0.5">配好 .env 的 SMTP_* 后会改为真实发信</div>
               </div>
             )}
             <input
@@ -149,16 +149,16 @@ export function AuthModal({ onClose, onLoggedIn }: AuthModalProps) {
               }}
               placeholder="6 位验证码"
               inputMode="numeric"
-              className="w-full rounded-xl border border-[#d4d4d8] px-4 py-2.5 text-[16px] tracking-[.4em] outline-none focus:border-accent text-center"
+              className="w-full rounded-xl border border-line-strong px-4 py-2.5 text-[16px] tracking-[.4em] outline-none focus:border-accent text-center"
             />
             <button
               onClick={() => void login()}
               disabled={code.length !== 6 || busy}
-              className="w-full rounded-xl bg-accent py-2.5 text-[13.5px] text-white font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
+              className="w-full rounded-xl bg-accent py-2.5 text-[14.5px] text-white font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
             >
               {busy ? "登录中…" : "登录"}
             </button>
-            <div className="flex items-center justify-between text-[11.5px] text-ink-faint">
+            <div className="flex items-center justify-between text-[12.5px] text-ink-faint">
               <button onClick={() => setStep("email")} className="hover:text-accent">
                 ← 换个邮箱
               </button>
@@ -170,7 +170,7 @@ export function AuthModal({ onClose, onLoggedIn }: AuthModalProps) {
         )}
 
         {error && (
-          <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700">{error}</div>
+          <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-700">{error}</div>
         )}
       </div>
     </div>

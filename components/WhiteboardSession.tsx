@@ -1052,38 +1052,38 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
   return (
     <div className="fixed inset-0 flex flex-col z-50 bg-[#fcfcfc]">
       {/* 顶栏 */}
-      <div className="h-14 border-b border-[#e6e8eb] bg-white/80 backdrop-blur flex items-center justify-between gap-3 px-4 shrink-0">
+      <div className="h-14 border-b border-line bg-white/80 backdrop-blur flex items-center justify-between gap-3 px-4 shrink-0">
         <div className="flex items-center gap-3 min-w-0">
           <button onClick={() => setExitOpen(true)} className="text-ink-soft hover:text-ink text-[18px] leading-none" aria-label="退出课堂">
             ×
           </button>
           <div className="text-[14px] font-medium truncate max-w-md">{lectureTitle}</div>
-          <span className="hidden md:inline-block rounded-full bg-[#f3f4f6] px-2 py-0.5 text-[10px] text-ink-soft shrink-0">AI 生成</span>
+          <span className="hidden md:inline-block rounded-full bg-sunken px-2 py-0.5 text-[11px] text-ink-soft shrink-0">AI 生成</span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex items-center border border-[#e6e8eb] rounded-lg overflow-hidden">
-            <button onClick={() => zoomBy(-0.1)} className="px-2.5 py-1.5 text-ink-soft hover:bg-[#f3f4f6]" aria-label="缩小">−</button>
+          <div className="flex items-center border border-line rounded-lg overflow-hidden">
+            <button onClick={() => zoomBy(-0.1)} className="px-2.5 py-1.5 text-ink-soft hover:bg-sunken" aria-label="缩小">−</button>
             <button
               onClick={() => apiRef.current?.updateScene({ appState: { zoom: { value: 1 } } })}
-              className="px-2 py-1.5 text-[11px] text-ink-soft hover:bg-[#f3f4f6] min-w-[3.1rem] text-center border-x border-[#e6e8eb]"
+              className="px-2 py-1.5 text-[12px] text-ink-soft hover:bg-sunken min-w-[3.1rem] text-center border-x border-line"
               aria-label="缩放复位到 100%"
               title="缩放复位到 100%"
             >
               {Math.round(camera.zoom * 100)}%
             </button>
-            <button onClick={() => zoomBy(0.1)} className="px-2.5 py-1.5 text-ink-soft hover:bg-[#f3f4f6]" aria-label="放大">+</button>
+            <button onClick={() => zoomBy(0.1)} className="px-2.5 py-1.5 text-ink-soft hover:bg-sunken" aria-label="放大">+</button>
           </div>
-          <div className="flex items-center border border-[#e6e8eb] rounded-lg overflow-hidden">
-            <button onClick={() => gotoPage(-1)} disabled={pageIndex <= 0} className="px-2.5 py-1.5 text-ink-soft hover:bg-[#f3f4f6] disabled:opacity-35" aria-label="上一页">‹</button>
-            <span className="px-2 py-1.5 text-[11px] text-ink-soft min-w-[3rem] text-center border-x border-[#e6e8eb]">
+          <div className="flex items-center border border-line rounded-lg overflow-hidden">
+            <button onClick={() => gotoPage(-1)} disabled={pageIndex <= 0} className="px-2.5 py-1.5 text-ink-soft hover:bg-sunken disabled:opacity-35" aria-label="上一页">‹</button>
+            <span className="px-2 py-1.5 text-[12px] text-ink-soft min-w-[3rem] text-center border-x border-line">
               {pageIndex + 1} / {board.pages.length}
             </span>
-            <button onClick={() => gotoPage(1)} disabled={pageIndex >= board.pages.length - 1} className="px-2.5 py-1.5 text-ink-soft hover:bg-[#f3f4f6] disabled:opacity-35" aria-label="下一页">›</button>
+            <button onClick={() => gotoPage(1)} disabled={pageIndex >= board.pages.length - 1} className="px-2.5 py-1.5 text-ink-soft hover:bg-sunken disabled:opacity-35" aria-label="下一页">›</button>
           </div>
           <select
             value={rate}
             onChange={(e) => changeRate(Number(e.target.value))}
-            className="rounded-lg border border-[#e6e8eb] bg-white px-2 py-1.5 text-[12px] text-ink-soft"
+            className="rounded-lg border border-line bg-white px-2 py-1.5 text-[13px] text-ink-soft"
             aria-label="讲解语速"
             title="讲解语速"
           >
@@ -1095,7 +1095,7 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
           </select>
           <button
             onClick={() => setVoiceOn((v) => !v)}
-            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12px] ${voiceOn ? "border-accent text-accent" : "border-[#e6e8eb] text-ink-soft"}`}
+            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[13px] ${voiceOn ? "border-accent text-accent" : "border-line text-ink-soft"}`}
             title={voiceOn ? "关闭语音" : "开启语音"}
             aria-label={voiceOn ? "关闭语音" : "开启语音"}
           >
@@ -1106,7 +1106,7 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
             <button
               onClick={() => void shareReplay()}
               disabled={sharing || status === "ready" || status === "preparing" || status === "blocked"}
-              className="flex items-center gap-1.5 rounded-lg border border-[#e6e8eb] px-3 py-1.5 text-[12px] text-ink-soft hover:border-accent hover:text-accent disabled:opacity-40"
+              className="flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-[13px] text-ink-soft hover:border-accent hover:text-accent disabled:opacity-40"
               title="生成这节课的只读回放链接，发给朋友"
               aria-label="分享回放链接"
             >
@@ -1117,7 +1117,7 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
         </div>
       </div>
       {shareMsg && (
-        <div className="absolute left-1/2 top-16 z-[90] -translate-x-1/2 rounded-lg bg-[#16181c] px-4 py-2 text-[12.5px] text-white shadow-lg">
+        <div className="absolute left-1/2 top-16 z-[90] -translate-x-1/2 rounded-lg bg-[#16181c] px-4 py-2 text-[13.5px] text-white shadow-lg">
           {shareMsg}
         </div>
       )}
@@ -1149,14 +1149,14 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
             />
             {status === "preparing" && (
               <div className="absolute inset-0 flex items-center justify-center bg-[#fcfcfc]/85">
-                <div className="text-[13px] text-ink-soft">
+                <div className="text-[14px] text-ink-soft">
                   {fastForwardRef.current > 0 ? "正在回到你上次停下的地方…" : "AI 讲师正在备课，第一次开讲大约需要 10-20 秒…"}
                 </div>
               </div>
             )}
             {(status === "ready" || status === "blocked") && (
               <div className="absolute inset-0 z-[60] flex items-center justify-center bg-[#fcfcfc]/92 px-4">
-                <div className="w-[440px] max-w-full rounded-3xl border border-[#e6e8eb] bg-white shadow-xl p-7">
+                <div className="w-[440px] max-w-full rounded-3xl border border-line bg-white shadow-xl p-7">
                   {status === "blocked" && blocked?.credits ? (
                     <>
                       <OutOfCredits
@@ -1165,28 +1165,28 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
                         balance={blocked.credits.balance}
                         onRecharged={() => void startLesson(0)}
                       />
-                      <button onClick={() => onExit?.()} className="mt-3 text-[12px] text-ink-faint hover:text-ink-soft">
+                      <button onClick={() => onExit?.()} className="mt-3 text-[13px] text-ink-faint hover:text-ink-soft">
                         先回课程页
                       </button>
                     </>
                   ) : status === "blocked" && blocked ? (
                     <>
                       <div className="text-[18px] font-bold mb-2">{blocked.title}</div>
-                      <div className="text-[13px] text-ink-soft leading-relaxed mb-5">{blocked.message}</div>
+                      <div className="text-[14px] text-ink-soft leading-relaxed mb-5">{blocked.message}</div>
                       <div className="flex gap-2.5 justify-end">
-                        <button onClick={() => onExit?.()} className="rounded-lg border border-[#e6e8eb] px-4 py-2 text-[12.5px] text-ink-soft hover:border-accent hover:text-accent">
+                        <button onClick={() => onExit?.()} className="rounded-lg border border-line px-4 py-2 text-[13.5px] text-ink-soft hover:border-accent hover:text-accent">
                           回到课程页
                         </button>
-                        <button onClick={() => void startLesson(0)} className="rounded-lg bg-accent px-4 py-2 text-[12.5px] text-white hover:opacity-90">
+                        <button onClick={() => void startLesson(0)} className="rounded-lg bg-accent px-4 py-2 text-[13.5px] text-white hover:opacity-90">
                           重试
                         </button>
                       </div>
                     </>
                   ) : (
                     <>
-                      <div className="text-[11px] text-accent font-semibold tracking-[.1em] mb-1">{isReplay ? "课堂回放" : "本节课"}</div>
+                      <div className="text-[12px] text-accent font-semibold tracking-[.1em] mb-1">{isReplay ? "课堂回放" : "本节课"}</div>
                       <div className="text-[19px] font-bold leading-snug mb-2">{lectureTitle}</div>
-                      <div className="text-[12.5px] text-ink-soft leading-relaxed mb-4">
+                      <div className="text-[13.5px] text-ink-soft leading-relaxed mb-4">
                         {isReplay
                           ? `${replay?.courseTitle ? `来自课程《${replay.courseTitle}》。` : ""}AI 讲师边讲边写板书，中途有一道小题等你作答。`
                           : "讲师边讲边写板书，中途会停下来考你一题。听不懂随时按「没听懂」，讲师会换个说法再讲。"}
@@ -1201,31 +1201,31 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
                             role="radio"
                             aria-checked={voiceOn === m.on}
                             onClick={() => setVoiceOn(m.on)}
-                            className={`flex-1 rounded-xl border px-3 py-2.5 text-left ${voiceOn === m.on ? "border-accent bg-accent/5" : "border-[#e6e8eb]"}`}
+                            className={`flex-1 rounded-xl border px-3 py-2.5 text-left ${voiceOn === m.on ? "border-accent bg-accent/5" : "border-line"}`}
                           >
-                            <div className="text-[13px] font-medium">{m.label}</div>
-                            <div className="text-[11px] text-ink-soft">{m.desc}</div>
+                            <div className="text-[14px] font-medium">{m.label}</div>
+                            <div className="text-[12px] text-ink-soft">{m.desc}</div>
                           </button>
                         ))}
                       </div>
                       <div className="flex flex-col gap-2">
                         {saved && !saved.finished && saved.done > 0 ? (
                           <>
-                            <button onClick={() => void startLesson(saved.done)} className="rounded-xl bg-accent px-4 py-2.5 text-[13.5px] font-medium text-white hover:opacity-90">
+                            <button onClick={() => void startLesson(saved.done)} className="rounded-xl bg-accent px-4 py-2.5 text-[14.5px] font-medium text-white hover:opacity-90">
                               ▶ 从上次停下的地方继续
                             </button>
-                            <button onClick={() => void startLesson(0)} className="rounded-xl border border-[#e6e8eb] px-4 py-2 text-[12.5px] text-ink-soft hover:border-accent hover:text-accent">
+                            <button onClick={() => void startLesson(0)} className="rounded-xl border border-line px-4 py-2 text-[13.5px] text-ink-soft hover:border-accent hover:text-accent">
                               从头开始
                             </button>
                           </>
                         ) : (
-                          <button onClick={() => void startLesson(0)} className="rounded-xl bg-accent px-4 py-2.5 text-[13.5px] font-medium text-white hover:opacity-90">
+                          <button onClick={() => void startLesson(0)} className="rounded-xl bg-accent px-4 py-2.5 text-[14.5px] font-medium text-white hover:opacity-90">
                             {isReplay ? "▶ 播放回放" : saved?.finished ? "▶ 再听一遍（复习免费）" : "▶ 开始上课"}
                           </button>
                         )}
                       </div>
                       {!isReplay && (
-                        <div className="mt-3 text-[11px] text-ink-faint">第一次开讲消耗 1 积分，之后复习免费；课堂提问不额外收费。</div>
+                        <div className="mt-3 text-[12px] text-ink-faint">第一次开讲消耗 1 积分，之后复习免费；课堂提问不额外收费。</div>
                       )}
                     </>
                   )}
@@ -1237,18 +1237,18 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
           {/* 底部：字幕 + 小测 */}
           <div className="pointer-events-none absolute bottom-0 left-0 right-0 flex flex-col items-center gap-2 pb-3 px-4">
             {ask && (
-              <div className="pointer-events-auto w-full max-w-2xl rounded-2xl border border-[#e6e8eb] bg-white shadow-lg px-4 py-3">
+              <div className="pointer-events-auto w-full max-w-2xl rounded-2xl border border-line bg-white shadow-lg px-4 py-3">
                 <div className="flex items-center justify-between mb-1">
-                  <div className="text-[12px] text-accent">小测 · 答完讲师继续</div>
+                  <div className="text-[13px] text-accent">小测 · 答完讲师继续</div>
                   {!ask.answered && (
-                    <button onClick={skipAsk} disabled={chatBusy} className="text-[11.5px] text-ink-faint hover:text-ink-soft disabled:opacity-50">
+                    <button onClick={skipAsk} disabled={chatBusy} className="text-[12.5px] text-ink-faint hover:text-ink-soft disabled:opacity-50">
                       跳过这题
                     </button>
                   )}
                 </div>
                 <div className="text-[14px] font-medium mb-2">{ask.question}</div>
                 {ask.answered ? (
-                  <div className="text-[12.5px] text-ink-soft">
+                  <div className="text-[13.5px] text-ink-soft">
                     你选了「{ask.answered.text}」
                     {ask.answered.correct != null ? (ask.answered.correct ? "（正确）" : "（再想想）") : ""}
                     {chatBusy ? " · 讲师正在点评…" : ""}
@@ -1260,7 +1260,7 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
                         key={o}
                         onClick={() => void submit(o, { fromAsk: ask })}
                         disabled={chatBusy}
-                        className="rounded-lg border border-[#e6e8eb] px-3 py-1.5 text-[12.5px] hover:border-accent hover:text-accent disabled:opacity-50"
+                        className="rounded-lg border border-line px-3 py-1.5 text-[13.5px] hover:border-accent hover:text-accent disabled:opacity-50"
                       >
                         {o}
                       </button>
@@ -1270,30 +1270,30 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
               </div>
             )}
             {caption.text && (
-              <div className="w-full max-w-3xl rounded-xl bg-[#16181c]/85 px-4 py-2 text-[13px] leading-relaxed text-white">
+              <div className="w-full max-w-3xl rounded-xl bg-[#16181c]/85 px-4 py-2 text-[14px] leading-relaxed text-white">
                 {caption.text.slice(0, caption.reveal)}
                 <span className="text-[#ffd9a8]">{caption.text.slice(caption.reveal)}</span>
               </div>
             )}
             {(status === "playing" || status === "ask" || status === "done") && (
-              <div className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-[#e6e8eb] bg-white/95 px-2 py-1 shadow-sm">
+              <div className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-line bg-white/95 px-2 py-1 shadow-sm">
                 {status === "done" && !paused ? (
-                  <span className="px-2 text-[12px] text-ink-soft">
+                  <span className="px-2 text-[13px] text-ink-soft">
                     {isReplay ? "回放播完了 · 想自己上一门课？去首页一句话生成" : "本节讲完了 · 有问题直接在右侧问讲师"}
                   </span>
                 ) : (
-                  <button onClick={togglePause} className="rounded-full px-3 py-1 text-[12px] text-ink hover:bg-[#f3f4f6]" aria-label={paused ? "继续讲解" : "暂停讲解"}>
+                  <button onClick={togglePause} className="rounded-full px-3 py-1 text-[13px] text-ink hover:bg-sunken" aria-label={paused ? "继续讲解" : "暂停讲解"}>
                     {paused ? "▶ 继续" : "❚❚ 暂停"}
                   </button>
                 )}
-                <button onClick={replayLast} disabled={!lastSpeechRef.current} className="rounded-full px-3 py-1 text-[12px] text-ink hover:bg-[#f3f4f6] disabled:opacity-40" aria-label="重听上一句">
+                <button onClick={replayLast} disabled={!lastSpeechRef.current} className="rounded-full px-3 py-1 text-[13px] text-ink hover:bg-sunken disabled:opacity-40" aria-label="重听上一句">
                   ↻ 重听
                 </button>
                 {!isReplay && (
                   <button
                     onClick={() => void submit("刚才这段我没听懂，能换个说法、举个具体例子再讲一遍吗？", { simpler: true })}
                     disabled={chatBusy}
-                    className="rounded-full px-3 py-1 text-[12px] text-ink hover:bg-[#f3f4f6] disabled:opacity-40"
+                    className="rounded-full px-3 py-1 text-[13px] text-ink hover:bg-sunken disabled:opacity-40"
                     aria-label="没听懂，请讲师换个说法再讲"
                   >
                     🤔 没听懂
@@ -1305,23 +1305,23 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
         </div>
 
         {/* 右栏：对话记录 */}
-        <div className="w-80 border-l border-[#e6e8eb] bg-white flex flex-col shrink-0">
-          <div className="p-3 border-b border-[#e6e8eb] text-[13px] font-medium">对话记录</div>
+        <div className="w-80 border-l border-line bg-white flex flex-col shrink-0">
+          <div className="p-3 border-b border-line text-[14px] font-medium">对话记录</div>
           <div className="flex-1 overflow-y-auto p-3 space-y-2">
             {messages.map((m) => (
-              <div key={m.id} className={`rounded-xl px-3 py-2 text-[12.5px] leading-relaxed ${m.kind === "user" ? "bg-accent text-white ml-6" : "bg-[#f7f7f6] text-ink mr-4"}`}>
+              <div key={m.id} className={`rounded-xl px-3 py-2 text-[13.5px] leading-relaxed ${m.kind === "user" ? "bg-accent text-white ml-6" : "bg-sunken text-ink mr-4"}`}>
                 {m.kind !== "user" && (
-                  <div className="text-[10.5px] text-ink-faint mb-0.5">
+                  <div className="text-[11.5px] text-ink-faint mb-0.5">
                     {m.kind === "board" ? "板书" : m.kind === "circle" ? "圈画" : m.kind === "image" ? "配图" : m.kind === "animation" ? "互动动画" : m.kind === "quiz" ? "小测" : m.kind === "reward" ? "徽章" : ""}
                   </div>
                 )}
                 <div className="line-clamp-3">{m.text}</div>
               </div>
             ))}
-            {chatBusy && <div className="text-[12px] text-ink-soft px-2">讲师正在回应…</div>}
-            {error && <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700">{error}</div>}
+            {chatBusy && <div className="text-[13px] text-ink-soft px-2">讲师正在回应…</div>}
+            {error && <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-700">{error}</div>}
           </div>
-          <div className={`p-3 border-t border-[#e6e8eb] ${isReplay ? "hidden" : ""}`}>
+          <div className={`p-3 border-t border-line ${isReplay ? "hidden" : ""}`}>
             <div className="flex gap-2">
               <textarea
                 value={input}
@@ -1335,12 +1335,12 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
                 placeholder="向讲师提问 / 作答…"
                 aria-label="向讲师提问"
                 rows={1}
-                className="flex-1 resize-none rounded-lg border border-[#e6e8eb] px-3 py-2 text-[13px] outline-none focus:border-accent"
+                className="flex-1 resize-none rounded-lg border border-line px-3 py-2 text-[14px] outline-none focus:border-accent"
               />
               <button
                 onClick={() => void submit(input)}
                 disabled={!input.trim() || chatBusy}
-                className="rounded-lg bg-accent px-4 py-2 text-[13px] text-white font-medium hover:opacity-90 disabled:opacity-40"
+                className="rounded-lg bg-accent px-4 py-2 text-[14px] text-white font-medium hover:opacity-90 disabled:opacity-40"
               >
                 发送
               </button>
@@ -1352,11 +1352,11 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
       {/* 徽章 */}
       {reward && (
         <div className="absolute inset-0 z-[70] flex items-center justify-center bg-[#16181c]/45">
-          <div className="w-[420px] max-w-[88%] rounded-3xl border border-[#e6e8eb] bg-white shadow-2xl p-7">
-            <div className="text-[11px] text-accent font-semibold tracking-[.1em] mb-1">课堂成就</div>
+          <div className="w-[420px] max-w-[88%] rounded-3xl border border-line bg-white shadow-2xl p-7">
+            <div className="text-[12px] text-accent font-semibold tracking-[.1em] mb-1">课堂成就</div>
             <div className="text-[20px] font-bold leading-snug mb-1.5">{reward.title}</div>
-            <div className="text-[12.5px] text-ink-soft leading-relaxed mb-4">{reward.desc}</div>
-            <button onClick={() => setReward(null)} className="rounded-lg bg-accent px-5 py-2 text-[12.5px] text-white hover:opacity-90">
+            <div className="text-[13.5px] text-ink-soft leading-relaxed mb-4">{reward.desc}</div>
+            <button onClick={() => setReward(null)} className="rounded-lg bg-accent px-5 py-2 text-[13.5px] text-white hover:opacity-90">
               知道了
             </button>
           </div>
@@ -1366,13 +1366,13 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
       {/* 退出确认 */}
       {exitOpen && (
         <div className="absolute inset-0 z-[80] flex items-center justify-center bg-[#16181c]/45">
-          <div className="w-[360px] max-w-[86%] rounded-3xl border border-[#e6e8eb] bg-white shadow-2xl p-6">
+          <div className="w-[360px] max-w-[86%] rounded-3xl border border-line bg-white shadow-2xl p-6">
             <div className="text-[17px] font-bold mb-1.5">{isReplay ? "退出回放？" : "退出这节课？"}</div>
-            <div className="text-[13px] text-ink-soft leading-relaxed mb-5">
+            <div className="text-[14px] text-ink-soft leading-relaxed mb-5">
               {isReplay ? "回放链接随时可以再打开。" : "进度已自动保存在这台设备上，下次进来可以从停下的地方继续。"}
             </div>
             <div className="flex gap-2.5 justify-end">
-              <button onClick={() => setExitOpen(false)} className="rounded-lg border border-[#e6e8eb] px-4 py-2 text-[12.5px] text-ink-soft hover:border-accent hover:text-accent">
+              <button onClick={() => setExitOpen(false)} className="rounded-lg border border-line px-4 py-2 text-[13.5px] text-ink-soft hover:border-accent hover:text-accent">
                 继续上课
               </button>
               <button
@@ -1381,7 +1381,7 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
                   speechStopRef.current?.();
                   onExit?.();
                 }}
-                className="rounded-lg bg-accent px-4 py-2 text-[12.5px] text-white hover:opacity-90"
+                className="rounded-lg bg-accent px-4 py-2 text-[13.5px] text-white hover:opacity-90"
               >
                 退出课堂
               </button>
