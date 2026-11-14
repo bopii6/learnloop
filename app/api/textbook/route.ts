@@ -2,13 +2,13 @@
 // 两种入参：
 // - application/json { filename, pageTexts[] }：浏览器端已抽取的逐页文字（首选路径。
 //   Workers 免费版 10ms CPU/128MB 内存扛不动服务端 pdf.js 解析，解析必须在客户端完成）
-// - multipart/form-data { file }：原始 PDF（扫描版回退路径，本地走 lib/ocr；云端无位图渲染会明确 422）
+// - multipart/form-data { file }：原始 PDF（客户端判定为扫描版时）。整本交 DeepSeek OCR，
+//   服务端不解析 PDF（Workers 上也能用）
 // 教材是后续建课与教学的 grounding 来源：课程蓝图镜像它的目录，讲解标注它的页码。
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
-import { extractText, getDocumentProxy } from "unpdf";
 import { extractTocCandidates, loadTextbook, assessTextbook, type TextbookDoc } from "@/lib/textbook";
-import { ocrPdf } from "@/lib/ocr";
+import { deepseekOcr } from "@/lib/agent/deepseek-tools";
 import { userFromCookieHeader } from "@/lib/auth";
 import { writeJson, storageMode } from "@/lib/storage";
 
@@ -19,15 +19,15 @@ const MIN_TEXT_RATIO = 0.6; // 有效文字页占比低于此 → 判定为扫�
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 600; // 扫描版 OCR 可能要几分钟
+export const maxDuration = 300; // DeepSeek OCR 同步接口单次上限 180 秒
 
 export async function POST(req: NextRequest) {
   try {
     const ctype = req.headers.get("content-type") || "";
     const isJson = ctype.includes("application/json");
     let filename = "教材";
-    let pageTexts: string[];
-    let parsedPdf: Awaited<ReturnType<typeof getDocumentProxy>> | null = null;
+    let pageTexts: string[] = [];
+    let ocrInfo: { used: boolean; lang?: string; truncated?: boolean } = { used: false };
 
     if (isJson) {
       const raw = await req.text();
@@ -65,14 +65,28 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "文件太大（>80MB）" }, { status: 400 });
       }
       filename = file.name.replace(/\.pdf$/i, "").slice(0, 60) || "教材";
-      const pdf = await getDocumentProxy(new Uint8Array(await file.arrayBuffer()));
-      const { text } = await extractText(pdf, { mergePages: false });
-      pageTexts = Array.isArray(text) ? text : [String(text ?? "")];
-      parsedPdf = pdf;
+      // 客户端只在判定为扫描版时才传原文件 → 整本云端 OCR
+      let ocr: Awaited<ReturnType<typeof deepseekOcr>>;
+      try {
+        const t0 = Date.now();
+        ocr = await deepseekOcr(file, file.name);
+        console.log(`[textbook-ocr] ${ocr.pages.length}/${ocr.pageCount} 页，${Date.now() - t0}ms，截断 ${ocr.cutOff} 页`);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error("[textbook-ocr] failed:", msg);
+        return NextResponse.json(
+          { error: "扫描版 PDF 识别失败，请稍后重试；若反复失败，请确认文件未加密、未损坏，或换文字版 PDF。" },
+          { status: 502 }
+        );
+      }
+      // 按页号回填成与原 PDF 等长的逐页数组，后面的清理/目录/存储逻辑与文字版共用
+      pageTexts = new Array(Math.max(ocr.pageCount, ocr.pages.length)).fill("");
+      for (const pg of ocr.pages) if (pg.page >= 1 && pg.page <= pageTexts.length) pageTexts[pg.page - 1] = pg.text;
+      ocrInfo = { used: true, lang: "deepseek-ocr", truncated: ocr.cutOff > 0 };
     }
 
     // 清理：压缩空白；丢掉几乎没有文字的页（封面/整页图片）
-    let pages = pageTexts
+    const pages = pageTexts
       .map((t, i) => ({
         page: i + 1,
         text: String(t || "")
@@ -82,44 +96,18 @@ export async function POST(req: NextRequest) {
       }))
       .filter((p) => p.text.length >= 20);
 
-    // ---- 扫描版检测：有效文字页占比过低 → 走 OCR ----
-    let ocrInfo: { used: boolean; lang?: string; truncated?: boolean } = { used: false };
+    // ---- 扫描版检测：JSON 路径（客户端已抽文字）有效文字页占比过低 → 让客户端改传原文件 OCR ----
     const textRatio = pages.length / Math.max(1, pageTexts.length);
-    if (textRatio < MIN_TEXT_RATIO && isJson) {
-      // JSON 路径没有原文件，无从 OCR
+    if (isJson && textRatio < MIN_TEXT_RATIO) {
       return NextResponse.json(
-        { error: "检测到扫描版 PDF（无文字层）。请使用文字版 PDF。" },
+        { error: "检测到扫描版 PDF（无文字层）。请重新上传原文件以自动识别。" },
         { status: 422 }
       );
-    }
-    if (textRatio < MIN_TEXT_RATIO && process.env.RUNTIME === "workers") {
-      // Workers 上没有本地位图渲染（原生 canvas），OCR 暂不可用；方案是把 OCR 移到浏览器端
-      return NextResponse.json(
-        { error: "检测到扫描版 PDF（无文字层）。云端部署暂不支持 OCR 识别，请使用文字版 PDF，或在本地版本上传。" },
-        { status: 422 }
-      );
-    }
-    if (textRatio < MIN_TEXT_RATIO) {
-      // 注意传已解析的 pdf 文档：buffer 经 pdf.js transfer 后已 detach，不能二次解析
-      const ocr = await ocrPdf(parsedPdf!, {
-        onProgress: (done, total) => {
-          // 进度写日志；HTTP 语义下不向前端推流，前端以"识别中"状态呈现
-          if (done % 10 === 0 || done === total) console.log(`[textbook-ocr] ${done}/${total}`);
-        },
-      });
-      if (ocr.pages.length === 0) {
-        return NextResponse.json(
-          { error: "这本 PDF 既没有文字层，OCR 也没认出内容。请确认不是加密/损坏文件，或先转成图片清晰的版本再试。" },
-          { status: 422 }
-        );
-      }
-      pages = ocr.pages;
-      ocrInfo = { used: true, lang: ocr.lang, truncated: ocr.truncated };
     }
 
     if (pages.length === 0) {
       return NextResponse.json(
-        { error: "这本 PDF 没有可提取的文字层（可能是扫描版）。请换文字版 PDF，或先把关键章节拍照转文字。" },
+        { error: ocrInfo.used ? "这本 PDF 的 OCR 没认出内容。请确认扫描清晰、文件未加密/损坏后再试。" : "这本 PDF 没有可提取的文字层。请换文字版 PDF，或先把关键章节拍照转文字。" },
         { status: 422 }
       );
     }
@@ -155,7 +143,7 @@ export async function POST(req: NextRequest) {
       ocr: ocrInfo.used,
       ocrLang: ocrInfo.lang,
       truncated: ocrInfo.truncated === true,
-      notice: [thinNotice, ocrInfo.used ? `扫描版已通过 OCR 识别（共 ${pages.length} 页有效内容）${ocrInfo.truncated ? "，超过页数上限只识别了前一部分" : ""}。识别质量取决于扫描清晰度，建议抽查课程内容。` : undefined]
+      notice: [thinNotice, ocrInfo.used ? `扫描版已通过 OCR 识别（共 ${pages.length} 页有效内容）${ocrInfo.truncated ? "，个别页内容过长被截断" : ""}。识别质量取决于扫描清晰度，建议抽查课程内容。` : undefined]
         .filter(Boolean)
         .join(" "),
     });

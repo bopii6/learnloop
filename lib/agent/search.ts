@@ -1,16 +1,13 @@
-// 网页搜索：Tavily（有 key 优先）→ 博查（国内）→ DuckDuckGo HTML → Bing HTML（免 key 兜底）
-// 所有结果统一做权威度评分 + 相关性闸门 + 同域去重，保证"信息源头"质量。
-// 闸门逐引擎生效：某引擎返回的结果全被拦掉（实测 Bing 对英文查询会整页跑题）就换下一个引擎。
+// 网页搜索：DeepSeek Search（与 LLM 共用 DeepSeek key）。
+// 结果统一做权威度评分 + 相关性闸门 + 同域去重，保证"信息源头"质量。
 import type { SourceItem } from "@/types";
+import { deepseekSearch } from "./deepseek-tools";
 
 interface RawResult {
   title: string;
   url: string;
   snippet: string;
 }
-
-const UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
 
 function domainOf(url: string): string {
   try {
@@ -143,164 +140,29 @@ function isJunkResult(domain: string, title: string): boolean {
   return JUNK_TITLE_RE.test(title);
 }
 
-async function searchTavily(query: string, max = 8): Promise<RawResult[]> {
-  const res = await fetch("https://api.tavily.com/search", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      api_key: process.env.TAVILY_API_KEY,
-      query,
-      max_results: max,
-      search_depth: "advanced",
-    }),
-    signal: AbortSignal.timeout(20000),
-  });
-  if (!res.ok) throw new Error(`Tavily ${res.status}`);
-  const data = await res.json();
-  return (data.results || []).map((r: any) => ({
-    title: r.title || r.url,
-    url: r.url,
-    snippet: r.content || "",
-  }));
-}
-
-async function searchBocha(query: string, max = 8): Promise<RawResult[]> {
-  const res = await fetch("https://api.bochaai.com/v1/web-search", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env.BOCHA_API_KEY}`,
-    },
-    body: JSON.stringify({ query, count: max, summary: true }),
-    signal: AbortSignal.timeout(20000),
-  });
-  if (!res.ok) throw new Error(`Bocha ${res.status}`);
-  const data = await res.json();
-  const pages = data?.data?.webPages?.value || [];
-  return pages.map((r: any) => ({
-    title: r.name || r.url,
-    url: r.url,
-    snippet: r.summary || r.snippet || "",
-  }));
-}
-
-// 免 key 兜底 1：DuckDuckGo HTML 版（对中英文查询都稳定，反爬比 Bing 宽松）
-async function searchDuckDuckGo(query: string, max = 8): Promise<RawResult[]> {
-  const res = await fetch("https://html.duckduckgo.com/html/", {
-    method: "POST",
-    headers: { "User-Agent": UA, "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ q: query, kl: "cn-zh" }).toString(),
-    signal: AbortSignal.timeout(8000),
-  });
-  if (!res.ok) throw new Error(`DDG ${res.status}`);
-  const html = await res.text();
-  const results: RawResult[] = [];
-  const blockRe = /<div class="result results_links[\s\S]*?<\/div>\s*<\/div>\s*<\/div>/g;
-  const blocks = html.match(blockRe) || [];
-  for (const b of blocks) {
-    if (results.length >= max) break;
-    const link = b.match(/<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/);
-    if (!link) continue;
-    let href = link[1];
-    // DDG 的跳转链接：//duckduckgo.com/l/?uddg=<encoded>&rut=...
-    const uddg = href.match(/[?&]uddg=([^&]+)/);
-    if (uddg) href = decodeURIComponent(uddg[1]);
-    if (!href.startsWith("http")) continue;
-    const title = decodeHtmlEntities(link[2].replace(/<[^>]+>/g, "").trim());
-    const snip = b.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/a>/);
-    const snippet = snip ? decodeHtmlEntities(snip[1].replace(/<[^>]+>/g, "").trim()) : "";
-    if (title) results.push({ title, url: href, snippet: snippet.slice(0, 300) });
-  }
-  return results;
-}
-
-// 免 key 兜底：抓 Bing 结果页 HTML。
-// 英文查询必须带 ensearch=1（强制国际版英文结果），否则国内出口只会拿到 zh 站群；
-// ensearch 版结果的链接是 Bing 跳转链（u=a1<base64>），需要解码出真实 URL。
-function decodeBingRedirect(href: string): string {
-  if (!href.includes("bing.com/ck/a")) return href;
-  const m = href.match(/[?&]u=a1([A-Za-z0-9_-]+)/);
-  if (!m) return href;
-  try {
-    return Buffer.from(m[1].replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf-8") || href;
-  } catch {
-    return href;
-  }
-}
-
-async function searchBing(query: string, max = 8): Promise<RawResult[]> {
-  const isEn = !/[\u4e00-\u9fff]/.test(query);
-  const params = new URLSearchParams({ q: query });
-  if (isEn) {
-    params.set("ensearch", "1");
-    params.set("setlang", "en");
-  } else {
-    params.set("setlang", "zh-Hans");
-  }
-  const res = await fetch(`https://www.bing.com/search?${params.toString()}`, {
-    headers: { "User-Agent": UA },
-    signal: AbortSignal.timeout(20000),
-  });
-  if (!res.ok) throw new Error(`Bing ${res.status}`);
-  const html = await res.text();
-  const results: RawResult[] = [];
-  const blockRe = /<li class="b_algo"[\s\S]*?<\/li>/g;
-  const blocks = html.match(blockRe) || [];
-  for (const b of blocks) {
-    if (results.length >= max) break;
-    const link = b.match(/<h2[^>]*>\s*<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/);
-    if (!link) continue;
-    const href = decodeBingRedirect(link[1].replace(/&amp;/g, "&"));
-    if (!href.startsWith("http")) continue;
-    const title = decodeHtmlEntities(link[2].replace(/<[^>]+>/g, "").trim());
-    const snip = b.match(/<p[^>]*>([\s\S]*?)<\/p>/);
-    const snippet = snip ? decodeHtmlEntities(snip[1].replace(/<[^>]+>/g, "").trim()) : "";
-    results.push({ title: title || href, url: href, snippet: snippet.slice(0, 300) });
-  }
-  return results;
-}
-
 export async function webSearch(query: string, max = 8): Promise<SourceItem[]> {
   const tokens = queryTokens(query);
   const minHits = Math.min(2, tokens.length);
   const passesGate = (r: RawResult) =>
     !isJunkResult(domainOf(r.url), r.title) && relevanceHits(`${r.title} ${r.snippet || ""}`, tokens) >= minHits;
 
-  let raw: RawResult[] = [];
-  const errors: string[] = [];
-  const seenUrl = new Set<string>(); // 跨引擎去重：同一个 URL 不重复占位
-  const providers: [string, () => Promise<RawResult[]>][] = [
-    ["tavily", () => searchTavily(query, max)],
-    ["bocha", () => searchBocha(query, max)],
-    ["ddg", () => searchDuckDuckGo(query, max)],
-    ["bing", () => searchBing(query, max)],
-  ];
-  for (const [name, run] of providers) {
-    if (name === "tavily" && !process.env.TAVILY_API_KEY) continue;
-    if (name === "bocha" && !process.env.BOCHA_API_KEY) continue;
-    try {
-      const results = await run();
-      let added = 0;
-      for (const r of results) {
-        if (seenUrl.has(r.url)) continue;
-        seenUrl.add(r.url);
-        if (passesGate(r)) {
-          raw.push(r);
-          added += 1;
-        }
-      }
-      // 攒够就停；没攒够换下一个引擎补位——不同引擎对同一查询的重叠率不高，
-      // 此前"第一个引擎有结果就定"的写法在闸门偏严时会把来源饿到只剩一两条
-      if (raw.length >= max) break;
-      if (added === 0 && results.length > 0) errors.push(`${name}: ${results.length} raw → 0 passed relevance gate`);
-    } catch (e) {
-      errors.push(`${name}: ${String(e)}`);
-    }
+  // 多要一些候选：闸门会拦掉一部分，留足余量
+  let fetched: RawResult[] = [];
+  try {
+    fetched = await deepseekSearch(query, Math.min(50, max * 2));
+  } catch (e) {
+    console.error(`[search] "${query}" failed:`, String(e));
+    return [];
   }
-  if (raw.length === 0) {
-    console.error("all search providers failed:", errors);
-  } else if (errors.length > 0 || raw.length < max) {
-    console.log(`[search] "${query}" → ${raw.length}/${max}（${errors.join("; ") || "补位后仍不足"}）`);
+  const seenUrl = new Set<string>();
+  const raw: RawResult[] = [];
+  for (const r of fetched) {
+    if (seenUrl.has(r.url)) continue;
+    seenUrl.add(r.url);
+    if (passesGate(r)) raw.push(r);
+  }
+  if (raw.length < max) {
+    console.log(`[search] "${query}" → ${raw.length}/${max}（${fetched.length} 条原始结果，其余未过相关性闸门）`);
   }
 
   // 权威度排序 + 同域最多 2 条（信息源多样性）；结果已在各引擎出口过闸

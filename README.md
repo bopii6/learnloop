@@ -33,8 +33,7 @@ npm run dev
 | `LLM_BASE_URL` | 是 | 默认 `https://api.deepseek.com`（国内直连） |
 | `LLM_API_KEY` | 是 | 去 https://platform.deepseek.com 注册，充 10 元够用很久 |
 | `LLM_MODEL` | 是 | 默认 `deepseek-chat` |
-| `TAVILY_API_KEY` | 否 | 填了搜索质量更好（国内需代理）；不填走博查/必应 |
-| `BOCHA_API_KEY` | 否 | 国内搜索 API，有免费额度：https://open.bochaai.com |
+| `DEEPSEEK_API_KEY` | 视情况 | 搜索、网页正文、扫描版教材 OCR 全走 DeepSeek Search / Fetch / OCR。LLM 走 DeepSeek 时不用填（复用 `LLM_API_KEY`）；LLM 换别家时必填 |
 | `DASHSCOPE_API_KEY` | 否 | 白板语音播报（qwen3-tts）与语音识别（qwen3-asr，Chrome 兜底不可用时）共用，走阿里云百炼（0.8 元/万字符，送 1 万字符）：https://bailian.console.aliyun.com/?tab=model#/api-key ；不填播报用浏览器系统音色、识别用浏览器原生 |
 
 LLM 可换任何 OpenAI 兼容端点（GLM / 通义 / 中转站），改三个变量即可。
@@ -51,7 +50,7 @@ Next.js 15 (App Router) + TypeScript + Tailwind + Vercel AI SDK + JSON 文件存
   → POST /api/chat (SSE)
     → classify  意图分类（chat / search / clarify）
     → plan      生成 2-3 个搜索词
-    → search    并行搜索（Tavily/博查/Bing）
+    → search    并行搜索（DeepSeek Search）
     → read      抓取 top 4 网页正文
     → write     流式生成带 [n] 引用的讲解
   → 消息落盘 data/conversations/{id}.json
@@ -99,12 +98,12 @@ POST /api/teach (SSE)
 4. `.env` 填入 `CF_ACCOUNT_ID` / `CF_R2_BUCKET` / `CF_R2_ACCESS_KEY_ID` / `CF_R2_SECRET_ACCESS_KEY`，重启
 5. 访问 `/api/storage-check` 确认 `"mode":"r2"` 且往返成功
 
-生效后：课程、教材、会话、画像、用户、集市数据全部写入你的桶。本地仍保留三样（刻意不上云）：`data/ocr-cache`（tesseract 语言包，需要文件路径）、`data/.auth-secret`（本机会话签名密钥）、`data/classrooms`（课堂断线恢复快照，非珍贵数据）。
+生效后：课程、教材、会话、画像、用户、集市数据全部写入你的桶。本地仍保留两样（刻意不上云）：`data/.auth-secret`（本机会话签名密钥）、`data/classrooms`（课堂断线恢复快照，非珍贵数据）。
 
 ### 第二步：应用本体上 Workers（待做）
 
 - `@opennextjs/cloudflare` 适配 Next.js；课堂 WebSocket（server.mjs）重写为 Durable Object
-- OCR 移到浏览器端：tesseract.js 是 WASM 可直接在浏览器跑（服务端原生 canvas 上不了 Workers）；渲染 + OCR 在用户浏览器完成，服务器只收文本，还省服务器算力
+- OCR 已改走 DeepSeek OCR 云端接口，服务端不再做位图渲染，Workers 上直接可用
 - 届时需要：Cloudflare API Token（Workers / D1 部署权限）
 
 ### 部署操作注意（本机实测踩坑，已多次复发）
