@@ -13,8 +13,10 @@
 //   LLM_THINKING_<TASK>       单任务思考强度：off | low | high | max
 // DeepSeek 专有参数（thinking / reasoning_effort / response_format）只在 DeepSeek 端点上注入，
 // 换成其他 OpenAI 兼容端点时自动不发，保证可迁移。
-import { createOpenAI } from "@ai-sdk/openai";
-import { generateText, streamText } from "ai";
+// 走 OpenAI 兼容的 Chat Completions 协议（@ai-sdk/openai 新版默认是 OpenAI 专有的 Responses 接口，不适合 DeepSeek）；
+// 它会把 DeepSeek 的 reasoning_content 解析成 reasoning 通道，正文 text 里不会混进思考过程。
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { generateText, streamText, type LanguageModelUsage } from "ai";
 import type { ZodTypeAny } from "zod";
 
 export type LlmTask = "fast" | "chat" | "design" | "script" | "judge";
@@ -76,28 +78,24 @@ function extraBody(route: Route, json: boolean): Record<string, unknown> {
   return extra;
 }
 
-// 每种请求体附加参数一个 provider 实例（自定义 fetch 把 SDK 不认识的字段并进请求体）
-const providers = new Map<string, ReturnType<typeof createOpenAI>>();
+// 每种请求体附加参数一个 provider 实例（transformRequestBody 把 SDK 不认识的字段并进请求体）
+const providers = new Map<string, ReturnType<typeof createOpenAICompatible>>();
 
 function modelFor(route: Route, json: boolean) {
   const extra = extraBody(route, json);
   const key = JSON.stringify(extra);
   let p = providers.get(key);
   if (!p) {
-    p = createOpenAI({
+    p = createOpenAICompatible({
+      name: "llm",
       baseURL: BASE_URL,
       apiKey: API_KEY,
-      fetch: async (url, init) => {
-        if (Object.keys(extra).length > 0 && init && typeof init.body === "string") {
-          const body = JSON.parse(init.body);
-          init = { ...init, body: JSON.stringify({ ...body, ...extra }) };
-        }
-        return fetch(url, init);
-      },
+      includeUsage: true, // 流式回答也要拿到用量
+      transformRequestBody: (body) => ({ ...body, ...extra }),
     });
     providers.set(key, p);
   }
-  return p(route.model);
+  return p.chatModel(route.model);
 }
 
 function budget(route: Route, maxTokens: number): number {
@@ -120,13 +118,13 @@ export function drainLlmUsage(): UsageBucket & { byTask: Partial<Record<LlmTask,
   return snap;
 }
 
-function addUsage(task: LlmTask, u?: { promptTokens?: number | null; completionTokens?: number | null }) {
+function addUsage(task: LlmTask, u?: LanguageModelUsage) {
   if (!u) return;
   const b = (usageByTask[task] ??= { calls: 0, promptTokens: 0, completionTokens: 0 });
   for (const acc of [usageAcc, b]) {
     acc.calls += 1;
-    acc.promptTokens += u.promptTokens || 0;
-    acc.completionTokens += u.completionTokens || 0;
+    acc.promptTokens += u.inputTokens || 0;
+    acc.completionTokens += u.outputTokens || 0; // 含思考 token（DeepSeek 按输出计费）
   }
 }
 
@@ -159,7 +157,7 @@ export async function generateJson<T>(system: string, user: string, opts: JsonOp
         system: system + JSON_RULE,
         prompt,
         temperature: opts.temperature ?? route.temperature,
-        maxTokens: budget(route, maxTokens),
+        maxOutputTokens: budget(route, maxTokens),
         abortSignal: AbortSignal.timeout(180_000), // LLM 挂起时让管线走 error 分支，而不是无限等
       });
       addUsage(opts.task, usage);
@@ -251,7 +249,7 @@ export async function generatePlainText(
     system,
     prompt: user,
     temperature: opts.temperature ?? route.temperature,
-    maxTokens: budget(route, opts.maxTokens ?? 1000),
+    maxOutputTokens: budget(route, opts.maxTokens ?? 1000),
     abortSignal: AbortSignal.timeout(opts.timeoutMs ?? 120_000),
   });
   addUsage(opts.task, usage);
@@ -272,7 +270,7 @@ export async function streamAnswer(
     system,
     prompt: user,
     temperature: opts.temperature ?? route.temperature,
-    maxTokens: budget(route, opts.maxTokens ?? 4000),
+    maxOutputTokens: budget(route, opts.maxTokens ?? 4000),
     abortSignal: AbortSignal.timeout(300_000),
   });
   let full = "";
