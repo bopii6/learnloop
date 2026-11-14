@@ -1,0 +1,68 @@
+{
+  "id": "ml-systematic",
+  "query": "我想系统学习机器学习",
+  "title": "机器学习建模实战：从特征工程到 XGBoost 与神经网络的端到端二分类系统学习",
+  "total": 22,
+  "maxScore": 26,
+  "machine": 5,
+  "machineDetail": {
+    "blueprintFallback": false,
+    "structure": 1,
+    "titleSpecific": 1,
+    "noBoilerTitles": 1,
+    "detailFill": 1,
+    "noBoilerSummaries": 1,
+    "machine": 5,
+    "avgTitleLen": 27.5,
+    "titleHits": 0,
+    "summaryHits": 0,
+    "defaultSummaries": 0
+  },
+  "judge": 17,
+  "judgeDetail": {
+    "scores": {
+      "specificity": 5,
+      "structure_logic": 4,
+      "audience_fit": 4,
+      "overall": 4
+    },
+    "issues": [
+      "单元 7（BigQuery ML / Spark MLlib）与主线端到端建模的衔接偏弱，对以算法实习为目标的学习者来说，这两个平台的实操优先级低于深度学习框架或竞赛级调优，且缺少与前面 Pipeline 概念的显式对照，容易变成孤立的工具介绍。",
+      "神经网络单元仅 5 讲，反向传播推导与训练循环搭建对无深度学习基础的大三学生偏紧，嵌入层之后直接跳到与树模型对比，缺少一次完整的调参/正则化实操，深度略浅。",
+      "缺少模型部署/推理服务或特征存储等工程化环节，'上线形态'仅停留在离线批量打分，与'算法实习'常见岗位要求（如简单 API 服务化）存在缺口。",
+      "评估体系单元放在逻辑回归之后、树模型之前是合理的，但交叉验证与超参搜索在单元 4 已讲，单元 5 又出现 Optuna 调优，存在概念重复，可合并或明确区分（网格 vs 贝叶斯）。",
+      "整体节奏对会 Python 的大三学生基本适配，但单元 1-2 偏基础（特征类型判定、独热编码），可考虑压缩或改为选学，把时间让给神经网络与调优实操。"
+    ]
+  },
+  "usage": {
+    "calls": 17,
+    "promptTokens": 25070,
+    "completionTokens": 23887,
+    "byTask": {
+      "fast": {
+        "calls": 1,
+        "promptTokens": 535,
+        "completionTokens": 18
+      },
+      "design": {
+        "calls": 15,
+        "promptTokens": 22945,
+        "completionTokens": 17894
+      },
+      "judge": {
+        "calls": 1,
+        "promptTokens": 1590,
+        "completionTokens": 5975
+      }
+    }
+  },
+  "costYuan": 0.261,
+  "durationMs": 144818,
+  "phaseTiming": {
+    "search": 1872,
+    "clarify": 14657,
+    "blueprint": 94695,
+    "outline": 30378
+  },
+  "error": null
+}

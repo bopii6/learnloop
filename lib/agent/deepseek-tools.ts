@@ -49,9 +49,18 @@ export interface DeepseekSearchResult {
   title: string;
   url: string;
   snippet: string;
+  /** DeepSeek 对"结果与问题相关"的打分，0-3 */
+  rerank: number;
+  /** DeepSeek 的站点权威度，0-4（-1 = 未知） */
+  authority: number;
 }
 
-export async function deepseekSearch(query: string, count = 8): Promise<DeepseekSearchResult[]> {
+/** oriQuestion：用户的原始学习目标。搜索词只是关键词，带上原始目标能让 DeepSeek 的重排更贴近真实需求 */
+export async function deepseekSearch(
+  query: string,
+  count = 8,
+  opts: { oriQuestion?: string } = {}
+): Promise<DeepseekSearchResult[]> {
   const key = toolsKey();
   if (!key) throw new Error("DeepSeek tools key not configured");
   const res = await fetch(`${BASE}/v1/tools/search`, {
@@ -61,6 +70,7 @@ export async function deepseekSearch(query: string, count = 8): Promise<Deepseek
       query: query.slice(0, 128),
       count: Math.max(1, Math.min(50, count)),
       need_content: true,
+      ...(opts.oriQuestion ? { ori_question: opts.oriQuestion.slice(0, 500) } : {}),
     }),
     signal: AbortSignal.timeout(20000),
   });
@@ -79,6 +89,8 @@ export async function deepseekSearch(query: string, count = 8): Promise<Deepseek
         url,
         // summary 是给模型看的长摘要，比 snippet 信息量大；截断以免撑爆提示词
         snippet: String(r.summary || r.snippet || "").slice(0, 400),
+        rerank: Number(r.rerank_score) || 0,
+        authority: Number.isFinite(Number(r.authority)) ? Number(r.authority) : -1,
       };
     });
 }

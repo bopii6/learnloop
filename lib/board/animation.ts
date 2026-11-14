@@ -1,8 +1,7 @@
 // 互动动画：让 LLM 生成一个自包含的 HTML 演示（对应白板上的一个机制）。
 // 约束与 Hyperknow 对齐：单文件、内联 CSS/JS、无外部资源（CSP 只放 inline），可直接 iframe srcdoc 渲染。
 import crypto from "node:crypto";
-import { generateText } from "ai";
-import { getModel } from "@/lib/agent/llm";
+import { generatePlainText } from "@/lib/agent/llm";
 import { readBinary, writeBinary } from "@/lib/storage";
 
 const ANIM_SYSTEM = `你是教学互动动画工程师。为白板课生成一个"自包含单文件 HTML"的互动演示，讲解一个机制。
@@ -29,13 +28,11 @@ export async function generateBoardAnimation(task: string): Promise<string> {
   const hit = await readBinary(cacheKey);
   if (hit) return hit.toString("utf8");
 
-  const { text } = await generateText({
-    model: getModel(),
-    system: ANIM_SYSTEM,
-    prompt: `要演示的任务：${task.slice(0, 600)}\n\n请输出完整的单文件 HTML。`,
-    temperature: 0.35,
+  const text = await generatePlainText(ANIM_SYSTEM, `要演示的任务：${task.slice(0, 600)}\n\n请输出完整的单文件 HTML。`, {
+    task: "script",
     maxTokens: 6000,
-    abortSignal: AbortSignal.timeout(180_000),
+    temperature: 0.35,
+    timeoutMs: 180_000,
   });
   const fence = text.match(/```(?:html)?\s*([\s\S]*?)```/i);
   let html = (fence ? fence[1] : text).trim();

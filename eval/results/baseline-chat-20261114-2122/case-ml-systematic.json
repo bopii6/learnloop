@@ -1,0 +1,52 @@
+{
+  "id": "ml-systematic",
+  "query": "我想系统学习机器学习",
+  "title": "机器学习系统实战：从数据到电商购买预测模型",
+  "total": 20,
+  "maxScore": 26,
+  "machine": 6,
+  "machineDetail": {
+    "blueprintFallback": false,
+    "structure": 2,
+    "titleSpecific": 1,
+    "noBoilerTitles": 1,
+    "detailFill": 1,
+    "noBoilerSummaries": 1,
+    "machine": 6,
+    "avgTitleLen": 18.3,
+    "titleHits": 0,
+    "summaryHits": 0,
+    "defaultSummaries": 0
+  },
+  "judge": 14,
+  "judgeDetail": {
+    "scores": {
+      "specificity": 4,
+      "structure_logic": 4,
+      "audience_fit": 3,
+      "overall": 3
+    },
+    "issues": [
+      "受众为计算机专业大三学生、目标算法实习，但课程仅覆盖逻辑回归，缺少树模型/集成学习（如 XGBoost/LightGBM）等实习面试与实战中的主流算法，深度偏浅，难以支撑算法岗竞争力",
+      "缺少工程化与部署环节：标题为『机器学习系统实战』，但大纲止于 Notebook 展示，没有特征管道（Pipeline）、模型持久化、离线/在线推理或简单服务化内容，与『系统』定位不符",
+      "课节标题与 summary 多为『能独立完成/解释』式表述，部分偏笼统（如『缺失值与异常值：检测与填充策略』未点明具体策略如中位数/模型填充、IQR/Z-score），机制细节不够具体",
+      "缺少模型评估的进阶内容（如类别不平衡下的 PR 曲线、阈值选择、代价敏感），而电商购买预测通常正负样本不均衡，这是关键考点缺口",
+      "单元间递进基本合理，但『数据集划分』放在特征工程单元末尾、早于模型训练，逻辑上可接受但更宜与交叉验证/调优合并，避免划分概念被割裂",
+      "对有大三学生而言节奏偏慢、偏基础，缺少课后练习/项目里程碑与时间安排，难以判断学习负荷与产出节奏"
+    ]
+  },
+  "usage": {
+    "calls": 14,
+    "promptTokens": 21650,
+    "completionTokens": 5390
+  },
+  "costYuan": 0.086,
+  "durationMs": 44212,
+  "phaseTiming": {
+    "search": 7213,
+    "clarify": 7146,
+    "blueprint": 19576,
+    "outline": 7030
+  },
+  "error": null
+}

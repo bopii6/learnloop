@@ -1,0 +1,51 @@
+{
+  "id": "r-for-elderly",
+  "query": "教我用R语言画统计图",
+  "title": "R语言统计绘图入门：零基础用ggplot2画出可发表的调研图表",
+  "total": 17,
+  "maxScore": 26,
+  "machine": 5,
+  "machineDetail": {
+    "blueprintFallback": false,
+    "structure": 1,
+    "titleSpecific": 1,
+    "noBoilerTitles": 1,
+    "detailFill": 1,
+    "noBoilerSummaries": 1,
+    "machine": 5,
+    "avgTitleLen": 21.3,
+    "titleHits": 0,
+    "summaryHits": 0,
+    "defaultSummaries": 0
+  },
+  "judge": 12,
+  "judgeDetail": {
+    "scores": {
+      "specificity": 4,
+      "structure_logic": 4,
+      "audience_fit": 2,
+      "overall": 2
+    },
+    "issues": [
+      "节奏与认知负荷对70岁零基础学习者偏重：8个单元32节课，且每单元4节连排，缺少复习/缓冲课，与'放慢节奏、每节只解决一个小目标'的考察点不完全匹配",
+      "术语密度过高且缺少生活化类比：aes()、geom_*、position、facet、coord_cartesian、标度等概念连续出现，对零编程基础的老人缺少'为什么需要它'的铺垫与重复练习",
+      "缺少针对老年学习者的操作性支持：如界面截图指引、字号放大、误操作恢复、求助渠道、每节课的检查清单与练习答案，这些对零基础老人是刚需",
+      "单元6（分面与标度）和单元7（多图组合）对'把调研数据画成图'的核心目标而言偏进阶，可考虑拆成选修或延后，避免主线过长导致放弃",
+      "结课项目要求'至少3种图形+拼图+美化'，对零基础老人一次性完成负担偏大，建议拆成多个小里程碑并给出可复制的模板代码"
+    ]
+  },
+  "usage": {
+    "calls": 17,
+    "promptTokens": 25815,
+    "completionTokens": 6696
+  },
+  "costYuan": 0.105,
+  "durationMs": 46368,
+  "phaseTiming": {
+    "search": 1490,
+    "clarify": 7968,
+    "blueprint": 22822,
+    "outline": 11169
+  },
+  "error": null
+}

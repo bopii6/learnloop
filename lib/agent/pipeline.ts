@@ -1,6 +1,6 @@
 // Agent 主管线：classify → (clarify | chat | plan → search → read → write)
 import type { AgentEvent, SourceItem, StageName, StageRecord } from "@/types";
-import { generateJson, streamAnswer } from "./llm";
+import { generateJson, generatePlainText, streamAnswer } from "./llm";
 import { webSearch } from "./search";
 import { readUrl } from "./read";
 import {
@@ -11,8 +11,6 @@ import {
   VERIFY_SYSTEM,
   buildAnswerSystem,
 } from "./prompts";
-import { generateText } from "ai";
-import { getModel } from "./llm";
 
 type Emit = (e: AgentEvent) => Promise<void> | void;
 
@@ -53,7 +51,7 @@ export async function runAgent(opts: {
     questions?: any[];
   }>(
     CLASSIFY_SYSTEM,
-    `${histText ? `最近对话：\n${histText}\n\n` : ""}用户最新消息：${message}`
+    `${histText ? `最近对话：\n${histText}\n\n` : ""}用户最新消息：${message}`, { task: "fast" }
   );
   const mode = cls?.mode || "search";
   await stageEnd("classify", "正在理解你的问题");
@@ -92,7 +90,7 @@ export async function runAgent(opts: {
   await stageStart("plan", "正在规划检索");
   const plan = await generateJson<{ queries: string[] }>(
     PLAN_SYSTEM,
-    `用户问题：${message}`
+    `用户问题：${message}`, { task: "fast" }
   );
   const queries = (plan?.queries || [message]).slice(0, 3);
   await emit({
@@ -106,7 +104,7 @@ export async function runAgent(opts: {
 
   // 搜索（并行）
   await stageStart("search", "正在搜索网络资料", queries.join(" ｜ "));
-  const settled = await Promise.allSettled(queries.map((q) => webSearch(q, 5)));
+  const settled = await Promise.allSettled(queries.map((q) => webSearch(q, 5, { goal: message })));
   const seen = new Set<string>();
   for (const s of settled) {
     if (s.status !== "fulfilled") continue;
@@ -172,7 +170,7 @@ export async function runAgent(opts: {
       facts?: Array<{ claim?: string; sources?: number[] }>;
       conflicts?: string[];
       gaps?: string[];
-    }>(VERIFY_SYSTEM, `用户问题：${message}\n\n网页资料：\n${sourceBlocks}`, 2200);
+    }>(VERIFY_SYSTEM, `用户问题：${message}\n\n网页资料：\n${sourceBlocks}`, { task: "fast", maxTokens: 2200 });
     const facts = (verification?.facts || [])
       .filter(
         (f) =>
@@ -206,13 +204,11 @@ export async function runAgent(opts: {
 
 export async function generateTitle(firstMessage: string, firstAnswer: string): Promise<string> {
   try {
-    const { text } = await generateText({
-      model: getModel(),
-      system: TITLE_SYSTEM,
-      prompt: `用户：${firstMessage.slice(0, 200)}\n助手：${firstAnswer.slice(0, 300)}`,
-      temperature: 0.3,
-      maxTokens: 30,
-    });
+    const text = await generatePlainText(
+      TITLE_SYSTEM,
+      `用户：${firstMessage.slice(0, 200)}\n助手：${firstAnswer.slice(0, 300)}`,
+      { task: "fast", maxTokens: 30, temperature: 0.3 }
+    );
     const t = text.trim().replace(/["'《》。.]/g, "").slice(0, 16);
     return t || "新对话";
   } catch {

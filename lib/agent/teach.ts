@@ -2,6 +2,7 @@
 import type { TeachBeat, BoardItem, CourseOutline, WhiteboardEvent, SegmentCheckpoint, LectureQuizItem } from "@/types";
 import { generateJson, streamAnswer } from "./llm";
 import { constraintsBlock, langMatchesExpectation } from "./lang";
+import { beatScriptSchema, checkpointSchema, lecturePlanSchema, quizSchema } from "./schemas";
 
 type Emit = (e: WhiteboardEvent) => Promise<void> | void;
 
@@ -212,8 +213,7 @@ async function reviewSegment(
 讲稿（逐句）：
 ${beats.map((b) => b.say).join("\n").slice(0, 1600)}${
         ctx.referenceMaterial ? "\n（本片段有参考资料，讲稿应优先吃透其中的具体机制/数字/案例）" : "\n（本片段无参考资料，讲稿至少要落到真实案例、具体步骤或可操作的判断上）"
-      }`,
-      500
+      }`, { task: "judge", maxTokens: 500 }
     );
     if (!res || typeof res.specific !== "boolean") return pass;
     return {
@@ -361,8 +361,7 @@ export async function runStartTeaching(opts: {
       ctx.previousLectures?.length ? `\n前情（学员已按顺序听完）：${ctx.previousLectures.map((l, i) => `${i + 1}.「${l.title}」${l.summary}`).join("；")}` : ""
     }${ctx.keyConcepts?.length ? `\n本单元关键概念：${ctx.keyConcepts.join("、")}` : ""}${
       ctx.capstoneGoal ? `\n学员的结课作品：${ctx.capstoneGoal}（至少一个片段的例子直接为这个作品服务）` : ""
-    }${teachConstraintsBlock(ctx)}${ctx.referenceMaterial ? `\n参考资料（片段划分要覆盖其中的关键内容，资料里反复出现的概念、对比、案例必须各占一个片段）：\n${ctx.referenceMaterial.slice(0, 5000)}` : ""}`,
-    1100
+    }${teachConstraintsBlock(ctx)}${ctx.referenceMaterial ? `\n参考资料（片段划分要覆盖其中的关键内容，资料里反复出现的概念、对比、案例必须各占一个片段）：\n${ctx.referenceMaterial.slice(0, 5000)}` : ""}`, { task: "design", maxTokens: 1100, schema: lecturePlanSchema }
   );
   const openingQuestion = plan?.opening_question ? String(plan.opening_question).slice(0, 40) : "";
   const points = (Array.isArray(plan?.points) ? plan!.points : [])
@@ -448,8 +447,7 @@ export async function runStartTeaching(opts: {
 
     const script = await generateJson<{ beats: TeachBeat[] }>(
       BEAT_SCRIPT_SYSTEM + langLineFor(ctx),
-      beatUserMsg,
-      2600
+      beatUserMsg, { task: "script", maxTokens: 2600, schema: beatScriptSchema }
     );
 
     let beats = normalizeBeats(script?.beats);
@@ -460,8 +458,7 @@ export async function runStartTeaching(opts: {
     if (langMatchesExpectation(ctx.outputLanguage, beats.map((b) => b.say).join(" ")) === false) {
       const retry = await generateJson<{ beats: TeachBeat[] }>(
         BEAT_SCRIPT_SYSTEM + langLineFor(ctx),
-        `${beatUserMsg}\n\n【语言硬约束】上一版讲稿语言不符：所有 say 与板书文字必须使用「${ctx.outputLanguage}」重写。`,
-        2600
+        `${beatUserMsg}\n\n【语言硬约束】上一版讲稿语言不符：所有 say 与板书文字必须使用「${ctx.outputLanguage}」重写。`, { task: "script", maxTokens: 2600, schema: beatScriptSchema }
       );
       const retryBeats = normalizeBeats(retry?.beats);
       if (retryBeats.length > 0) beats = retryBeats;
@@ -485,8 +482,7 @@ export async function runStartTeaching(opts: {
         BEAT_SCRIPT_SYSTEM + langLineFor(ctx),
         `${beatUserMsg}\n\n【审稿意见】${review.feedback}\n重写要求：\n${reasons}${
           ctx.referenceMaterial ? "\n逐句吃透参考资料，把资料里的细节讲出来。" : "\n用真实案例与具体步骤把内容做实，不发明统计数字。"
-        }`,
-        2600
+        }`, { task: "script", maxTokens: 2600, schema: beatScriptSchema }
       );
       const retryBeats = normalizeBeats(retry?.beats);
       if (retryBeats.length > 0) beats = retryBeats;
@@ -517,7 +513,7 @@ export async function runStartTeaching(opts: {
           : `课程：《${ctx.courseTitle}》（面向：${ctx.audience}）
 课节：${ctx.lectureTitle}
 片段标题：${segment.title}
-片段讲解内容：\n${beats.map((b) => b.say).join("\n").slice(0, 1500)}\n\n请出一道课堂练习题。`
+片段讲解内容：\n${beats.map((b) => b.say).join("\n").slice(0, 1500)}\n\n请出一道课堂练习题。`, { task: "script", schema: checkpointSchema }
       );
       if (mcq?.question && Array.isArray(mcq.options) && mcq.options.length >= 2) {
         checkpoint = {
@@ -560,8 +556,7 @@ ${lessonSegments
   .join("\n")}
 ${ctx.referenceMaterial ? `\n参考资料（题目事实以此为准）：\n${ctx.referenceMaterial.slice(0, 2500)}` : ""}
 
-请出课后练习。`,
-      2000
+请出课后练习。`, { task: "design", maxTokens: 2000, schema: quizSchema }
     );
     const quiz = (quizRaw?.quiz || [])
       .filter((q) => q && typeof q.question === "string" && Array.isArray(q.options) && q.options.length >= 3 && Array.isArray(q.answerIndexes) && q.answerIndexes.length > 0)
@@ -644,8 +639,7 @@ export async function runTeachChat(opts: {
 白板已写的内容：${context.boardOutline || "（无）"}
 学员的原话：${message}
 
-请生成补课卡。`,
-        500
+请生成补课卡。`, { task: "script", maxTokens: 500 }
       );
       const items = (card?.items || [])
         .filter((it) => it && ["bullet", "note", "quote"].includes(String(it.kind)))
@@ -705,8 +699,7 @@ ${TEACH_STYLE}
       `你是白板课堂的成就系统。学员刚回答了课堂练习并得到讲师点评。为学员颁发一个成就徽章，只输出 JSON：{"title":"...","desc":"..."}
 规则：title ≤ 8 字，概念式命名（如"建立行动者意识""跳出概率陷阱"）；desc ≤ 30 字，把刚练的知识点写成一句肯定语。即使答错也发（desc 写"你已经注意到了这个陷阱，进步了"这类），
 但如果学员的选择明显错了且没有自救，title 用"勇气可嘉"风格。${langLineFor(ctx)}`,
-      `练习：${context.checkpointQuestion}\n学员选择：${message}`,
-      250
+      `练习：${context.checkpointQuestion}\n学员选择：${message}`, { task: "fast", maxTokens: 250 }
     );
     if (ach?.title) {
       await emit({ type: "achievement", title: String(ach.title).slice(0, 12), desc: String(ach.desc || "").slice(0, 40) });

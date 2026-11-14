@@ -1,0 +1,68 @@
+{
+  "id": "cooking-zero",
+  "query": "零基础学做饭",
+  "title": "一口炒锅的零基础家常菜：从热传递原理到五道菜稳定复现",
+  "total": 14,
+  "maxScore": 26,
+  "machine": 5,
+  "machineDetail": {
+    "blueprintFallback": false,
+    "structure": 1,
+    "titleSpecific": 1,
+    "noBoilerTitles": 1,
+    "detailFill": 1,
+    "noBoilerSummaries": 1,
+    "machine": 5,
+    "avgTitleLen": 19.3,
+    "titleHits": 0,
+    "summaryHits": 0,
+    "defaultSummaries": 0
+  },
+  "judge": 9,
+  "judgeDetail": {
+    "scores": {
+      "specificity": 3,
+      "structure_logic": 2,
+      "audience_fit": 2,
+      "overall": 2
+    },
+    "issues": [
+      "标题与多个单元（如'热如何进入食物''盐与水'）停留在烹饪理论和物理化学概念上，与考察点要求的'具体到菜品/技法'相悖，零基础学习者难以一眼看出学完能做什么菜",
+      "结构逻辑倒置：第2单元讲热传递、比热容、相变等抽象原理，却排在第5、6单元的蔬菜、肉鱼实操之前，先修依赖不合理，应先建立'能炒熟一道菜'的体感再讲原理",
+      "受众适配不足：persona是完全不会做饭的独居上班族，但大纲出现'比热容''导热系数''1%与5%浓度换算'等偏理科内容，节奏偏理论，缺少对'只有一口炒锅、怕失败、要稳定复现5道菜'的针对性设计",
+      "五道菜直到最后一个单元才以'结课实操'笼统出现，全程未明确列出是哪五道菜，无法支撑'稳定做5道家常菜'的核心目标",
+      "缺少对'完全不会做饭'者的失败兜底与重复练习设计，如每道菜的多次复现、常见翻车点排查，稳定复现目标难以落地"
+    ]
+  },
+  "usage": {
+    "calls": 16,
+    "promptTokens": 44866,
+    "completionTokens": 11122,
+    "byTask": {
+      "fast": {
+        "calls": 1,
+        "promptTokens": 538,
+        "completionTokens": 26
+      },
+      "design": {
+        "calls": 14,
+        "promptTokens": 42877,
+        "completionTokens": 10095
+      },
+      "judge": {
+        "calls": 1,
+        "promptTokens": 1451,
+        "completionTokens": 1001
+      }
+    }
+  },
+  "costYuan": 0.194,
+  "durationMs": 76947,
+  "phaseTiming": {
+    "search": 1139,
+    "clarify": 25908,
+    "blueprint": 31718,
+    "outline": 15525
+  },
+  "error": null
+}

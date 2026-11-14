@@ -32,7 +32,7 @@ npm run dev
 |---|---|---|
 | `LLM_BASE_URL` | 是 | 默认 `https://api.deepseek.com`（国内直连） |
 | `LLM_API_KEY` | 是 | 去 https://platform.deepseek.com 注册，充 10 元够用很久 |
-| `LLM_MODEL` | 是 | 默认 `deepseek-chat` |
+| `LLM_MODEL` | 否 | 默认 `deepseek-flash`；可按任务覆盖：`LLM_MODEL_<TASK>` / `LLM_THINKING_<TASK>`（任务：fast / chat / design / script / judge，见 `lib/agent/llm.ts`） |
 | `DEEPSEEK_API_KEY` | 视情况 | 搜索、网页正文、扫描版教材 OCR 全走 DeepSeek Search / Fetch / OCR。LLM 走 DeepSeek 时不用填（复用 `LLM_API_KEY`）；LLM 换别家时必填 |
 | `DASHSCOPE_API_KEY` | 否 | 白板语音播报（qwen3-tts）与语音识别（qwen3-asr，Chrome 兜底不可用时）共用，走阿里云百炼（0.8 元/万字符，送 1 万字符）：https://bailian.console.aliyun.com/?tab=model#/api-key ；不填播报用浏览器系统音色、识别用浏览器原生 |
 

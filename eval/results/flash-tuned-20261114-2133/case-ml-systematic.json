@@ -1,0 +1,67 @@
+{
+  "id": "ml-systematic",
+  "query": "我想系统学习机器学习",
+  "title": "机器学习实战：从第一个 scikit-learn 模型到求职级端到端项目",
+  "total": 23,
+  "maxScore": 26,
+  "machine": 6,
+  "machineDetail": {
+    "blueprintFallback": false,
+    "structure": 2,
+    "titleSpecific": 1,
+    "noBoilerTitles": 1,
+    "detailFill": 1,
+    "noBoilerSummaries": 1,
+    "machine": 6,
+    "avgTitleLen": 27.2,
+    "titleHits": 0,
+    "summaryHits": 0,
+    "defaultSummaries": 0
+  },
+  "judge": 17,
+  "judgeDetail": {
+    "scores": {
+      "specificity": 5,
+      "structure_logic": 4,
+      "audience_fit": 4,
+      "overall": 4
+    },
+    "issues": [
+      "单元二到单元三之间缺少从特征工程到模型谱系的显式过渡，学习者可能不清楚为何此时引入树模型",
+      "BigQuery ML 与 Spark/Databricks 两节引入的云平台工具链对以本地 scikit-learn 为主线的大三学生可能造成环境与成本负担，且与求职算法实习的核心考察点关联偏弱",
+      "单元五的批量预测与离线评估对齐、上线检查清单偏工程运维，对算法实习面试的优先级低于模型与实验部分，节奏上可压缩",
+      "缺少对 Python 基础到 scikit-learn API 的显式衔接说明，虽 persona 会 Python 但未确认其熟悉 numpy/pandas 生态"
+    ]
+  },
+  "usage": {
+    "calls": 14,
+    "promptTokens": 23101,
+    "completionTokens": 10326,
+    "byTask": {
+      "fast": {
+        "calls": 1,
+        "promptTokens": 535,
+        "completionTokens": 18
+      },
+      "design": {
+        "calls": 12,
+        "promptTokens": 21009,
+        "completionTokens": 8836
+      },
+      "judge": {
+        "calls": 1,
+        "promptTokens": 1557,
+        "completionTokens": 1472
+      }
+    }
+  },
+  "costYuan": 0.14,
+  "durationMs": 69448,
+  "phaseTiming": {
+    "search": 1698,
+    "clarify": 15719,
+    "blueprint": 35852,
+    "outline": 14474
+  },
+  "error": null
+}

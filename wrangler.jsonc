@@ -13,7 +13,7 @@
   "vars": {
     "RUNTIME": "workers",
     "LLM_BASE_URL": "https://api.deepseek.com",
-    "LLM_MODEL": "deepseek-chat",
+    "LLM_MODEL": "deepseek-flash",
     "CF_ACCOUNT_ID": "25a5412b3b51b03386b6945004ba381b",
     "CF_R2_BUCKET": "learnloop",
     // LLM_API_KEY 等密钥走 Worker secret（wrangler secret put），不能在 vars 声明——同名冲突 code 10053

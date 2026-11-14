@@ -1,0 +1,68 @@
+{
+  "id": "r-for-elderly",
+  "query": "教我用R语言画统计图",
+  "title": "用 R 画统计图：零基础把调研数据变成可展示的图表",
+  "total": 20,
+  "maxScore": 26,
+  "machine": 6,
+  "machineDetail": {
+    "blueprintFallback": false,
+    "structure": 2,
+    "titleSpecific": 1,
+    "noBoilerTitles": 1,
+    "detailFill": 1,
+    "noBoilerSummaries": 1,
+    "machine": 6,
+    "avgTitleLen": 41.6,
+    "titleHits": 0,
+    "summaryHits": 0,
+    "defaultSummaries": 0
+  },
+  "judge": 14,
+  "judgeDetail": {
+    "scores": {
+      "specificity": 4,
+      "structure_logic": 4,
+      "audience_fit": 3,
+      "overall": 3
+    },
+    "issues": [
+      "对零编程基础的 70 岁学习者，单节课信息量偏大：如“安装与第一张图”同时要求装 R 与 RStudio、运行 library、看懂散点图，未做到每节只解决一个可完成的小目标",
+      "第 4 单元“scale_x_continuous 与 coord_cartesian 的区别，以及为什么少用 ylim”属于较抽象的机制辨析，对零基础老人认知负担过重，建议拆成独立小课或降为选学",
+      "缺少面向老年学习者的支持性设计：如字号放大、截图标注、常见报错对照卡、每节课后的自检清单与复习节奏",
+      "第 2 单元直方图 bins 参数、第 3 单元 aes 内外写法的判断，对零基础偏概念化，缺少“先照抄再理解”的过渡步骤",
+      "结课实操要求一次产出 3–5 张 PNG 并讲给家人听，目标偏大，建议拆成“先导出 1 张成功”再逐步扩展"
+    ]
+  },
+  "usage": {
+    "calls": 12,
+    "promptTokens": 21623,
+    "completionTokens": 8003,
+    "byTask": {
+      "fast": {
+        "calls": 1,
+        "promptTokens": 544,
+        "completionTokens": 21
+      },
+      "design": {
+        "calls": 10,
+        "promptTokens": 19937,
+        "completionTokens": 6458
+      },
+      "judge": {
+        "calls": 1,
+        "promptTokens": 1142,
+        "completionTokens": 1524
+      }
+    }
+  },
+  "costYuan": 0.116,
+  "durationMs": 57329,
+  "phaseTiming": {
+    "search": 1452,
+    "clarify": 14620,
+    "blueprint": 28241,
+    "outline": 10496
+  },
+  "error": null
+}

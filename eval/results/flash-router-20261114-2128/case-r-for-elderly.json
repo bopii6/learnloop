@@ -1,0 +1,69 @@
+{
+  "id": "r-for-elderly",
+  "query": "教我用R语言画统计图",
+  "title": "用 R 画调研图：零基础 ggplot2 出版级图表实战",
+  "total": 20,
+  "maxScore": 26,
+  "machine": 5,
+  "machineDetail": {
+    "blueprintFallback": false,
+    "structure": 1,
+    "titleSpecific": 1,
+    "noBoilerTitles": 1,
+    "detailFill": 1,
+    "noBoilerSummaries": 1,
+    "machine": 5,
+    "avgTitleLen": 26.6,
+    "titleHits": 0,
+    "summaryHits": 0,
+    "defaultSummaries": 0
+  },
+  "judge": 15,
+  "judgeDetail": {
+    "scores": {
+      "specificity": 5,
+      "structure_logic": 4,
+      "audience_fit": 3,
+      "overall": 3
+    },
+    "issues": [
+      "节奏对 70 岁零基础学习者仍偏快：7 个单元 26 节课，单节虽小但总量大，缺少复习/缓冲课与阶段性回顾，老人容易中途掉队",
+      "第 3 单元「25 种形状、透明度」和第 4 单元「标度函数统一调整刻度、范围与颜色分档」对零基础老人偏技术化，超出「把调研数据画成图」的最小目标，可延后或删减",
+      "缺少针对老年学习者的操作支持：如界面字号放大、误触恢复、每节课的截图式步骤卡与可复制代码清单，大纲未体现",
+      "第 2 单元「图形语法」概念抽象，紧接第 1 单元就讲映射与固定的区别，对零基础老人认知负荷偏高，建议先多画几张图再回讲概念",
+      "缺少数据准备环节：老人手头调研数据可能是 Excel，如何整理成可读入的整洁表格（列名、缺失值）未单列，读入后易卡住",
+      "结课要求「讲给一位老同事听」对部分老人可能有社交压力，宜改为可选或改为录屏自述"
+    ]
+  },
+  "usage": {
+    "calls": 16,
+    "promptTokens": 26482,
+    "completionTokens": 10679,
+    "byTask": {
+      "fast": {
+        "calls": 1,
+        "promptTokens": 544,
+        "completionTokens": 20
+      },
+      "design": {
+        "calls": 14,
+        "promptTokens": 24442,
+        "completionTokens": 8987
+      },
+      "judge": {
+        "calls": 1,
+        "promptTokens": 1496,
+        "completionTokens": 1672
+      }
+    }
+  },
+  "costYuan": 0.15,
+  "durationMs": 73872,
+  "phaseTiming": {
+    "search": 1328,
+    "clarify": 18497,
+    "blueprint": 33708,
+    "outline": 17292
+  },
+  "error": null
+}

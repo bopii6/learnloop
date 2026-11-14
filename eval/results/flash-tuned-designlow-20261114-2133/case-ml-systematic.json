@@ -1,0 +1,67 @@
+{
+  "id": "ml-systematic",
+  "query": "我想系统学习机器学习",
+  "title": "系统学习机器学习：从第一个 baseline 到可交付的端到端预测模型",
+  "total": 22,
+  "maxScore": 26,
+  "machine": 5,
+  "machineDetail": {
+    "blueprintFallback": false,
+    "structure": 1,
+    "titleSpecific": 1,
+    "noBoilerTitles": 1,
+    "detailFill": 1,
+    "noBoilerSummaries": 1,
+    "machine": 5,
+    "avgTitleLen": 27.5,
+    "titleHits": 0,
+    "summaryHits": 0,
+    "defaultSummaries": 0
+  },
+  "judge": 17,
+  "judgeDetail": {
+    "scores": {
+      "specificity": 5,
+      "structure_logic": 4,
+      "audience_fit": 4,
+      "overall": 4
+    },
+    "issues": [
+      "单元 6 中 BigQuery ML 一节与前后 FastAPI 服务、模型卡监控的衔接略显突兀，属于数仓建模的旁支，放在交付单元里打断了端到端交付的叙事节奏，建议移到附录或作为可选拓展。",
+      "缺少对无监督/降维或简单神经网络的最基本提及，作为'系统学习机器学习'的标题略窄，但考虑到目标是算法实习的表格数据端到端交付，可接受；若学习者面试被问到更广范围会露怯。",
+      "单元 5 只有 3 节且 Optuna 与 MLflow 各占一节，实验管理部分偏薄，MLflow 仅一节难以覆盖模型注册与对比，节奏上略赶。",
+      "整体对会 Python 的大三学生深度合适，但部分标题（如'先跑起来'）偏口语，未点明所用数据集或库（pandas/sklearn），具体性可再提升一档。"
+    ]
+  },
+  "usage": {
+    "calls": 15,
+    "promptTokens": 23339,
+    "completionTokens": 10568,
+    "byTask": {
+      "fast": {
+        "calls": 1,
+        "promptTokens": 535,
+        "completionTokens": 18
+      },
+      "design": {
+        "calls": 13,
+        "promptTokens": 21331,
+        "completionTokens": 9067
+      },
+      "judge": {
+        "calls": 1,
+        "promptTokens": 1473,
+        "completionTokens": 1483
+      }
+    }
+  },
+  "costYuan": 0.142,
+  "durationMs": 67740,
+  "phaseTiming": {
+    "search": 1418,
+    "clarify": 14187,
+    "blueprint": 38812,
+    "outline": 11134
+  },
+  "error": null
+}

@@ -1,0 +1,67 @@
+{
+  "id": "cooking-zero",
+  "query": "零基础学做饭",
+  "title": "一口炒锅的家常菜入门：零基础上班族的五道稳定菜",
+  "total": 23,
+  "maxScore": 26,
+  "machine": 6,
+  "machineDetail": {
+    "blueprintFallback": false,
+    "structure": 2,
+    "titleSpecific": 1,
+    "noBoilerTitles": 1,
+    "detailFill": 1,
+    "noBoilerSummaries": 1,
+    "machine": 6,
+    "avgTitleLen": 20.6,
+    "titleHits": 0,
+    "summaryHits": 0,
+    "defaultSummaries": 0
+  },
+  "judge": 17,
+  "judgeDetail": {
+    "scores": {
+      "specificity": 5,
+      "structure_logic": 4,
+      "audience_fit": 4,
+      "overall": 4
+    },
+    "issues": [
+      "第四单元把蛋炒饭、家常豆腐和结课实操挤在一个单元里，节奏明显比前三单元快，豆腐的煎定型与酱汁收浓对零基础学习者难度偏高，缺少单独铺垫",
+      "第三单元刀工与腌肉上浆对完全不会做饭的上班族是最大门槛，但大纲没有给出失败补救或替代方案（如切不匀、上浆脱浆怎么办）",
+      "结课要求拍齐照片、步骤卡与一周复做记录，对独居上班族的时间成本偏高，可能削弱'稳定做 5 道菜'的核心目标",
+      "第二单元'火候与传热'标题偏原理化，与考察点要求的'具体到菜品/技法'略有偏离，可改为更贴近操作的表述"
+    ]
+  },
+  "usage": {
+    "calls": 12,
+    "promptTokens": 36972,
+    "completionTokens": 8790,
+    "byTask": {
+      "fast": {
+        "calls": 1,
+        "promptTokens": 538,
+        "completionTokens": 26
+      },
+      "design": {
+        "calls": 10,
+        "promptTokens": 35370,
+        "completionTokens": 8162
+      },
+      "judge": {
+        "calls": 1,
+        "promptTokens": 1064,
+        "completionTokens": 602
+      }
+    }
+  },
+  "costYuan": 0.157,
+  "durationMs": 62323,
+  "phaseTiming": {
+    "search": 1524,
+    "clarify": 20692,
+    "blueprint": 31532,
+    "outline": 6444
+  },
+  "error": null
+}

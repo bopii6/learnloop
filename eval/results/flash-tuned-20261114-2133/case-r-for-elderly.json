@@ -1,0 +1,68 @@
+{
+  "id": "r-for-elderly",
+  "query": "教我用R语言画统计图",
+  "title": "从问卷到成图：零基础用 R 与 ggplot2 画出出版级统计图",
+  "total": 20,
+  "maxScore": 26,
+  "machine": 6,
+  "machineDetail": {
+    "blueprintFallback": false,
+    "structure": 2,
+    "titleSpecific": 1,
+    "noBoilerTitles": 1,
+    "detailFill": 1,
+    "noBoilerSummaries": 1,
+    "machine": 6,
+    "avgTitleLen": 32.4,
+    "titleHits": 0,
+    "summaryHits": 0,
+    "defaultSummaries": 0
+  },
+  "judge": 14,
+  "judgeDetail": {
+    "scores": {
+      "specificity": 4,
+      "structure_logic": 4,
+      "audience_fit": 3,
+      "overall": 3
+    },
+    "issues": [
+      "对零编程基础的 70 岁学习者，每节课仍塞入多个新概念（如第三讲同时引入数据、aes、geom 三件套，第二单元一讲同时讲直方图与箱线图两种图形），与考察点要求的“每节课只解决一个可完成的小目标”不完全吻合，节奏偏快。",
+      "缺少针对零基础老人的前置铺垫：未安排 R 与 RStudio 的安装、界面认识、报错怎么办、代码复制粘贴与运行等最基础的入门环节，第一讲直接“跑通第一行代码”对目标受众门槛偏高。",
+      "术语密度大且未做降维解释：read_csv、aes、geom、position、facet_wrap、dpi 等英文函数名对 70 岁零基础学习者认知负担重，大纲未体现配套的中文对照、口诀或操作卡片。",
+      "缺少复习与容错设计：没有安排阶段性回顾、常见报错排查或“卡住了怎么办”的缓冲课节，老年学习者一旦卡壳容易放弃。",
+      "结课实操要求“向家人逐张讲解”作为考核方式对独居或家人不在身边的学习者不够友好，且与“画成图”的核心目标关联偏弱。"
+    ]
+  },
+  "usage": {
+    "calls": 13,
+    "promptTokens": 22153,
+    "completionTokens": 7838,
+    "byTask": {
+      "fast": {
+        "calls": 1,
+        "promptTokens": 544,
+        "completionTokens": 21
+      },
+      "design": {
+        "calls": 11,
+        "promptTokens": 20336,
+        "completionTokens": 7294
+      },
+      "judge": {
+        "calls": 1,
+        "promptTokens": 1273,
+        "completionTokens": 523
+      }
+    }
+  },
+  "costYuan": 0.116,
+  "durationMs": 57199,
+  "phaseTiming": {
+    "search": 1723,
+    "clarify": 18417,
+    "blueprint": 26911,
+    "outline": 7307
+  },
+  "error": null
+}

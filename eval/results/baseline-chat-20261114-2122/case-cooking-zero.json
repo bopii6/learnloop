@@ -1,0 +1,52 @@
+{
+  "id": "cooking-zero",
+  "query": "零基础学做饭",
+  "title": "零基础独居炒锅料理：从厨房小白到五道家常菜稳定出品",
+  "total": 14,
+  "maxScore": 26,
+  "machine": 5,
+  "machineDetail": {
+    "blueprintFallback": false,
+    "structure": 1,
+    "titleSpecific": 1,
+    "noBoilerTitles": 1,
+    "detailFill": 1,
+    "noBoilerSummaries": 1,
+    "machine": 5,
+    "avgTitleLen": 20.7,
+    "titleHits": 0,
+    "summaryHits": 0,
+    "defaultSummaries": 0
+  },
+  "judge": 9,
+  "judgeDetail": {
+    "scores": {
+      "specificity": 3,
+      "structure_logic": 2,
+      "audience_fit": 2,
+      "overall": 2
+    },
+    "issues": [
+      "前三个单元大量使用'能量传递三方式''热容量与导热系数''盐水浓度配比换算'等物理化学概念，对'完全不会做饭'的上班族属于抽象理论前置，与考察点要求的'具体到菜品/技法'相悖，学习者很可能在真正碰锅之前就流失。",
+      "结构逻辑倒挂：蛋、豆腐、蔬菜（第5单元）和禽畜肉（第6单元）才是五道家常菜的核心，却被排在盐、酸、洋葱等调味理论单元之后；应先出成品菜建立信心，再补调味原理。",
+      "受众适配不足：独居上班族需要的是短时、少器具、可复做的菜谱式内容，大纲却安排了8个单元32讲的理论递进，节奏偏长偏重，缺少'今晚就能做出一道菜'的即时反馈设计。",
+      "'五道家常菜'这一核心交付物直到最后两个单元才出现，且未在中间单元明确标注哪几讲对应哪道菜，学习者全程不知道自己在凑哪五道菜，目标感弱。",
+      "部分标题仍停留在原理层（如'炒锅的物理特性''沸点与盐'），未落到具体菜品或可观察的厨房动作，具体性未达'一眼看出学完能做什么'的标准。",
+      "缺少食材采购、保存、剩菜处理、单人份量控制等独居场景必备内容，与persona的独居设定脱节。"
+    ]
+  },
+  "usage": {
+    "calls": 17,
+    "promptTokens": 44372,
+    "completionTokens": 5088
+  },
+  "costYuan": 0.129,
+  "durationMs": 42036,
+  "phaseTiming": {
+    "search": 1537,
+    "clarify": 10735,
+    "blueprint": 15305,
+    "outline": 11058
+  },
+  "error": null
+}

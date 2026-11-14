@@ -97,7 +97,8 @@ export async function captureCourseProfile(opts: {
       const text = await streamAnswer(
         DISTILL_SYSTEM,
         profileText(profile) || `学习者刚学了课程《${opts.courseTitle}》`,
-        () => {}
+        () => {},
+        { task: "fast", maxTokens: 800 }
       );
       const cleaned = (text || "").trim();
       if (cleaned.length >= 20) profile.summary = cleaned.slice(0, 600);

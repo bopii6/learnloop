@@ -1,0 +1,69 @@
+{
+  "id": "cooking-zero",
+  "query": "零基础学做饭",
+  "title": "一口炒锅零基础家常菜：从第一盘青菜到五道稳定复刻的独居一人食",
+  "total": 19,
+  "maxScore": 26,
+  "machine": 6,
+  "machineDetail": {
+    "blueprintFallback": false,
+    "structure": 2,
+    "titleSpecific": 1,
+    "noBoilerTitles": 1,
+    "detailFill": 1,
+    "noBoilerSummaries": 1,
+    "machine": 6,
+    "avgTitleLen": 21.9,
+    "titleHits": 0,
+    "summaryHits": 0,
+    "defaultSummaries": 0
+  },
+  "judge": 13,
+  "judgeDetail": {
+    "scores": {
+      "specificity": 4,
+      "structure_logic": 3,
+      "audience_fit": 3,
+      "overall": 3
+    },
+    "issues": [
+      "第二单元『火候的物理：热传导、对流与锅温回升』和『盐与水：1% 煮面水、5% 短时腌渍液与沸点变化』偏理论/实验化，与『完全不会做饭、只要稳定做 5 道菜』的上班族目标关联弱，容易劝退零基础学习者",
+      "结构顺序有问题：『开火前的备菜台（Mise en place、刀工、预处理）』被放在第一盘菜之后，但备菜与刀工是炒第一盘菜的前置技能，先修依赖倒置",
+      "第一单元标题混入『热传导、对流』等物理术语，与考察点要求的『具体到菜品/技法』不完全一致，抽象理论课节拉低整体具体性",
+      "受众适配偏弱：出现『Mise en place』『1% 煮面水』『5% 腌渍液』『沸点变化』等术语与量化实验，对独居上班族零基础人群偏学术，缺少时间紧、一口锅、一人食场景下的简化表达",
+      "缺少对『完全不会做饭』者的安全与失败兜底内容（如油温烫伤、糊锅处理），仅靠最后一节的『失败补救』覆盖不足",
+      "五道菜目标与大纲菜品基本对齐，但『蒜蓉青菜』与后续四道菜之间缺少技法递进说明，单元间衔接偏松散"
+    ]
+  },
+  "usage": {
+    "calls": 15,
+    "promptTokens": 49179,
+    "completionTokens": 13109,
+    "byTask": {
+      "fast": {
+        "calls": 1,
+        "promptTokens": 538,
+        "completionTokens": 26
+      },
+      "design": {
+        "calls": 13,
+        "promptTokens": 47364,
+        "completionTokens": 11691
+      },
+      "judge": {
+        "calls": 1,
+        "promptTokens": 1277,
+        "completionTokens": 1392
+      }
+    }
+  },
+  "costYuan": 0.221,
+  "durationMs": 93237,
+  "phaseTiming": {
+    "search": 1536,
+    "clarify": 30524,
+    "blueprint": 47941,
+    "outline": 10274
+  },
+  "error": null
+}

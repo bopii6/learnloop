@@ -186,8 +186,7 @@ export async function POST(req: NextRequest) {
 - outputLanguage：希望课程用什么语言输出，没提就默认"中文"；他怎么说都照记（"弄成中文""要西班牙语的""英文吧"都算）。
 - constraints：其他明确要求逐条提取，保留原话关键词，每条 ≤ 60 字。没提的不要编；不要把文档主题本身当要求。
 只输出 JSON：{"outputLanguage":"中文","constraints":[]}`,
-              `用户上传文档：《${tb.title}》\n用户附言：${query}`,
-              300
+              `用户上传文档：《${tb.title}》\n用户附言：${query}`, { task: "fast", maxTokens: 300 }
             );
             outputLanguage = String(extract?.outputLanguage || "中文").trim() || "中文";
             constraints = (Array.isArray(extract?.constraints) ? extract!.constraints : [])
@@ -268,8 +267,7 @@ mode 为 course 或 answer 时，额外做需求抽取（认真对待用户说�
 - outputLanguage：用户希望课程/回答用什么语言输出。他没提就用"中文"。他怎么说都照记（"弄成中文""我想要西班牙语的""英文吧"都算）。
 - constraints：除语言外的其他明确要求，逐条提取，保留用户原话关键词（如"我是零基础""多举游戏行业的例子""不要数学公式""讲深一点"）。用户没提的要求不要编。
 只输出 JSON：{"mode":"course","outputLanguage":"中文","constraints":[]} 或 {"mode":"answer",...} 或 {"mode":"chat","reply":"..."}`,
-              `用户输入：${query}`,
-              400
+              `用户输入：${query}`, { task: "fast", maxTokens: 400 }
             );
             if (intent?.mode === "chat") {
               await send({

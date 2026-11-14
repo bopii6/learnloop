@@ -7,6 +7,7 @@ import { generateJson } from "@/lib/agent/llm";
 import { constraintsBlock } from "@/lib/agent/lang";
 import type { CourseGenOutlineLite } from "@/lib/capstone";
 import type { UnitQuizItem, QuizRecord } from "@/types";
+import { quizSchema } from "@/lib/agent/schemas";
 
 export type { QuizRecord, UnitQuizItem };
 
@@ -89,7 +90,7 @@ ${opts.unitSummary}
 ${opts.lectureLines.map((l) => `- ${l}`).join("\n")}
 ${opts.capstoneName ? `\n本课程结课作品（应用题结合它出）：${opts.capstoneName}` : ""}
 ${constraintsBlock(opts.outputLanguage, opts.constraints)}请出测验。`;
-  const raw = await generateJson<{ quiz?: Partial<UnitQuizItem>[] }>(UNIT_QUIZ_SYSTEM, prompt, 2400);
+  const raw = await generateJson<{ quiz?: Partial<UnitQuizItem>[] }>(UNIT_QUIZ_SYSTEM, prompt, { task: "design", maxTokens: 2400, schema: quizSchema });
   const quiz = raw?.quiz;
   if (!Array.isArray(quiz) || quiz.length === 0) return null;
   const items: UnitQuizItem[] = [];

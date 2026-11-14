@@ -17,6 +17,7 @@ import { BOARD_SYSTEM, ANSWER_SYSTEM, type BoardScript } from "@/lib/board/promp
 import { applyMedia, decideMedia } from "@/lib/board/media-plan";
 import { generateBoardAnimation } from "@/lib/board/animation";
 import type { BoardAction, BoardEvent } from "@/types/board";
+import { boardScriptSchema } from "@/lib/agent/schemas";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -244,8 +245,7 @@ export async function POST(req: NextRequest) {
           const answer = (body.message || "").slice(0, 200);
           const script = await generateJson<BoardScript>(
             ANSWER_SYSTEM,
-            `课程：《${ctx.courseTitle}》\n课节：${ctx.lectureTitle} —— ${ctx.lectureSummary}\n课堂题：${q}\n学员的回答：${answer}\n${profileLine}\n请生成点评。`,
-            1200
+            `课程：《${ctx.courseTitle}》\n课节：${ctx.lectureTitle} —— ${ctx.lectureSummary}\n课堂题：${q}\n学员的回答：${answer}\n${profileLine}\n请生成点评。`, { task: "script", maxTokens: 1200, schema: boardScriptSchema }
           );
           const { actions } = scriptToActions(script || { cards: [] }, pageId, ctx.lectureTitle, { append: appendToPage });
           for (const g of groupActions(actions)) await send({ type: "group", actions: g });
@@ -276,8 +276,7 @@ export async function POST(req: NextRequest) {
 ${nameLine}${profileLine}${capstoneLine}
 ${referenceMaterial ? `参考资料（事实、数字、案例优先取自这里）：\n${referenceMaterial.slice(0, 4000)}` : "没有参考资料：按你的知识讲，不发明统计数字。"}
 
-请生成这个教学段的白板脚本（6-9 张卡 + 课堂题 + 徽章）。`,
-            2600
+请生成这个教学段的白板脚本（6-9 张卡 + 课堂题 + 徽章）。`, { task: "script", maxTokens: 2600, schema: boardScriptSchema }
           );
           // 媒体导演：独立一次调用，决定动画/配图（失败则纯文字课，不阻塞）
           const cleanScript: BoardScript = script || { cards: [] };

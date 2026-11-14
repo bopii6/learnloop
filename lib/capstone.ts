@@ -6,6 +6,7 @@ import { readJson, writeJson } from "@/lib/storage";
 import { generateJson } from "@/lib/agent/llm";
 import { constraintsBlock } from "@/lib/agent/lang";
 import type { CapstoneBrief, CapstoneRecord, CapstoneReview } from "@/types";
+import { capstoneBriefSchema, capstoneReviewSchema } from "@/lib/agent/schemas";
 
 /** 生成任务书/验收时用到的大纲切片（course.ts 的 CourseGenState.outline 的结构子集） */
 export interface CourseGenOutlineLite {
@@ -85,9 +86,7 @@ ${opts.profileHint ? `\n学习者画像（因人而异的任务书要吃透这�
 ${constraintsBlock(opts.outputLanguage, opts.constraints)}请生成任务书。`;
   const raw = await generateJson<Partial<CapstoneBrief>>(
     BRIEF_SYSTEM,
-    prompt,
-    2200,
-    (e) => console.error("[capstone-brief]", e instanceof Error ? e.message : e)
+    prompt, { task: "design", maxTokens: 2200, onError: (e) => console.error("[capstone-brief]", e instanceof Error ? e.message : e), schema: capstoneBriefSchema }
   );
   if (!raw || !Array.isArray(raw.steps) || raw.steps.length === 0) return null;
   return {
@@ -156,9 +155,7 @@ ${opts.submissionLink ? `作品链接：${opts.submissionLink.slice(0, 300)}\n` 
 ${constraintsBlock(opts.outputLanguage, opts.constraints)}请验收。`;
   const raw = await generateJson<Partial<CapstoneReview>>(
     REVIEW_SYSTEM,
-    prompt,
-    2000,
-    (e) => console.error("[capstone-review]", e instanceof Error ? e.message : e)
+    prompt, { task: "judge", maxTokens: 2000, onError: (e) => console.error("[capstone-review]", e instanceof Error ? e.message : e), schema: capstoneReviewSchema }
   );
   if (!raw || !Array.isArray(raw.criteria) || raw.criteria.length === 0) return null;
   const criteria = raw.criteria

@@ -34,9 +34,12 @@ const tag = getArg("tag");
 const skipJudge = args.includes("--skip-judge");
 const FULL_RUN = !onlyIds; // 只有全量运行才更新 latest.json（部分运行会污染对比基线）
 
-// DeepSeek deepseek-chat 价目（元/百万 token）。官方调价后改这里。
-const PRICE_IN = 2;
-const PRICE_OUT = 8;
+// deepseek-flash 高峰价（$0.3 / $1.2 每百万 token，按 1 USD≈7.2 CNY 折算；非高峰半价）。官方调价后改这里。
+// 注意：思考 token 按输出计费。
+const PRICE_IN = 2.2;
+const PRICE_OUT = 8.6;
+// 评委固定用同一个模型，分数才能跨版本对比（默认沿用历史基线的 deepseek-chat）
+const JUDGE_MODEL = process.env.EVAL_JUDGE_MODEL || "deepseek-chat";
 
 const RESULTS_DIR = path.join(__dirname, "results");
 const LATEST_PATH = path.join(RESULTS_DIR, "latest.json");
@@ -203,8 +206,7 @@ async function main() {
         };
         judge = await generateJson<{ scores: Record<string, number>; issues: string[] }>(
           JUDGE_SYSTEM,
-          `学习者画像：${c.persona}\n考察点：${c.expect}\n\n大纲 JSON：\n${JSON.stringify(lean, null, 1)}`,
-          1200
+          `学习者画像：${c.persona}\n考察点：${c.expect}\n\n大纲 JSON：\n${JSON.stringify(lean, null, 1)}`, { task: "judge", maxTokens: 1200, model: JUDGE_MODEL }
         );
       }
       const judgeScore = judge?.scores

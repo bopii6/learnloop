@@ -7,6 +7,7 @@ interface RawResult {
   title: string;
   url: string;
   snippet: string;
+  rerank: number;
 }
 
 function domainOf(url: string): string {
@@ -133,23 +134,33 @@ function relevanceHits(text: string, tokens: string[]): number {
 // 括号年份条目 = 影视/虚构作品（"Artificial (2026)"、"xxx (2026 film)"）；
 // Definition & Meaning / English meaning = 词典释义页——都不可能成为课程资料
 const JUNK_TITLE_RE = /\(\d{4}(?:\s*(?:film|movie))?\)|definition\s*(&|&amp;)\s*meaning|english meaning|disambiguation/i;
-const JUNK_DOMAINS = new Set(["imdb.com", "merriam-webster.com", "dictionary.cambridge.org", "dictionary.com", "vocabulary.com"]);
+// 词典 / 影视 / 电商与书店商品页 / 专利库：都不是可以拿来讲课的资料
+const JUNK_DOMAINS = new Set([
+  "imdb.com", "merriam-webster.com", "dictionary.cambridge.org", "dictionary.com", "vocabulary.com",
+  "momoshop.com.tw", "readmoo.com", "hyread.com.tw", "books.com.tw", "tenlong.com.tw", "eslite.com",
+  "jd.com", "taobao.com", "tmall.com", "dangdang.com", "patents.google.com", "patents.justia.com",
+]);
+
+// DeepSeek 重排分 ≥ 此值视为"高度相关"：即便标题摘要没逐字命中查询词也放行（同义改写、跨语言）
+const RERANK_TRUST = 1.6;
 
 function isJunkResult(domain: string, title: string): boolean {
   if (JUNK_DOMAINS.has(domain) || [...JUNK_DOMAINS].some((d) => domain.endsWith("." + d))) return true;
   return JUNK_TITLE_RE.test(title);
 }
 
-export async function webSearch(query: string, max = 8): Promise<SourceItem[]> {
+/** goal：用户的原始学习目标（不是搜索词），交给 DeepSeek 重排用 */
+export async function webSearch(query: string, max = 8, opts: { goal?: string } = {}): Promise<SourceItem[]> {
   const tokens = queryTokens(query);
   const minHits = Math.min(2, tokens.length);
   const passesGate = (r: RawResult) =>
-    !isJunkResult(domainOf(r.url), r.title) && relevanceHits(`${r.title} ${r.snippet || ""}`, tokens) >= minHits;
+    !isJunkResult(domainOf(r.url), r.title) &&
+    (r.rerank >= RERANK_TRUST || relevanceHits(`${r.title} ${r.snippet || ""}`, tokens) >= minHits);
 
   // 多要一些候选：闸门会拦掉一部分，留足余量
   let fetched: RawResult[] = [];
   try {
-    fetched = await deepseekSearch(query, Math.min(50, max * 2));
+    fetched = await deepseekSearch(query, Math.min(50, max * 2), { oriQuestion: opts.goal });
   } catch (e) {
     console.error(`[search] "${query}" failed:`, String(e));
     return [];
@@ -167,7 +178,8 @@ export async function webSearch(query: string, max = 8): Promise<SourceItem[]> {
 
   // 权威度排序 + 同域最多 2 条（信息源多样性）；结果已在各引擎出口过闸
   const scored = raw
-    .map((r) => ({ ...r, score: authorityScore(r.url) }))
+    // 我方权威度（官方文档/学术/社区加分，内容农场减分）+ DeepSeek 相关性，两者相加排序
+    .map((r) => ({ ...r, score: authorityScore(r.url) + r.rerank }))
     .sort((a, b) => b.score - a.score);
   const seen = new Set<string>();
   const perDomain = new Map<string, number>();

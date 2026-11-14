@@ -13,7 +13,7 @@ export async function decideMedia(cards: CardScript[]): Promise<MediaDecision | 
   const list = cards
     .map((c, i) => `[${i}] 卡面：${c.content.replace(/\s+/g, " ").slice(0, 80)}｜讲解：${(c.speak || "").replace(/\s+/g, " ").slice(0, 60)}`)
     .join("\n");
-  const res = await generateJson<MediaDecision>(MEDIA_SYSTEM, `卡片清单（共 ${cards.length} 张）：\n${list}\n\n请决定媒体。`, 700);
+  const res = await generateJson<MediaDecision>(MEDIA_SYSTEM, `卡片清单（共 ${cards.length} 张）：\n${list}\n\n请决定媒体。`, { task: "fast", maxTokens: 700 });
   if (!res) return null;
   // 边界校验
   const out: MediaDecision = {};

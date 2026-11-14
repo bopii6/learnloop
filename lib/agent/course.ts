@@ -59,11 +59,12 @@ reason 字段（1 句话，≤40 字）说明"我为什么问这个"——要引
  *  四条检查（顺序/覆盖/水分/标题），不合格带意见重写一次；审稿人挂了就放行（不阻塞交付）。 */
 export const BLUEPRINT_REVIEW_SYSTEM = `你是课程教研审稿人。审查一份课程蓝图（课程的结构设计），只输出 JSON：{"pass":true|false,"issues":["具体问题1","问题2"]}
 
-课程蓝图要经得起这四条检查（命中任何一条即 pass=false，并在 issues 里指名道姓：哪个单元/哪节课、什么问题）：
+课程蓝图要经得起这五条检查（命中任何一条即 pass=false，并在 issues 里指名道姓：哪个单元/哪节课、什么问题）：
 1. 顺序不成立：单元顺序违背学习规律——后面的单元用到了前面没讲过的概念；学员按顺序学到某一步会发现缺前置。
 2. 覆盖有缺口：对照结课作品的要求和课程标题，明显缺了"要做出来就必须会"的**整个环节**（例：结课作品是一份数据分析报告，但全课没有一节教图表或结果呈现）。注意：课节数量少不是问题——一节课能讲清的就不许拆成三节；只有"完全缺失某个必需环节"才算缺口。
 3. 有凑数单元/课节：某个单元或课节删掉，学员毫无损失（纯"介绍""展望""总结"而不指向具体能力产出的是水分；一节课末尾的小结不算）。
 4. 标题空泛：课节标题是状态词空话（"深入了解XX""XX概述"），而不是具体的能力承诺（学员看完标题就知道这节学完能做什么）。
+5. 受众倒挂：受众是零基础、要的是动手能力（做饭/摄影/工具上手等），但前两个单元仍是原理/理论，学员要学很久才第一次动手做出东西。
 拿不准就算过（pass=true）：只打回真正不合格的蓝图，不要吹毛求疵——尤其不许因为"课节数量偏少""深度可以更高"这类理由打回。issues 每条 ≤ 40 字。`;
 
 const COURSE_BLUEPRINT_SYSTEM = `你是资深课程架构师。根据用户想学的主题和背景信息，生成完整的课程结构蓝图。
@@ -97,14 +98,15 @@ JSON 格式（必须严格遵守）：
 - 每个单元的 summary 先说"这个单元给结课作品贡献哪一块"，再说学完能做到什么；禁止"了解 XX""熟悉 XX"这类状态动词堆砌。
 - 最后一个单元的最后一个课节必须是结课实操课，标题格式「结课实操：<完成并展示作品的具体动作>」，如「结课实操：调通你的 AI 小助手并讲给家人用」。
 - 教材模式（给了教材内容）例外：单元/课节结构仍必须镜像教材目录，结课作品要在教材内容能支撑的范围内选，结课实操课对齐教材最后一章，不得新增教材外的课节。
-- 有资料（网络资料要点/教材内容）时，单元和课节必须优先长在资料特有的主张、案例、数据、结构上——教材模式镜像教材目录，资料模式吃透资料要点；禁止对着主题凭空铺一张通用知识图谱，通识部分只做必要铺垫。
+- 有资料（网络资料要点/教材内容）时，单元和课节必须优先长在资料特有的主张、案例、数据、结构上——教材模式镜像教材目录，资料模式吃透资料要点；禁止对着主题凭空铺一张通用知识图谱，通识部分只做必要铺垫。资料偏理论、而学员要的是动手能力时，资料只当讲解素材，不得决定单元顺序。
+- 先做后讲（零基础 / 手艺与操作类目标：做饭、摄影、软件与工具上手、写作、运动等）：第 1 单元第 1 节就让学员做出一个看得见的小成品；原理不单独成单元，只在某个具体动作需要时穿插讲（"为什么热锅冷油"放进"炒一盘青菜"那节）。单元按"学员能做出的东西"由易到难递进，而不是按学科知识体系递进；课节标题写成动作或成品（「番茄炒蛋：火候与下锅顺序」），不写学科概念（「热传导原理」）。
 - 课程标题格式为「主标题：副标题」，体现主题、深度和受众。禁止把用户输入拼上"系统课程"。
   正面示例："LLM Agent 深度工程：从 ReAct 理论到生产级 Tool Use 实现"
 - tags 是领域标签（如 "AI Engineering"、"ReAct Pattern"），禁止把用户原话当标签；标签语言跟随课程正文（中文课不给英文标签）。
 - audience 必须回应用户在澄清中的具体选择：把用户选的起点/方向/目标水平浓缩成一句受众画像，
   如用户选了"能用 Redis 键值读写"+"了解分布式基本概念"，就写
   "具备 Redis 基础（KV 读写）及分布式系统基本概念，希望掌握生产级并发控制方案的开发者"。
-- 4-8 个单元，每个单元 3-5 个课节。只剩 1 个课节的碎单元要并进相邻单元（独立的结课实操单元除外）。
+- 篇幅跟受众走：零基础、年长、每天时间很少的学员 4-5 个单元、每单元 3 节，宁短勿长（学不完的长课等于没学）；有基础、目标是求职/考试/深造的 5-8 个单元、每单元 3-5 节。只剩 1 个课节的碎单元要并进相邻单元（独立的结课实操单元除外）。
 - 单元标题必须两两不同：禁止同一标题加"（续）""（二）"复制粘贴充数；同一主题拆多个单元时，标题要写出各自覆盖的具体子领域。
 - 单元标题要具体，体现该单元覆盖的知识范围，禁止"基础概念与入门"这种万能套话。
 - 课节标题必须具体到知识点，格式推荐「具体概念：要解决的问题或角度」。
@@ -172,6 +174,7 @@ JSON 格式（必须严格遵守）：
 // 必须落盘。
 
 import { readJson, writeJson } from "@/lib/storage";
+import { blueprintSchema, clarifyQuestionSchema, lectureDetailsSchema, reviewVerdictSchema } from "./schemas";
 
 interface CourseGenState {
   step: "search" | "clarify" | "blueprint" | "outline" | "done";
@@ -386,8 +389,7 @@ export async function runSearchStep(opts: {
   let searchQueries: string[] = [];
   const plan = await generateJson<{ queries: string[] }>(
     SEARCH_PLAN_SYSTEM,
-    `${opts.constraintsText ?? ""}${docContext ? `用户已上传一份文档，主题如下（查询词必须围绕文档主题做补充，不要偏航）：\n${docContext.slice(0, 800)}\n\n` : ""}用户原始目标：${query}\n已提炼主题（必须围绕它搜索）：${topic}`,
-    400
+    `${opts.constraintsText ?? ""}${docContext ? `用户已上传一份文档，主题如下（查询词必须围绕文档主题做补充，不要偏航）：\n${docContext.slice(0, 800)}\n\n` : ""}用户原始目标：${query}\n已提炼主题（必须围绕它搜索）：${topic}`, { task: "fast", maxTokens: 400 }
   );
   if (plan?.queries && Array.isArray(plan.queries) && plan.queries.length > 0) {
     searchQueries = plan.queries
@@ -417,7 +419,7 @@ export async function runSearchStep(opts: {
 
   const existingCount = opts.existingSources?.length ?? 0;
   const webCap = opts.docContext ? 4 : 12; // 文档模式：网络只是补充资料，主料是文档本身
-  const settled = await Promise.allSettled(searchQueries.map((q) => webSearch(q, 6)));
+  const settled = await Promise.allSettled(searchQueries.map((q) => webSearch(q, 6, { goal: query })));
   const seen = new Set<string>();
   for (const s of settled) {
     if (s.status !== "fulfilled") continue;
@@ -523,7 +525,7 @@ export async function runClarifyStep(opts: {
   const isValidQuestion = (q: ClarifyQuestion | null | undefined): q is ClarifyQuestion =>
     Boolean(q && q.question && Array.isArray(q.options) && q.options.length >= 2);
 
-  let question = await generateJson<ClarifyQuestion>(COURSE_CLARIFY_SYSTEM, userMsg);
+  let question = await generateJson<ClarifyQuestion>(COURSE_CLARIFY_SYSTEM, userMsg, { task: "design", schema: clarifyQuestionSchema });
 
   // 澄清卡是产品对用户的核心承诺：模型偶发吐出坏 JSON/空对象时，重问一次而不是静默跳过
   if (!isValidQuestion(question)) {
@@ -532,7 +534,7 @@ export async function runClarifyStep(opts: {
       COURSE_CLARIFY_SYSTEM,
       `${userMsg}
 
-⚠ 你上一次的输出不是合法的题目 JSON。重新输出：只输出一个 JSON 对象，格式为 {"question":"一句中文提问","reason":"≤40字理由","options":[{"label":"…","desc":"…"},{"label":"…","desc":"…"},{"label":"…","desc":"…"}]}，options 至少 3 个。`
+⚠ 你上一次的输出不是合法的题目 JSON。重新输出：只输出一个 JSON 对象，格式为 {"question":"一句中文提问","reason":"≤40字理由","options":[{"label":"…","desc":"…"},{"label":"…","desc":"…"},{"label":"…","desc":"…"}]}，options 至少 3 个。`, { task: "design", schema: clarifyQuestionSchema }
     );
   }
   if (!isValidQuestion(question)) {
@@ -578,7 +580,7 @@ export async function runClarifyStep(opts: {
   if (dupHit) {
     const retry = await generateJson<ClarifyQuestion>(
       COURSE_CLARIFY_SYSTEM,
-      `${userMsg}\n\n⚠ 你刚才出的问题「${normalized.question}」与已收集信息里的问题「${dupHit}」是同一个维度，属于重复出题。请换一个完全不同的、尚未覆盖的维度重新出题，禁止与任何已问问题同义。`
+      `${userMsg}\n\n⚠ 你刚才出的问题「${normalized.question}」与已收集信息里的问题「${dupHit}」是同一个维度，属于重复出题。请换一个完全不同的、尚未覆盖的维度重新出题，禁止与任何已问问题同义。`, { task: "design", schema: clarifyQuestionSchema }
     );
     if (retry?.question && retry.options?.length >= 2) {
       normalized = {
@@ -658,8 +660,7 @@ export async function runBlueprintStep(opts: {
   const thinking = await generateJson<{ notes: string[] }>(
     `你是课程架构师。基于用户目标、澄清回答和资料要点，用 2-3 句话说明你打算怎么设计这门课、为什么，只输出 JSON：{"notes":["...","..."]}
 要求：每句 ≤ 45 字；必须引用澄清回答里的具体选择和资料里的具体概念（如"你选了生产级，所以第 4 单元直接进错误重试实战"）；不要客套；使用「用户对这门课的要求」中指定的输出语言。`,
-    `${constraintsContext}${answerContext}${excerptsContext}用户想学习：${query}`,
-    500
+    `${constraintsContext}${answerContext}${excerptsContext}用户想学习：${query}`, { task: "design", maxTokens: 500 }
   );
   if (Array.isArray(thinking?.notes) && thinking.notes.length > 0) {
     await emit({ type: "design_notes", notes: thinking.notes.slice(0, 4).map((n) => String(n).slice(0, 60)) });
@@ -669,7 +670,7 @@ export async function runBlueprintStep(opts: {
     : "";
 
   const blueprintUserMsg = `${constraintsContext}${answerContext}${profileContext}${textbookContext}${excerptsContext}${feedbackContext}用户想学习：${query}\n\n请生成课程结构蓝图。`;
-  let raw = await generateJson<CourseBlueprint>(COURSE_BLUEPRINT_SYSTEM, blueprintUserMsg, 4000);
+  let raw = await generateJson<CourseBlueprint>(COURSE_BLUEPRINT_SYSTEM, blueprintUserMsg, { task: "design", maxTokens: 4000, schema: blueprintSchema });
 
   // 教研质量闸门（设在语言守卫之前：重写后仍要过语言关）。
   // 大纲步骤只是给蓝图填细节——体系的顺序/覆盖/水分/标题在蓝图就定了，闸门必须设在这。
@@ -694,16 +695,14 @@ ${(raw.units || [])
   )
   .join("\n")}
 
-请审查这份课程蓝图。`,
-        800
+请审查这份课程蓝图。`, { task: "judge", maxTokens: 800, schema: reviewVerdictSchema }
       );
       if (review && review.pass === false && Array.isArray(review.issues) && review.issues.length > 0) {
         const retry = await generateJson<CourseBlueprint>(
           COURSE_BLUEPRINT_SYSTEM,
           `${blueprintUserMsg}\n\n【教研审稿意见】上一版蓝图未通过审核：\n${review.issues
             .map((s) => `- ${String(s).slice(0, 60)}`)
-            .join("\n")}\n请逐条修正（调整单元顺序 / 补齐覆盖缺口 / 删掉凑数单元 / 把空泛标题改成具体能力承诺），重新生成完整蓝图（保持 JSON 格式不变）。`,
-          4000
+            .join("\n")}\n请逐条修正（调整单元顺序 / 补齐覆盖缺口 / 删掉凑数单元 / 把空泛标题改成具体能力承诺），重新生成完整蓝图（保持 JSON 格式不变）。`, { task: "design", maxTokens: 4000, schema: blueprintSchema }
         );
         if (retry?.units?.length) raw = retry;
       }
@@ -734,8 +733,7 @@ ${(raw.units || [])
   if (raw && langMatchesExpectation(opts.outputLanguage, langCheckText) === false) {
     const retry = await generateJson<CourseBlueprint>(
       COURSE_BLUEPRINT_SYSTEM,
-      `${blueprintUserMsg}\n\n【语言硬约束】上一版的语言不符合要求：整份蓝图必须使用「${opts.outputLanguage}」输出，逐字检查后再交。`,
-      4000
+      `${blueprintUserMsg}\n\n【语言硬约束】上一版的语言不符合要求：整份蓝图必须使用「${opts.outputLanguage}」输出，逐字检查后再交。`, { task: "design", maxTokens: 4000, schema: blueprintSchema }
     );
     if (retry?.units?.length) raw = retry;
   }
@@ -838,8 +836,7 @@ export async function runOutlineStep(opts: {
 - content_type 只能是 "whiteboard" | "project" | "quiz"；绝大多数为 "whiteboard"，每个单元最多 1 个 "project" 或 "quiz"。${isLastUnit ? '\n- 本单元是课程的最后一个单元：最后一个课节的 content_type 必须是 "project"（结课实操课，学员在这节课完成并展示结课作品），summary 写清学员在这里把作品做成什么样。' : ""}
 - 课节时长 15-30 分钟。
 - 不要修改课节 id 和标题，只填充细节。`,
-      `${constraintsBlock(opts.outputLanguage, opts.constraints)}${capstoneContext}${profileContext}${answerContext}课程：《${blueprint.title}》\n当前单元：${unit.title}\n课节列表：${unit.lectures.map((l) => `${l.id}: ${l.title} (${l.depth_tags.join("/")})`).join("\n")}`,
-      2000
+      `${constraintsBlock(opts.outputLanguage, opts.constraints)}${capstoneContext}${profileContext}${answerContext}课程：《${blueprint.title}》\n当前单元：${unit.title}\n课节列表：${unit.lectures.map((l) => `${l.id}: ${l.title} (${l.depth_tags.join("/")})`).join("\n")}`, { task: "design", maxTokens: 2000, schema: lectureDetailsSchema }
     );
 
     const detailMap = new Map<string, { summary: string; duration_min: number; content_type: string }>();
