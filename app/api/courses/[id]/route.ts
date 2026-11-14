@@ -4,12 +4,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCourseState, metaKey } from "@/lib/agent/course";
 import { listKeys, readJson, removeKey } from "@/lib/storage";
 import { userFromCookieHeader } from "@/lib/auth";
+import { isBoardScriptOfCourse, listAttendedLectures } from "@/lib/board/script-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
@@ -17,19 +18,11 @@ export async function GET(
   if (!state?.outline) {
     return NextResponse.json({ error: "course not found" }, { status: 404 });
   }
-  // 已学课节：课堂快照文件名 = {courseId}unit-*lec-*（与 /api/courses 列表口径一致）。
-  // 读失败按没学过处理——进度缺失不该挡住课程打开。
-  let visited: string[] = [];
-  try {
-    const items = await listKeys("classrooms/");
-    visited = items
-      .map((i) => i.key.replace(/\.json$/, ""))
-      .filter((k) => k.startsWith(`classrooms/${id}unit-`))
-      .map((k) => k.slice(k.indexOf("lec-")))
-      .filter((k) => k.startsWith("lec-"));
-  } catch {
-    // 进度拿不到就当全新
-  }
+  // 已上过的课节（当前学员）。读失败按没学过处理——进度缺失不该挡住课程打开。
+  const me = await userFromCookieHeader(req.headers.get("cookie"));
+  const visited = (await listAttendedLectures(me?.id).catch(() => []))
+    .filter((a) => a.courseId === id)
+    .map((a) => a.lectureId);
   return NextResponse.json({
     course: {
       id,
@@ -72,6 +65,7 @@ export async function DELETE(
     // 测验（quizzes/{id}__*）、结课作品（capstones/{id}__*）、回放（按内容里的 courseId 匹配）
     await removeMatching("classrooms/", (k) => k.startsWith(`classrooms/${cleanId}unit-`));
     await removeMatching("teach-scripts/", (k) => k.includes(`${cleanId}unit-`));
+    await removeMatching("board-scripts/", (k) => isBoardScriptOfCourse(k, cleanId));
     await removeMatching("quizzes/", (k) => k.startsWith(`quizzes/${cleanId}__`));
     await removeMatching("capstones/", (k) => k.startsWith(`capstones/${cleanId}__`));
     const replayItems = await listKeys("replays/").catch(() => []);

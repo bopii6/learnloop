@@ -9,10 +9,12 @@
 // F5 兜底：Map 同步落 sessionStorage——整页刷新后恢复到刷新前的快照。
 // 课堂的断点恢复（WS 快照）就是这么对待用户的，生成器不该更娇气。
 // 注意：sessionStorage 关标签即清，跨会话不保证（这是刻意的：半途而废的草稿不值得跨天保留）。
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 const PREFIX = "courseGen:";
 const store = new Map<string, unknown>();
+/** 本次页面生命周期里已从 sessionStorage 恢复过的 key（只在整页加载后恢复一次） */
+const restoredFromSession = new Set<string>();
 
 function sessionAvailable(): boolean {
   try {
@@ -57,9 +59,14 @@ export function resetGeneratorState() {
   }
   if (!sessionAvailable()) return;
   try {
-    for (const k of [...window.sessionStorage.keys]) {
-      if (k.startsWith(PREFIX)) window.sessionStorage.removeItem(k);
+    // Storage 没有 keys 属性：按下标枚举（旧写法会抛错被吞掉，导致快照从未清空）
+    const ss = window.sessionStorage;
+    const keys: string[] = [];
+    for (let i = 0; i < ss.length; i++) {
+      const k = ss.key(i);
+      if (k && k.startsWith(PREFIX)) keys.push(k);
     }
+    for (const k of keys) ss.removeItem(k);
   } catch {
     // ignore
   }
@@ -68,13 +75,22 @@ export function resetGeneratorState() {
 export function useGeneratorState<T>(key: string, initial: T) {
   const fullKey = `${PREFIX}${key}`;
   const [value, setValue] = useState<T>(() => {
-    // 优先恢复刷新前的快照，其次首次挂载落库初始值（保证 setter 里永远能从 Map 取到 prev）
-    const saved = sessionRead<T>(fullKey);
-    if (!store.has(fullKey)) {
-      store.set(fullKey, saved !== undefined ? saved : initial);
-    }
+    // 首次渲染不读 sessionStorage：服务端渲染出的是初始值，客户端水合时必须一致，
+    // 否则 React 报 hydration mismatch 并整棵树重渲染。刷新前的快照在挂载后的 effect 里恢复。
+    // 站内路由切回（无水合）时 Map 里已有最新进度，直接用。
+    if (!store.has(fullKey)) store.set(fullKey, initial);
     return store.get(fullKey) as T;
   });
+
+  useEffect(() => {
+    if (restoredFromSession.has(fullKey)) return;
+    restoredFromSession.add(fullKey);
+    const saved = sessionRead<T>(fullKey);
+    if (saved !== undefined) {
+      store.set(fullKey, saved);
+      setValue(saved);
+    }
+  }, [fullKey]);
 
   const set = useCallback(
     (next: T | ((prev: T) => T)) => {

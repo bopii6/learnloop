@@ -20,6 +20,18 @@ function channels(): string[] {
   return ["momoai", "zhipu", "wanx", "tuzi"];
 }
 
+const CHANNEL_KEY: Record<string, string> = {
+  momoai: "MOMOAI_API_KEY",
+  zhipu: "ZHIPU_API_KEY",
+  wanx: "DASHSCOPE_API_KEY",
+  tuzi: "TUZI_API_KEY",
+};
+
+/** 至少有一个出图通道配了 key：否则不排配图（避免学员看到永远转圈的占位卡） */
+export function imageGenerationAvailable(): boolean {
+  return channels().some((c) => Boolean(process.env[CHANNEL_KEY[c]]?.trim()));
+}
+
 export interface BoardImageAsset {
   key: string;
   url: string;

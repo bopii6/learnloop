@@ -109,18 +109,6 @@ export interface CourseOutline {
   constraints?: string[]; // 用户的其他硬性要求（原话关键词，如"零基础""多举游戏行业的例子"）
 }
 
-export interface CourseSession {
-  id: string;
-  courseId: string;
-  unitId: string;
-  lectureId: string;
-  title: string;
-  status: "not_started" | "in_progress" | "completed";
-  whiteboardState?: any; // Excalidraw elements
-  createdAt: number;
-  updatedAt: number;
-}
-
 // ---- 结构化蓝图（可交互编辑） ----
 
 export interface BlueprintLecture {
@@ -216,61 +204,6 @@ export interface BoardItem {
   nodes?: string[]; // diagram/tree 用
 }
 
-/** 一个教学拍：say 是本句讲解词（逐句朗读），items 是随这句话写上白板的内容 */
-export interface TeachBeat {
-  say: string;
-  section?: string; // 板书分区名；省略 = 沿用上一个分区
-  items?: BoardItem[];
-}
-
-export interface WhiteboardMessage {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  createdAt: number;
-  kind?: "lecture" | "board" | "highlight" | "user";
-  segmentId?: string;
-  label?: string; // 消息顶部的分段标签（如 "3 · 核心机制"）
-}
-
-export type WhiteboardEvent =
-  | { type: "stage"; name: string; label: string; status: "start" | "end"; detail?: string }
-  | { type: "doc_pages"; docTitle: string; pages: { page: number; text: string }[] } // 文档建课：本节课引用的原文页，白板页"对照原文"面板用
-  | {
-      type: "beats";
-      segmentId: string;
-      index: number;
-      total: number;
-      title: string;
-      anchor?: string; // 本片段锚点词（白板正中大字圈画；旧缓存脚本无此字段则跳过）
-      beats: TeachBeat[];
-      checkpoint?: SegmentCheckpoint;
-      points?: string[]; // 课堂步骤（右侧轨），随首个 beats 事件下发
-      pointIndex?: number; // 当前片段对应到第几个步骤
-    }
-  | { type: "token"; text: string } // 学员提问的流式回答
-  | { type: "board_aside"; title: string; items: BoardItem[] } // 「没跟上」补课卡：钉在白板上的大白话版小结
-  | { type: "achievement"; title: string; desc: string } // 答对课堂练习的成就徽章（原版同款）
-  | { type: "lecture_quiz"; quiz: LectureQuizItem[] } // 课后练习：整节课讲完后下发 3-5 道题
-  | { type: "done"; sessionId: string }
-  | { type: "credits_block"; balance: number; need: number; reason: string } // 积分不足拦截
-  | { type: "error"; message: string };
-
-/** 课堂练习：内嵌在字幕区的选择题（原版 Hyperknow 的 checkpoint 打法） */
-export interface SegmentCheckpoint {
-  question: string;
-  options: string[]; // 2-3 个具体选项
-}
-
-/** 课后练习：一节课讲完后的 3-5 道单选/多选题（带答案与解析，即时判分） */
-export interface LectureQuizItem {
-  question: string;
-  multi: boolean;
-  options: string[];
-  answerIndexes: number[]; // 正确选项下标
-  explain: string; // 为什么：一句话解析
-}
-
 // ---- 课程回放（Manus Replay 式：一个链接回看整节课的板书+讲解） ----
 
 /** 回放里的一拍：只保留播放所需的最小字段 */
@@ -283,13 +216,16 @@ export interface ReplayBeat {
 
 export interface ReplayReel {
   id?: string;
+  /** board = v2 卡片流课堂的动作序列；缺省 = 旧版 v1 课堂的 beat 剧本（播放时转成卡片） */
+  kind?: "board";
   courseId: string;
   unitId: string;
   lectureId: string;
   courseTitle: string;
   lectureTitle: string;
   createdAt: number;
-  beats: ReplayBeat[];
+  beats?: ReplayBeat[];
+  actions?: import("./board").BoardAction[];
 }
 
 // ---- 结课作品工坊（Capstone Studio）：project 课节的真实体验 ----

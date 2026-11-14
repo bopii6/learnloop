@@ -7,8 +7,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { BoardAction, BoardEvent, BoardItem, BoardPage, BoardState, AskState, NoteCardItem } from "@/types/board";
 import { addColumn, commitHeight, computeLayoutParams, createPageLayout, newPageId, placeItem, reflowColumn } from "@/lib/board/layout";
 import { consumeSse } from "@/lib/sse";
+import { groupActions } from "@/lib/board/actions";
 import { fetchTtsSegments, prefetchTts, ttsUnavailable } from "@/lib/tts-client";
-import { splitSpeechLines } from "@/lib/speech-lines";
 import { Whiteboard, type WhiteboardCamera } from "./Whiteboard";
 import { BoardLayer } from "./board/BoardLayer";
 import type { CardHandle } from "./board/NoteCard";
@@ -21,6 +21,8 @@ interface WhiteboardSessionProps {
   lectureId: string;
   lectureTitle: string;
   onExit?: () => void;
+  /** 只读回放：动作序列来自分享快照，不请求讲师、不计费、不记进度；课堂题本地判对错 */
+  replay?: { actions: BoardAction[]; courseTitle?: string };
 }
 
 interface QueueItem {
@@ -28,12 +30,45 @@ interface QueueItem {
   actions: BoardAction[];
   /** 本组 speak 的 step（board 的闸门） */
   gateStep?: number;
+  /** script = 本节剧本（计入进度，可断点续播）；reply = 点评 / 追问回应（插队播放，不计进度） */
+  origin: "script" | "reply";
 }
 
 /** 单个动作的执行上下文（runAction 入参） */
 type SingleAction = QueueItem & { action: BoardAction };
 
-type Status = "idle" | "preparing" | "playing" | "paused" | "ask" | "done";
+/** ready = 课前（等学员点开始）；blocked = 积分不足 / 需要登录 / 备课失败 */
+type Status = "ready" | "preparing" | "playing" | "ask" | "done" | "blocked";
+
+interface SavedProgress {
+  /** 已播完的剧本 group 数 */
+  done: number;
+  finished: boolean;
+  at: number;
+}
+
+const RATES = [0.8, 1, 1.25, 1.5];
+
+function progressKey(courseId: string, unitId: string, lectureId: string) {
+  return `wb-progress:v1:${courseId}:${unitId}:${lectureId}`;
+}
+
+function loadProgress(key: string): SavedProgress | null {
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as SavedProgress) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveProgress(key: string, p: SavedProgress) {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(p));
+  } catch {
+    // 隐私模式 / 存储被禁：断点续播退化为从头开始
+  }
+}
 
 interface ChatMsg {
   id: string;
@@ -49,14 +84,14 @@ const EMPTY_STATE: BoardState = {
   pages: [{ id: "page-1", items: [], layout: null }],
 };
 
-function stepWords(text: string) {
-  const cjk = (text.match(/[\u3400-\u4dbf\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/g) || []).length;
-  const latin = (text.match(/[A-Za-z0-9]/g) || []).length;
-  return { cjk, latin, total: cjk + latin };
-}
-
-export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, onExit }: WhiteboardSessionProps) {
-  const [status, setStatus] = useState<Status>("idle");
+export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, onExit, replay }: WhiteboardSessionProps) {
+  const isReplay = Boolean(replay);
+  const [status, setStatus] = useState<Status>("ready");
+  const [blocked, setBlocked] = useState<{ title: string; message: string } | null>(null);
+  const [paused, setPaused] = useState(false);
+  const [rate, setRate] = useState(1);
+  const [saved, setSaved] = useState<SavedProgress | null>(null);
+  const progKey = progressKey(courseId, unitId, lectureId);
   const [board, setBoard] = useState<BoardState>(EMPTY_STATE);
   const [camera, setCamera] = useState<WhiteboardCamera>({ scrollX: 0, scrollY: 0, zoom: 1, vpW: 1440, vpH: 700 });
   const [caption, setCaption] = useState<{ text: string; reveal: number }>({ text: "", reveal: 0 });
@@ -89,6 +124,28 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
   const uidCounter = useRef(0);
   const voiceRef = useRef(voiceOn);
   voiceRef.current = voiceOn;
+  const pausedRef = useRef(false);
+  const rateRef = useRef(1);
+  rateRef.current = rate;
+  /** 当前正在播的音频（暂停 / 调速直接作用在它身上） */
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const lastSpeechRef = useRef("");
+  /** 课堂题：剧本停在这里，等学员作答（或跳过）后才继续 */
+  const askWaiterRef = useRef<(() => void) | null>(null);
+  /** 断点续播：前 N 个剧本 group 快进（无动画、无语音、跳过题目与徽章） */
+  const fastForwardRef = useRef(0);
+  const fastRef = useRef(false);
+  const scriptDoneRef = useRef(0);
+  /** 点评 / 追问的插队位置：同一次回应的多个 group 保持原顺序 */
+  const replyInsertRef = useRef(0);
+  /** 媒体生成失败的占位 step：占位帧晚到时直接不建卡 */
+  const failedMediaRef = useRef(new Set<number>());
+
+  useEffect(() => {
+    if (!isReplay) setSaved(loadProgress(progKey));
+  }, [isReplay, progKey]);
+  const [shareMsg, setShareMsg] = useState<string | null>(null);
+  const [sharing, setSharing] = useState(false);
 
   const layoutParams = useMemo(
     () => computeLayoutParams(camera.vpW || 1440, camera.vpH || 700),
@@ -174,24 +231,28 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
   // ---- 语音：TTS + 卡拉OK（revealFrom 按播放进度推进） ----
   const speak = useCallback(
     async (text: string): Promise<void> => {
-      const { total } = stepWords(text);
-      const estMs = Math.max(1200, (text.length * 170 + 400) / (voiceRef.current ? 1 : 1));
+      lastSpeechRef.current = text;
+      const estMs = Math.max(1200, text.length * 170 + 400);
       return new Promise<void>((resolve) => {
         let settled = false;
         const finish = () => {
           if (settled) return;
           settled = true;
           speechStopRef.current = null;
+          audioRef.current = null;
           setCaption((c) => ({ ...c, reveal: text.length }));
           resolve();
         };
         if (exitedRef.current) return finish();
-        if (!voiceRef.current || ttsUnavailable()) {
-          // 静音/无云端语音：按阅读节奏推进（字幕照常卡拉OK）
-          const t0 = performance.now();
+        // 无语音（静音 / 未配云端语音 / 合成失败）：按阅读节奏推进字幕卡拉OK；暂停时计时冻结，语速同步生效
+        const readAlong = () => {
+          let elapsed = 0;
+          let last = performance.now();
           let raf = 0;
           const tick = (now: number) => {
-            const p = Math.min(1, (now - t0) / estMs);
+            if (!pausedRef.current) elapsed += (now - last) * rateRef.current;
+            last = now;
+            const p = Math.min(1, elapsed / estMs);
             setCaption({ text, reveal: Math.round(p * text.length) });
             if (p < 1 && !exitedRef.current) raf = requestAnimationFrame(tick);
             else finish();
@@ -201,30 +262,16 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
             cancelAnimationFrame(raf);
             finish();
           };
-          return;
-        }
+        };
+        if (!voiceRef.current || ttsUnavailable()) return readAlong();
         void (async () => {
           const segs = await fetchTtsSegments(text);
           if (settled) return;
-          if (!segs || segs.length === 0) {
-            const t0 = performance.now();
-            let raf = 0;
-            const tick = (now: number) => {
-              const p = Math.min(1, (now - t0) / estMs);
-              setCaption({ text, reveal: Math.round(p * text.length) });
-              if (p < 1 && !exitedRef.current) raf = requestAnimationFrame(tick);
-              else finish();
-            };
-            raf = requestAnimationFrame(tick);
-            speechStopRef.current = () => {
-              cancelAnimationFrame(raf);
-              finish();
-            };
-            return;
-          }
+          if (!segs || segs.length === 0) return readAlong();
           const audios = segs.map((u) => {
             const a = new Audio(u);
             a.preload = "auto";
+            a.playbackRate = rateRef.current;
             return a;
           });
           // 先量时长（blob 本地，秒回）
@@ -255,7 +302,9 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
               a.addEventListener("timeupdate", onTime);
               a.addEventListener("ended", () => next(), { once: true });
               a.addEventListener("error", () => next(), { once: true });
-              void a.play().catch(() => next());
+              audioRef.current = a;
+              a.playbackRate = rateRef.current;
+              if (!pausedRef.current) void a.play().catch(() => next());
               speechStopRef.current = () => {
                 stopped = true;
                 try {
@@ -375,7 +424,7 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
             content: action.board_content,
             title: action.title,
             decorations: [],
-            animateReveal: true,
+            animateReveal: !fastRef.current,
             revealGateStep: item.gateStep,
           };
           setBoard((st) => ({
@@ -390,6 +439,11 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
           pushMsg("board", (action.title || "").trim() || action.board_content.replace(/[#*`$\\]/g, "").slice(0, 22), action.board_content);
           await new Promise((r) => window.setTimeout(r, 50));
           focusItem(pos);
+          if (fastRef.current) {
+            await new Promise((r) => window.setTimeout(r, 40));
+            ack(action.step_id);
+            return;
+          }
           // 等落字完成（保险丝：4000 + 24ms/字，上限 30s）
           const failSafe = new Promise<void>((r) => window.setTimeout(r, Math.min(30000, 4000 + 24 * action.board_content.length)));
           await Promise.race([waitCard(id), failSafe]);
@@ -400,6 +454,12 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
           return;
         }
         case "speak": {
+          if (fastRef.current) {
+            lastSpeechRef.current = action.spoken_text;
+            for (const [, h] of cardHandles.current) h.openGate();
+            ack(action.step_id);
+            return;
+          }
           prefetchTts(action.spoken_text);
           await speak(action.spoken_text);
           // 讲完：打开配对卡片的闸门
@@ -432,11 +492,15 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
             }));
             pushMsg("circle", action.type === "circle" ? "圈画重点" : "高亮重点", action.snippet);
           }
-          await new Promise((r) => setTimeout(r, action.type === "circle" ? 920 : 140));
+          await new Promise((r) => setTimeout(r, fastRef.current ? 20 : action.type === "circle" ? 920 : 140));
           ack(action.step_id);
           return;
         }
         case "image_gen_pending": {
+          if (failedMediaRef.current.has(action.placement_step_id)) {
+            ack(action.placement_step_id);
+            return;
+          }
           const cur = activePage();
           const layout = cur.layout ?? createPageLayout(lpRef.current);
           const pos = placeItem(layout);
@@ -467,7 +531,7 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
             const stashed = mediaStash.current.get(key);
             if (stashed) {
               mediaStash.current.delete(key);
-              window.setTimeout(() => void runAction({ actions: [], action: stashed }), 60);
+              window.setTimeout(() => void runAction({ actions: [], action: stashed, origin: "script" }), 60);
             }
           }
           return;
@@ -512,6 +576,10 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
           return;
         }
         case "animation_pending": {
+          if (failedMediaRef.current.has(action.placement_step_id)) {
+            ack(action.placement_step_id);
+            return;
+          }
           const cur = activePage();
           const layout = cur.layout ?? createPageLayout(lpRef.current);
           const pos = placeItem(layout);
@@ -540,7 +608,7 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
             const stashed = mediaStash.current.get(key);
             if (stashed) {
               mediaStash.current.delete(key);
-              window.setTimeout(() => void runAction({ actions: [], action: stashed }), 60);
+              window.setTimeout(() => void runAction({ actions: [], action: stashed, origin: "script" }), 60);
             }
           }
           return;
@@ -606,6 +674,8 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
           return;
         }
         case "ask": {
+          ack(action.step_id);
+          if (fastRef.current) return; // 续播快进：已经答过的题不再拦
           setAsk({
             stepId: action.step_id,
             question: action.question,
@@ -615,10 +685,17 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
           });
           pushMsg("quiz", "小测", action.question);
           setStatus("ask");
-          ack(action.step_id);
+          // 剧本停在这里：学员作答（点评已插队到队首）或跳过后才继续
+          await new Promise<void>((resolve) => {
+            askWaiterRef.current = resolve;
+          });
           return;
         }
         case "reward_user": {
+          if (fastRef.current) {
+            ack(action.step_id);
+            return;
+          }
           setReward({ title: action.master_concept_title, desc: action.master_concept_description });
           pushMsg("reward", action.master_concept_title, action.master_concept_description);
           await new Promise((r) => setTimeout(r, 120));
@@ -638,13 +715,16 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
 
   // ---- 队列泵：串行执行，逐拍回执 ----
   const pump = useCallback(async () => {
-    if (busyRef.current || exitedRef.current) return;
+    if (busyRef.current || exitedRef.current || pausedRef.current) return;
     const next = queueRef.current.shift();
     if (!next) {
-      setStatus((s) => (s === "ask" ? s : "done"));
+      setStatus((s) => (s === "ask" || s === "blocked" || s === "ready" ? s : "done"));
       return;
     }
     busyRef.current = true;
+    if (replyInsertRef.current > 0) replyInsertRef.current -= 1;
+    const fast = next.origin === "script" && scriptDoneRef.current < fastForwardRef.current;
+    fastRef.current = fast;
     setStatus((s) => (s === "ask" ? s : "playing"));
     try {
       // 组内并发：board 落字 + speak 讲解同时进行；组间串行（上一组全部完成才走下一组）
@@ -653,26 +733,36 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       busyRef.current = false;
+      fastRef.current = false;
     }
-    if (!exitedRef.current) window.setTimeout(() => void pump(), 60);
-  }, [runAction]);
+    if (next.origin === "script" && !isReplay) {
+      scriptDoneRef.current += 1;
+      const finished = next.actions.some((a) => a.type === "done");
+      const p = { done: finished ? 0 : scriptDoneRef.current, finished, at: Date.now() };
+      saveProgress(progKey, p);
+      if (finished) setSaved(p);
+    }
+    if (!exitedRef.current) window.setTimeout(() => void pump(), fast ? 0 : 60);
+  }, [isReplay, progKey, runAction]);
 
   const enqueue = useCallback(
-    (actions: BoardAction[]) => {
+    (actions: BoardAction[], origin: QueueItem["origin"]) => {
       // generated_* 是"回填空位"，必须到达即生效（不能排在几分钟的播放队列末尾）
       const immediate = actions.filter((a) => a.type === "generated_image" || a.type === "generated_animation");
       const queued = actions.filter((a) => a.type !== "generated_image" && a.type !== "generated_animation");
       for (const a of immediate) {
-        void runAction({ actions: [], action: a });
+        void runAction({ actions: [], action: a, origin });
       }
       if (queued.length > 0) {
         // group 打包语义：同组的 speak 是 board 的闸门（board 完成时不早于讲完）
         const speakStep = queued.find((a) => a.type === "speak")?.step_id;
-        queueRef.current.push({ actions: queued, gateStep: speakStep });
-        if (typeof window !== "undefined") {
-          const w = window as unknown as { __wbQueue?: string[][] };
-          w.__wbQueue = w.__wbQueue || [];
-          w.__wbQueue.push(queued.map((a) => a.type));
+        const item: QueueItem = { actions: queued, gateStep: speakStep, origin };
+        if (origin === "reply") {
+          // 点评 / 追问插队：当前这一拍讲完就接上，同一次回应内部保持顺序
+          queueRef.current.splice(replyInsertRef.current, 0, item);
+          replyInsertRef.current += 1;
+        } else {
+          queueRef.current.push(item);
         }
         void pump();
       }
@@ -680,11 +770,38 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
     [pump, runAction]
   );
 
+  /** 媒体生成失败：撤掉占位卡并让同列后面的卡补位 */
+  const dropMedia = useCallback(
+    (placementStep: number) => {
+      failedMediaRef.current.add(placementStep);
+      setBoard((st) => ({
+        ...st,
+        revision: st.revision + 1,
+        pages: st.pages.map((p) => {
+          const victim = p.items.find(
+            (i) => (i.kind === "board_image" || i.kind === "board_animation") && i.placementStepId === placementStep
+          );
+          if (!victim) return p;
+          let items = p.items.filter((i) => i.id !== victim.id);
+          const layout = p.layout ? { ...p.layout, columns: p.layout.columns.map((c) => ({ ...c })) } : null;
+          if (layout) items = reflowColumn(layout, items, victim.columnIndex);
+          onMediaLoaded(victim.id);
+          return { ...p, items, layout };
+        }),
+      }));
+    },
+    [onMediaLoaded]
+  );
+
   /** SSE 事件分发：group 包 或 顶层动作帧都能吃（两种形态都在协议里） */
   const handleEvent = useCallback(
-    (e: BoardEvent) => {
+    (e: BoardEvent, origin: QueueItem["origin"]) => {
       if (e.type === "group") {
-        enqueue(e.actions);
+        enqueue(e.actions, origin);
+        return;
+      }
+      if (e.type === "media_failed") {
+        dropMedia(e.placement_step_id);
         return;
       }
       const actionTypes = [
@@ -704,18 +821,25 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
         "done",
       ];
       if (actionTypes.includes(e.type)) {
-        enqueue([e as BoardAction]);
+        enqueue([e as BoardAction], origin);
       }
     },
-    [enqueue]
+    [dropMedia, enqueue]
   );
 
-  // ---- 开课：拉取脚本（SSE） ----
-  useEffect(() => {
-    exitedRef.current = false;
-    let cancelled = false;
-    void (async () => {
+  // ---- 开课：学员点"开始"后才拉剧本（也让首段语音满足浏览器自动播放策略） ----
+  const startLesson = useCallback(
+    async (resumeFrom: number) => {
+      exitedRef.current = false;
+      fastForwardRef.current = resumeFrom;
+      scriptDoneRef.current = 0;
+      setBlocked(null);
+      setError(null);
       setStatus("preparing");
+      if (replay) {
+        for (const g of groupActions(replay.actions)) handleEvent({ type: "group", actions: g }, "script");
+        return;
+      }
       try {
         const res = await fetch("/api/board", {
           method: "POST",
@@ -723,47 +847,132 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
           body: JSON.stringify({ action: "start", courseId, unitId, lectureId }),
         });
         if (!res.ok || !res.body) throw new Error(`请求失败 (${res.status})`);
+        let started = false;
         await consumeSse<BoardEvent>(res, (e) => {
-          if (cancelled || exitedRef.current) return;
+          if (exitedRef.current) return;
           if (e.type === "session_ready") {
-            setStatus("idle");
+            started = true;
+          } else if (e.type === "credits_block") {
+            setBlocked({
+              title: "积分不够了",
+              message: `第一次上这节课需要 ${e.need} 积分（之后复习免费），你现在还有 ${e.balance} 积分。可以点左下角的积分徽章兑换。`,
+            });
+            setStatus("blocked");
+          } else if (e.type === "auth_required") {
+            setBlocked({ title: "先登录再上课", message: e.message });
+            setStatus("blocked");
           } else if (e.type === "error") {
-            setError(e.message);
-            setStatus("idle");
-          } else if (e.type === "response_complete") {
-            // 脚本流结束：队列泵自然收尾
-          } else {
-            handleEvent(e);
+            if (started) setError(e.message);
+            else {
+              setBlocked({ title: "这节课没能开讲", message: e.message });
+              setStatus("blocked");
+            }
+          } else if (e.type !== "response_complete") {
+            handleEvent(e, "script");
           }
         });
       } catch (e) {
-        if (!cancelled) {
-          setError(e instanceof Error ? e.message : String(e));
-          setStatus("idle");
-        }
+        setBlocked({ title: "网络出了点问题", message: e instanceof Error ? e.message : String(e) });
+        setStatus("blocked");
       }
-    })();
+    },
+    [courseId, handleEvent, lectureId, replay, unitId]
+  );
+
+  /** 分享回放：把这节课的讲稿快照存成只读链接并复制到剪贴板 */
+  const shareReplay = useCallback(async () => {
+    if (sharing) return;
+    setSharing(true);
+    try {
+      const res = await fetch("/api/replay", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ courseId, unitId, lectureId }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok || !d.id) throw new Error(d.error || `生成失败 (${res.status})`);
+      const url = `${window.location.origin}/replay/${d.id}`;
+      try {
+        await navigator.clipboard.writeText(url);
+        setShareMsg("回放链接已复制，发给朋友就能看这节课");
+      } catch {
+        setShareMsg(url);
+      }
+    } catch (e) {
+      setShareMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSharing(false);
+      window.setTimeout(() => setShareMsg(null), 5000);
+    }
+  }, [courseId, lectureId, sharing, unitId]);
+
+  useEffect(() => {
     return () => {
-      cancelled = true;
       exitedRef.current = true;
       speechStopRef.current?.();
+      askWaiterRef.current?.();
       if ("speechSynthesis" in window) window.speechSynthesis.cancel();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [courseId, unitId, lectureId]);
+  }, []);
 
-  // ---- 作答 / 追问 ----
+  // ---- 播放控制 ----
+  const togglePause = useCallback(() => {
+    const next = !pausedRef.current;
+    pausedRef.current = next;
+    setPaused(next);
+    const a = audioRef.current;
+    if (next) a?.pause();
+    else {
+      if (a) void a.play().catch(() => {});
+      void pump();
+    }
+  }, [pump]);
+
+  const changeRate = useCallback((r: number) => {
+    setRate(r);
+    rateRef.current = r;
+    if (audioRef.current) audioRef.current.playbackRate = r;
+  }, []);
+
+  /** 重听：打断当前这句，把它插回队首再讲一遍 */
+  const replayLast = useCallback(() => {
+    const text = lastSpeechRef.current;
+    if (!text) return;
+    queueRef.current.unshift({ actions: [{ type: "speak", step_id: -1, spoken_text: text }], origin: "reply" });
+    if (pausedRef.current) togglePause();
+    speechStopRef.current?.();
+    void pump();
+  }, [pump, togglePause]);
+
+  // ---- 作答 / 追问 / 没听懂 ----
   const submit = useCallback(
-    async (text: string, fromAsk?: AskState) => {
+    async (text: string, opts: { fromAsk?: AskState; simpler?: boolean } = {}) => {
       const t = text.trim();
+      const { fromAsk, simpler } = opts;
       if (!t || chatBusy) return;
+      if (replay) {
+        // 回放：本地判对错 + 解析，不请求讲师
+        if (!fromAsk) return;
+        const correct = fromAsk.correctIndex == null ? undefined : fromAsk.options[fromAsk.correctIndex] === t;
+        setAsk({ ...fromAsk, answered: { text: t, correct } });
+        pushMsg("user", t);
+        if (fromAsk.explanation) pushMsg("quiz", correct === false ? "解析" : "答对了", fromAsk.explanation);
+        window.setTimeout(() => {
+          setAsk(null);
+          setStatus("playing");
+          const release = askWaiterRef.current;
+          askWaiterRef.current = null;
+          release?.();
+        }, 1800);
+        return;
+      }
       setChatBusy(true);
       pushMsg("user", t);
       setInput("");
+      replyInsertRef.current = 0;
       if (fromAsk) {
         const correct = fromAsk.correctIndex == null ? undefined : fromAsk.options[fromAsk.correctIndex] === t;
         setAsk({ ...fromAsk, answered: { text: t, correct } });
-        setStatus("playing");
       }
       try {
         const res = await fetch("/api/board", {
@@ -775,6 +984,7 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
             unitId,
             lectureId,
             message: t,
+            simpler,
             // 点评追加在当前页（与 Hyperknow 一致：作答反馈不另开一页）
             pageId: boardRef.current.activePageId,
             ask: fromAsk ? { question: fromAsk.question, options: fromAsk.options, correct_index: fromAsk.correctIndex } : undefined,
@@ -784,17 +994,32 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
         await consumeSse<BoardEvent>(res, (e) => {
           if (exitedRef.current) return;
           if (e.type === "error") setError(e.message);
-          else handleEvent(e);
+          else if (e.type !== "response_complete") handleEvent(e, "reply");
         });
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       } finally {
         setChatBusy(false);
-        setAsk(null);
+        if (fromAsk) {
+          // 点评已插到队首：放行停在课堂题上的剧本
+          setAsk(null);
+          setStatus("playing");
+          const release = askWaiterRef.current;
+          askWaiterRef.current = null;
+          release?.();
+        }
       }
     },
-    [chatBusy, courseId, enqueue, lectureId, pushMsg, unitId]
+    [chatBusy, courseId, handleEvent, lectureId, pushMsg, replay, unitId]
   );
+
+  const skipAsk = useCallback(() => {
+    setAsk(null);
+    setStatus("playing");
+    const release = askWaiterRef.current;
+    askWaiterRef.current = null;
+    release?.();
+  }, []);
 
   const pageIndex = board.pages.findIndex((p) => p.id === board.activePageId);
 
@@ -839,6 +1064,8 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
             <button
               onClick={() => apiRef.current?.updateScene({ appState: { zoom: { value: 1 } } })}
               className="px-2 py-1.5 text-[11px] text-ink-soft hover:bg-[#f3f4f6] min-w-[3.1rem] text-center border-x border-[#e6e8eb]"
+              aria-label="缩放复位到 100%"
+              title="缩放复位到 100%"
             >
               {Math.round(camera.zoom * 100)}%
             </button>
@@ -851,16 +1078,47 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
             </span>
             <button onClick={() => gotoPage(1)} disabled={pageIndex >= board.pages.length - 1} className="px-2.5 py-1.5 text-ink-soft hover:bg-[#f3f4f6] disabled:opacity-35" aria-label="下一页">›</button>
           </div>
+          <select
+            value={rate}
+            onChange={(e) => changeRate(Number(e.target.value))}
+            className="rounded-lg border border-[#e6e8eb] bg-white px-2 py-1.5 text-[12px] text-ink-soft"
+            aria-label="讲解语速"
+            title="讲解语速"
+          >
+            {RATES.map((r) => (
+              <option key={r} value={r}>
+                {r}x
+              </option>
+            ))}
+          </select>
           <button
             onClick={() => setVoiceOn((v) => !v)}
             className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12px] ${voiceOn ? "border-accent text-accent" : "border-[#e6e8eb] text-ink-soft"}`}
             title={voiceOn ? "关闭语音" : "开启语音"}
+            aria-label={voiceOn ? "关闭语音" : "开启语音"}
           >
             <Icon name={voiceOn ? "voice" : "voice-off"} />
             {voiceOn ? "语音" : "静音"}
           </button>
+          {!isReplay && (
+            <button
+              onClick={() => void shareReplay()}
+              disabled={sharing || status === "ready" || status === "preparing" || status === "blocked"}
+              className="flex items-center gap-1.5 rounded-lg border border-[#e6e8eb] px-3 py-1.5 text-[12px] text-ink-soft hover:border-accent hover:text-accent disabled:opacity-40"
+              title="生成这节课的只读回放链接，发给朋友"
+              aria-label="分享回放链接"
+            >
+              <Icon name="link" />
+              {sharing ? "生成中…" : "分享回放"}
+            </button>
+          )}
         </div>
       </div>
+      {shareMsg && (
+        <div className="absolute left-1/2 top-16 z-[90] -translate-x-1/2 rounded-lg bg-[#16181c] px-4 py-2 text-[12.5px] text-white shadow-lg">
+          {shareMsg}
+        </div>
+      )}
 
       <div className="flex-1 flex min-h-0">
         {/* 白板主体 */}
@@ -889,7 +1147,75 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
             />
             {status === "preparing" && (
               <div className="absolute inset-0 flex items-center justify-center bg-[#fcfcfc]/85">
-                <div className="text-[13px] text-ink-soft">AI 讲师正在备课…</div>
+                <div className="text-[13px] text-ink-soft">
+                  {fastForwardRef.current > 0 ? "正在回到你上次停下的地方…" : "AI 讲师正在备课，第一次开讲大约需要 10-20 秒…"}
+                </div>
+              </div>
+            )}
+            {(status === "ready" || status === "blocked") && (
+              <div className="absolute inset-0 z-[60] flex items-center justify-center bg-[#fcfcfc]/92 px-4">
+                <div className="w-[440px] max-w-full rounded-3xl border border-[#e6e8eb] bg-white shadow-xl p-7">
+                  {status === "blocked" && blocked ? (
+                    <>
+                      <div className="text-[18px] font-bold mb-2">{blocked.title}</div>
+                      <div className="text-[13px] text-ink-soft leading-relaxed mb-5">{blocked.message}</div>
+                      <div className="flex gap-2.5 justify-end">
+                        <button onClick={() => onExit?.()} className="rounded-lg border border-[#e6e8eb] px-4 py-2 text-[12.5px] text-ink-soft hover:border-accent hover:text-accent">
+                          回到课程页
+                        </button>
+                        <button onClick={() => void startLesson(0)} className="rounded-lg bg-accent px-4 py-2 text-[12.5px] text-white hover:opacity-90">
+                          重试
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-[11px] text-accent font-semibold tracking-[.1em] mb-1">{isReplay ? "课堂回放" : "本节课"}</div>
+                      <div className="text-[19px] font-bold leading-snug mb-2">{lectureTitle}</div>
+                      <div className="text-[12.5px] text-ink-soft leading-relaxed mb-4">
+                        {isReplay
+                          ? `${replay?.courseTitle ? `来自课程《${replay.courseTitle}》。` : ""}AI 讲师边讲边写板书，中途有一道小题等你作答。`
+                          : "讲师边讲边写板书，中途会停下来考你一题。听不懂随时按「没听懂」，讲师会换个说法再讲。"}
+                      </div>
+                      <div className="flex gap-2 mb-5" role="radiogroup" aria-label="上课方式">
+                        {[
+                          { on: true, label: "听讲解", desc: "语音 + 板书" },
+                          { on: false, label: "静音阅读", desc: "只看字幕与板书" },
+                        ].map((m) => (
+                          <button
+                            key={m.label}
+                            role="radio"
+                            aria-checked={voiceOn === m.on}
+                            onClick={() => setVoiceOn(m.on)}
+                            className={`flex-1 rounded-xl border px-3 py-2.5 text-left ${voiceOn === m.on ? "border-accent bg-accent/5" : "border-[#e6e8eb]"}`}
+                          >
+                            <div className="text-[13px] font-medium">{m.label}</div>
+                            <div className="text-[11px] text-ink-soft">{m.desc}</div>
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        {saved && !saved.finished && saved.done > 0 ? (
+                          <>
+                            <button onClick={() => void startLesson(saved.done)} className="rounded-xl bg-accent px-4 py-2.5 text-[13.5px] font-medium text-white hover:opacity-90">
+                              ▶ 从上次停下的地方继续
+                            </button>
+                            <button onClick={() => void startLesson(0)} className="rounded-xl border border-[#e6e8eb] px-4 py-2 text-[12.5px] text-ink-soft hover:border-accent hover:text-accent">
+                              从头开始
+                            </button>
+                          </>
+                        ) : (
+                          <button onClick={() => void startLesson(0)} className="rounded-xl bg-accent px-4 py-2.5 text-[13.5px] font-medium text-white hover:opacity-90">
+                            {isReplay ? "▶ 播放回放" : saved?.finished ? "▶ 再听一遍（复习免费）" : "▶ 开始上课"}
+                          </button>
+                        )}
+                      </div>
+                      {!isReplay && (
+                        <div className="mt-3 text-[11px] text-ink-faint">第一次开讲消耗 1 积分，之后复习免费；课堂提问不额外收费。</div>
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -898,19 +1224,27 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
           <div className="pointer-events-none absolute bottom-0 left-0 right-0 flex flex-col items-center gap-2 pb-3 px-4">
             {ask && (
               <div className="pointer-events-auto w-full max-w-2xl rounded-2xl border border-[#e6e8eb] bg-white shadow-lg px-4 py-3">
-                <div className="text-[12px] text-accent mb-1">小测 · 答完讲师继续</div>
+                <div className="flex items-center justify-between mb-1">
+                  <div className="text-[12px] text-accent">小测 · 答完讲师继续</div>
+                  {!ask.answered && (
+                    <button onClick={skipAsk} disabled={chatBusy} className="text-[11.5px] text-ink-faint hover:text-ink-soft disabled:opacity-50">
+                      跳过这题
+                    </button>
+                  )}
+                </div>
                 <div className="text-[14px] font-medium mb-2">{ask.question}</div>
                 {ask.answered ? (
                   <div className="text-[12.5px] text-ink-soft">
                     你选了「{ask.answered.text}」
                     {ask.answered.correct != null ? (ask.answered.correct ? "（正确）" : "（再想想）") : ""}
+                    {chatBusy ? " · 讲师正在点评…" : ""}
                   </div>
                 ) : (
                   <div className="flex flex-wrap gap-2">
                     {ask.options.map((o) => (
                       <button
                         key={o}
-                        onClick={() => void submit(o, ask)}
+                        onClick={() => void submit(o, { fromAsk: ask })}
                         disabled={chatBusy}
                         className="rounded-lg border border-[#e6e8eb] px-3 py-1.5 text-[12.5px] hover:border-accent hover:text-accent disabled:opacity-50"
                       >
@@ -925,6 +1259,32 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
               <div className="w-full max-w-3xl rounded-xl bg-[#16181c]/85 px-4 py-2 text-[13px] leading-relaxed text-white">
                 {caption.text.slice(0, caption.reveal)}
                 <span className="text-[#ffd9a8]">{caption.text.slice(caption.reveal)}</span>
+              </div>
+            )}
+            {(status === "playing" || status === "ask" || status === "done") && (
+              <div className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-[#e6e8eb] bg-white/95 px-2 py-1 shadow-sm">
+                {status === "done" && !paused ? (
+                  <span className="px-2 text-[12px] text-ink-soft">
+                    {isReplay ? "回放播完了 · 想自己上一门课？去首页一句话生成" : "本节讲完了 · 有问题直接在右侧问讲师"}
+                  </span>
+                ) : (
+                  <button onClick={togglePause} className="rounded-full px-3 py-1 text-[12px] text-ink hover:bg-[#f3f4f6]" aria-label={paused ? "继续讲解" : "暂停讲解"}>
+                    {paused ? "▶ 继续" : "❚❚ 暂停"}
+                  </button>
+                )}
+                <button onClick={replayLast} disabled={!lastSpeechRef.current} className="rounded-full px-3 py-1 text-[12px] text-ink hover:bg-[#f3f4f6] disabled:opacity-40" aria-label="重听上一句">
+                  ↻ 重听
+                </button>
+                {!isReplay && (
+                  <button
+                    onClick={() => void submit("刚才这段我没听懂，能换个说法、举个具体例子再讲一遍吗？", { simpler: true })}
+                    disabled={chatBusy}
+                    className="rounded-full px-3 py-1 text-[12px] text-ink hover:bg-[#f3f4f6] disabled:opacity-40"
+                    aria-label="没听懂，请讲师换个说法再讲"
+                  >
+                    🤔 没听懂
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -947,7 +1307,7 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
             {chatBusy && <div className="text-[12px] text-ink-soft px-2">讲师正在回应…</div>}
             {error && <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700">{error}</div>}
           </div>
-          <div className="p-3 border-t border-[#e6e8eb]">
+          <div className={`p-3 border-t border-[#e6e8eb] ${isReplay ? "hidden" : ""}`}>
             <div className="flex gap-2">
               <textarea
                 value={input}
@@ -959,6 +1319,7 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
                   }
                 }}
                 placeholder="向讲师提问 / 作答…"
+                aria-label="向讲师提问"
                 rows={1}
                 className="flex-1 resize-none rounded-lg border border-[#e6e8eb] px-3 py-2 text-[13px] outline-none focus:border-accent"
               />
@@ -992,8 +1353,10 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
       {exitOpen && (
         <div className="absolute inset-0 z-[80] flex items-center justify-center bg-[#16181c]/45">
           <div className="w-[360px] max-w-[86%] rounded-3xl border border-[#e6e8eb] bg-white shadow-2xl p-6">
-            <div className="text-[17px] font-bold mb-1.5">退出这节课？</div>
-            <div className="text-[13px] text-ink-soft leading-relaxed mb-5">讲解进度会保留，下次进来可以继续。</div>
+            <div className="text-[17px] font-bold mb-1.5">{isReplay ? "退出回放？" : "退出这节课？"}</div>
+            <div className="text-[13px] text-ink-soft leading-relaxed mb-5">
+              {isReplay ? "回放链接随时可以再打开。" : "进度已自动保存在这台设备上，下次进来可以从停下的地方继续。"}
+            </div>
             <div className="flex gap-2.5 justify-end">
               <button onClick={() => setExitOpen(false)} className="rounded-lg border border-[#e6e8eb] px-4 py-2 text-[12.5px] text-ink-soft hover:border-accent hover:text-accent">
                 继续上课

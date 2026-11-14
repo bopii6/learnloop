@@ -5,7 +5,6 @@
 // 迁移到 Cloudflare 时业务代码零改动，填好 .env 的 CF_* 变量即生效。
 //
 // 例外（保持本地，刻意不上云）：
-// - data/classrooms：课堂断线恢复快照（临时缓存，非珍贵数据；上 Workers 时挪 Durable Object）
 // - data/.auth-secret：本机会话签名密钥
 import { promises as fs } from "fs";
 import path from "path";

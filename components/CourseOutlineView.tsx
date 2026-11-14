@@ -136,7 +136,7 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
 
   // 进入课节（原版同款：点"学习"开白板课堂）—— 独立路由，可刷新、可后退
   const openLecture = (lec: { id: string; title: string }) => {
-    router.push(`/learn/${courseId}/${lec.id}`);
+    router.push(`/classroom/${courseId}/${lec.id}`);
   };
 
   /* 方案 C：学习仪表盘（进度环 + 统计 + 单元卡） */

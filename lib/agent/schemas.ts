@@ -44,17 +44,7 @@ export const lectureDetailsSchema = z
   })
   .passthrough();
 
-/** 课节片段规划 */
-export const lecturePlanSchema = z
-  .object({ segments: z.array(z.object({ title: text(2) }).passthrough()).min(2, "至少 2 个片段") })
-  .passthrough();
-
-/** v1 讲稿：至少 3 拍，每拍有口播 */
-export const beatScriptSchema = z
-  .object({ beats: z.array(z.object({ say: text(2) }).passthrough()).min(3, "至少 3 拍") })
-  .passthrough();
-
-/** v2 板书脚本：至少 1 张卡，每张有卡面与口播 */
+/** 板书脚本：至少 1 张卡，每张有卡面与口播 */
 export const boardScriptSchema = z
   .object({
     cards: z.array(z.object({ content: text(2), speak: text(2) }).passthrough()).min(1, "至少 1 张卡"),
@@ -64,9 +54,6 @@ export const boardScriptSchema = z
 const choiceQuestion = z
   .object({ question: text(4), options: z.array(text()).min(2, "至少 2 个选项") })
   .passthrough();
-
-/** 课堂即时练习（单题） */
-export const checkpointSchema = choiceQuestion;
 
 /** 课后 / 单元测验：至少 3 题，每题带答案下标 */
 export const quizSchema = z

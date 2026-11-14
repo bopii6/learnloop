@@ -51,7 +51,8 @@ function NoteCardInner({ item, zoom, register, onHeight, onTypingDone, onCardCli
   }, [handlePen, item.id, onTypingDone]);
 
   const typewriter = useTypewriter(bodyRef, {
-    enabled: true,
+    // 断点续播的快进阶段不做逐字动画：内容直接可见
+    enabled: item.animateReveal !== false,
     contentKey: `${item.id}:${item.content.length}`,
     onDone,
     onPen: handlePen,
@@ -96,6 +97,7 @@ function NoteCardInner({ item, zoom, register, onHeight, onTypingDone, onCardCli
       }}
       role="button"
       tabIndex={0}
+      aria-label="点这张卡片，让讲师展开讲这一条"
       onKeyDown={(e) => {
         if (e.key === "Enter") {
           const text = (bodyRef.current?.textContent || "").trim().slice(0, 60);

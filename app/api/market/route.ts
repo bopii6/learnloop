@@ -5,7 +5,8 @@ import { NextRequest, NextResponse } from "next/server";
 import type { MarketCollection, MarketEntry } from "@/types";
 import { isAdminUser, userFromCookieHeader } from "@/lib/auth";
 import { getCourseState, metaKey, type CourseMeta } from "@/lib/agent/course";
-import { listKeys, readJson, writeJson, storageMode } from "@/lib/storage";
+import { readJson, writeJson, storageMode } from "@/lib/storage";
+import { listAttendedLectures } from "@/lib/board/script-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,32 +36,11 @@ export async function GET(req: NextRequest) {
   );
   visible.sort((a, b) => b.addedAt - a.addedAt);
 
-  // 我的进度：扫课堂快照（与 /api/courses 同口径）。快照名 = courseId+unitId+lecId，
-  // 本地模式快照在 data/classrooms/，R2 模式也是本地写——两路并一份再归课。
+  // 我的进度：当前学员上过的课节（讲稿缓存按 用户 × 课节 落盘）
   const visitedByCourse = new Map<string, Set<string>>();
-  try {
-    const roomItems = await listKeys("classrooms/").catch(() => []);
-    let localKeys: string[] = [];
-    try {
-      const { promises: fs } = await import("fs");
-      const path = await import("path");
-      const dir = path.join(process.cwd(), "data", "classrooms");
-      localKeys = (await fs.readdir(dir)).map((n) => `classrooms/${n}`);
-    } catch {
-      // 本地目录不存在（R2 部署）时忽略
-    }
-    for (const key of [...roomItems.map((i) => i.key), ...localKeys]) {
-      const name = key.split("/").pop()!.replace(/\.json$/, "");
-      const unitIdx = name.indexOf("unit-");
-      const lecIdx = name.indexOf("lec-");
-      if (unitIdx <= 0 || lecIdx <= unitIdx) continue;
-      const courseId = name.slice(0, unitIdx);
-      const lectureId = name.slice(lecIdx);
-      if (!visitedByCourse.has(courseId)) visitedByCourse.set(courseId, new Set());
-      visitedByCourse.get(courseId)!.add(lectureId);
-    }
-  } catch {
-    // 快照不可用时进度为空，货架照常
+  for (const a of await listAttendedLectures(me?.id).catch(() => [])) {
+    if (!visitedByCourse.has(a.courseId)) visitedByCourse.set(a.courseId, new Set());
+    visitedByCourse.get(a.courseId)!.add(a.lectureId);
   }
 
   // 从 course-meta 小索引并行带出课程规模（集市卡徽标用；索引缺失就静默省略），

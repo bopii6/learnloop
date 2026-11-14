@@ -6,7 +6,7 @@
 
 - **Agent 内核**：意图分类 → 检索规划（2-3 个搜索词）→ 并行搜索 → 抓取网页正文 → 流式生成带引用讲解
 - **课程生成**：搜索 → 分轮澄清（MCQ）→ 结构蓝图（可编辑）→ 大纲 → 白板教学
-- **白板课堂（beat 播放器）**：AI 讲师产出「逐句讲解 + 绑定板书动作」的 beat 脚本，前端播放器同步驱动——语音逐句朗读、白板逐条书写、字幕条同步、对话框同步入稿；可暂停/续播，提问或回答 checkpoint 后自动断点续播
+- **白板课堂（卡片流）**：AI 讲师产出「板书卡片 + 口播」动作序列，播放器逐组执行——打字机落字、圈画重点、卡拉OK 字幕、云端语音；课中小测停下等作答，讲师点评后发徽章；随时暂停 / 调语速 / 重听 / 「没听懂」（讲师换角度重讲）；本机记住进度可断点续播；一键生成只读回放链接
 - **学习者画像**：跨课程持久化（data/profile.json），澄清问答自动沉淀 + LLM 蒸馏摘要，注入后续课程生成与教学
 - **引用系统**：正文 [1][2] 角标，点击高亮来源卡片
 - **历史记录**：本地 JSON 文件持久化（data/conversations/），左侧栏管理
@@ -63,13 +63,15 @@ POST /api/course (SSE)
   → search → clarify ×4（注入画像，不重复提问）→ blueprint（可编辑）→ outline
   → captureCourseProfile：澄清问答沉淀进 data/profile.json，LLM 蒸馏画像摘要
 
-POST /api/teach (SSE)
-  → 导演规划 8-12 个教学片段 → 每片段产出 beat 脚本：{say, section, items}[]
-  → 前端播放器逐 beat 播放：字幕 + 对话 + 白板书写 + speechSynthesis 逐句朗读
+POST /api/board (SSE)
+  → start：生成本节板书脚本（卡片 + 口播 + 圈画 + 小测 + 徽章）→ 媒体导演决定配图/互动动画
+           → 按 group 帧下发；讲稿按 用户×课节 缓存（复习/回放零成本）；首次开讲扣 1 积分，失败退回
+  → answer：有小测 = 点评；无小测 = 课堂追问 /「没听懂」，回应插队到当前这拍之后播放
+POST /api/replay → 把讲稿快照存成只读回放链接（/replay/:id）
   → 打断：提问注入「当前片段 + 已写板书 + 画像」，答完自动续播
 ```
 
-事件协议（SSE JSON）：课程 `stage / clarify_round / sources / blueprint / outline / done / error`；教学 `stage / beats / token / done / error`。
+事件协议（SSE JSON）：课程 `stage / clarify_round / sources / blueprint / outline / done / error`；课堂 `session_ready / group / generated_image / generated_animation / media_failed / credits_block / auth_required / response_complete / error`。
 前端只认事件，后续加工具（文件阅读、资产生成）不用改前端框架。
 
 ## 已知取舍（MVP）
@@ -78,7 +80,7 @@ POST /api/teach (SSE)
 - 搜索为确定性 pipeline，不是通用 ReAct 循环（下一版升级）
 - 客户端中断后服务端会继续跑完并保存完整回答，重载会话可能出现部分+完整两条（小概率，暂容忍）
 - 引用角标在流式过程中不渲染（生成完才可点击）
-- 语音用浏览器 speechSynthesis（逐句朗读保证同步）；换云端 TTS 时只需替换播放器的 speak 实现，beat 协议不变
+- 断点续播进度存在本机浏览器（换设备从头开始）；"上过哪些课节"以服务端讲稿缓存为准，跨设备一致
 
 ## 下一步（按复刻报告的 Phase 继续）
 
@@ -102,7 +104,7 @@ POST /api/teach (SSE)
 
 ### 第二步：应用本体上 Workers（待做）
 
-- `@opennextjs/cloudflare` 适配 Next.js；课堂 WebSocket（server.mjs）重写为 Durable Object
+- `@opennextjs/cloudflare` 适配 Next.js（课堂已不依赖 WebSocket 自定义服务，纯 HTTP/SSE，可直接上 Workers）
 - OCR 已改走 DeepSeek OCR 云端接口，服务端不再做位图渲染，Workers 上直接可用
 - 届时需要：Cloudflare API Token（Workers / D1 部署权限）
 
