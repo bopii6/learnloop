@@ -18,6 +18,7 @@ import { consumeSse } from "@/lib/sse";
 import { uploadTextbookPdf } from "@/lib/textbook-client";
 import { useRouter } from "next/navigation";
 import { resetGeneratorState, useGeneratorState } from "@/hooks/useGeneratorState";
+import { OutOfCredits } from "./OutOfCredits";
 
 interface CourseGeneratorProps {
   onComplete?: (courseId: string, title: string, outline: CourseOutline) => void;
@@ -164,6 +165,10 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
   const [outline, setOutline] = useGeneratorState<CourseOutline | null>("outline", null);
   const [courseId, setCourseId] = useGeneratorState("courseId", "");
   const [error, setError] = useGeneratorState<string | null>("error", null);
+  // 积分不够：给出买积分 / 兑换码两条路，充值后直接接着生成
+  // 公网未登录：到扣费点时请登录，登录成功后自动接着生成
+  const [authBlock, setAuthBlock] = useGeneratorState<string | null>("authBlock", null);
+  const [creditsBlock, setCreditsBlock] = useGeneratorState<{ what: string; need: number; balance: number } | null>("creditsBlock", null);
   const [selectedOptions, setSelectedOptions] = useGeneratorState<string[]>("selectedOptions", []);
   const [customAnswer, setCustomAnswer] = useGeneratorState("customAnswer", "");
   const [loading, setLoading] = useGeneratorState("loading", false);
@@ -317,10 +322,11 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
       window.dispatchEvent(new Event("ll:credits-changed"));
     } else if (e.type === "save_ok") {
       setSaveFailed(false);
+    } else if (e.type === "auth_required") {
+      setAuthBlock(e.message);
+      setLoading(false);
     } else if (e.type === "credits_block") {
-      setError(
-        `积分不足：${e.reason}需要 ${e.need} 积分，当前余额 ${e.balance}。注册赠送 20 积分（生成一门课 10 分，首次听一节课 1 分、复习免费），用完后联系我们补充。`
-      );
+      setCreditsBlock({ what: e.reason, need: e.need, balance: e.balance });
       setLoading(false);
     } else if (e.type === "error") {
       setError(e.message);
@@ -387,6 +393,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
     if ((!query.trim() && !textbookId) || loading) return;
     setLoading(true);
     setError(null);
+    setCreditsBlock(null);
     setCancelNotice(null);
     setStep("search");
     setSources([]);
@@ -430,6 +437,8 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
 
   const confirmBlueprint = useCallback(async () => {
     if (!courseId || loading) return;
+    setCreditsBlock(null);
+    setAuthBlock(null);
     setLoading(true);
     setStep("outline");
     setProgress(null);
@@ -441,6 +450,14 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
     }
     await streamRequest(body);
   }, [courseId, loading, streamRequest, editedBlueprint, blueprint]);
+
+  // 被登录拦下的生成：登录成功后自动接着走（不用再找按钮）
+  useEffect(() => {
+    if (!authBlock || !courseId) return;
+    const onLoggedIn = () => void confirmBlueprint();
+    window.addEventListener("ll:logged-in", onLoggedIn);
+    return () => window.removeEventListener("ll:logged-in", onLoggedIn);
+  }, [authBlock, courseId, confirmBlueprint]);
 
   const submitFeedback = useCallback(async () => {
     if (!courseId || loading || !feedback.trim()) return;
@@ -1373,6 +1390,25 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
             </div>
           </div>
         </section>
+      )}
+
+      {authBlock && (
+        <div className="mt-4 rounded-2xl border border-[#e4e4e7] bg-white px-5 py-4" role="alert">
+          <div className="text-[13.5px] font-semibold mb-1">差一步：登录后生成完整课程</div>
+          <div className="text-[12.5px] text-ink-soft leading-relaxed mb-3">{authBlock}</div>
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent("ll:open-login"))}
+            className="rounded-full bg-accent px-4 py-1.5 text-[12.5px] font-medium text-white hover:opacity-90"
+          >
+            登录 / 注册
+          </button>
+        </div>
+      )}
+
+      {creditsBlock && (
+        <div className="mt-4">
+          <OutOfCredits what={creditsBlock.what} need={creditsBlock.need} balance={creditsBlock.balance} onRecharged={() => void (courseId ? confirmBlueprint() : startGeneration())} />
+        </div>
       )}
 
       {error && (

@@ -3,6 +3,7 @@
 // 积分弹层：余额 + 计费规则 + 最近流水。
 // 此前点「N 积分」直接弹兑换码框——花钱的入口有了，看钱的入口没有。
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { RedeemModal } from "./RedeemModal";
 
 interface CreditLogEntry {
@@ -100,12 +101,21 @@ export function CreditsPopover({
             ))}
           </div>
 
-          <button
-            onClick={() => setRedeemOpen(true)}
-            className="w-full rounded-xl bg-accent px-3 py-2 text-[12px] font-medium text-white hover:opacity-90 transition-opacity"
-          >
-            兑换码充值
-          </button>
+          <div className="flex gap-2">
+            <Link
+              href="/pricing"
+              onClick={onClose}
+              className="flex-1 rounded-xl bg-accent px-3 py-2 text-center text-[12px] font-medium text-white hover:opacity-90 transition-opacity"
+            >
+              购买积分
+            </Link>
+            <button
+              onClick={() => setRedeemOpen(true)}
+              className="flex-1 rounded-xl border border-[#e4e4e7] px-3 py-2 text-[12px] text-ink-soft hover:border-accent hover:text-accent transition-colors"
+            >
+              输入兑换码
+            </button>
+          </div>
         </>
       )}
       {redeemOpen && (

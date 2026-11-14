@@ -2,6 +2,7 @@
 
 // 侧栏：浮动圆角白卡，导航 + 继续学习 + 历史。
 // 图标统一用内联 SVG 线性图标（stroke=currentColor），选中态走品牌绿。
+import { NEW_USER_GRANT } from "@/lib/pricing";
 import { useState } from "react";
 import type { ConversationMeta } from "@/types";
 import { CreditsPopover } from "./CreditsPopover";
@@ -245,12 +246,17 @@ export function Sidebar({
               </div>
             </div>
           ) : (
-            <button
-              onClick={onLogin}
-              className="w-full rounded-xl bg-[#18181b] px-3 py-2.5 text-[12.5px] font-medium text-white hover:bg-[#3f3f46] transition-colors"
-            >
-              登录 / 注册
-            </button>
+            <>
+              <button
+                onClick={onLogin}
+                className="w-full rounded-xl bg-[#18181b] px-3 py-2.5 text-[12.5px] font-medium text-white hover:bg-[#3f3f46] transition-colors"
+              >
+                登录 / 注册
+              </button>
+              <a href="/pricing" className="mt-2 block text-center text-[11px] text-ink-faint hover:text-accent">
+                注册送 {NEW_USER_GRANT} 积分 · 查看积分与价格
+              </a>
+            </>
           )}
           {creditsOpen && user && (
             <CreditsPopover

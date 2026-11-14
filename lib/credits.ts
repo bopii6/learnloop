@@ -13,17 +13,17 @@ import { listKeys, readBinary, readJson, readJsonStrict, writeJson } from "@/lib
 const LEGACY_DB_KEY = "credits.json"; // 旧的单文件账本，只读用于迁移，不再写回
 const ACCOUNT_PREFIX = "credits/";
 
-export const NEW_USER_GRANT = 20;
-export const COST_COURSE_GENERATE = 10;
-export const COST_TEACHING_SESSION = 1;
-/** 结课工坊：任务书生成一次 1 分（缓存后免费重看） */
-export const COST_CAPSTONE_BRIEF = 1;
-/** 结课工坊：作品验收每次 1 分（对照做成标准的逐条判定是一次实打实的 LLM 审稿） */
-export const COST_CAPSTONE_REVIEW = 1;
-/** 单元测验：出题一次 1 分（题目缓存，重考免费） */
-export const COST_UNIT_QUIZ = 1;
-/** 每用户每节课的追问上限（课堂 chat 不扣积分，用护栏防滥用） */
-export const CHAT_LIMIT_PER_LECTURE = 30;
+// 各动作的积分价格统一定义在 lib/pricing.ts（前端定价页与后端扣费同一份数据）
+import { NEW_USER_GRANT } from "@/lib/pricing";
+export {
+  NEW_USER_GRANT,
+  COST_COURSE_GENERATE,
+  COST_TEACHING_SESSION,
+  COST_CAPSTONE_BRIEF,
+  COST_CAPSTONE_REVIEW,
+  COST_UNIT_QUIZ,
+  CHAT_LIMIT_PER_LECTURE,
+} from "@/lib/pricing";
 const LOG_CAP = 1000;
 
 export interface CreditLogEntry {

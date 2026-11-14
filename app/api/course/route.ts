@@ -525,7 +525,7 @@ mode 为 course 或 answer 时，额外做需求抽取（认真对待用户说�
           // 积分门卫：大纲生成是全管线最贵的一步，课程资产此刻才真正落袋。
           // 未登录：本地自用放行（无公开暴露面）；公网部署（R2 模式）必须登录，否则积分形同虚设。
           if (!me && storageMode === "r2") {
-            await send({ type: "error", message: "请先登录后再生成课程（课程消耗积分，与账号绑定）" });
+            await send({ type: "auth_required", message: "登录后就能生成完整课程——新用户注册送 20 积分，够生成这门课并上 10 节。" });
             controller.close();
             return;
           }

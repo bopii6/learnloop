@@ -172,6 +172,7 @@ export type CourseEvent =
   | { type: "done"; courseId: string; title: string; saveFailed?: boolean } // saveFailed = 最终存档重试耗尽；大纲已在前端，可"重试保存"补写
   | { type: "save_ok" } // save_course 动作：补存成功
   | { type: "credits_block"; balance: number; need: number; reason: string } // 积分不足拦截
+  | { type: "auth_required"; message: string } // 公网部署未登录：到扣费点时请学员登录（注册送积分）
   | { type: "error"; message: string };
 
 // ---- 白板教学：beat 脚本（生成与播放分离） ----

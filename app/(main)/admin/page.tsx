@@ -3,6 +3,7 @@
 // 运营后台（仅 ADMIN_EMAIL 可见，侧栏有入口）：收款后造兑换码、看码记录、按邮箱补分、当日用量总览。
 // 纯客户端拼装既有 admin 接口（mint-codes/grant/overview），不做权限系统——服务端每个接口各自验 isAdminUser。
 import { useCallback, useEffect, useState } from "react";
+import { CREDIT_PACKS, fmtYuan } from "@/lib/pricing";
 
 interface RedeemCode {
   code: string;
@@ -13,12 +14,8 @@ interface RedeemCode {
   redeemedAt?: number;
 }
 
-const CREDIT_PRESETS = [
-  { credits: 10, price: "¥9.9" },
-  { credits: 32, price: "¥29.9" },
-  { credits: 55, price: "¥49.9" },
-  { credits: 115, price: "¥99" },
-]; // 1 积分 = ¥1，四档售卖面额（大额多赠 2-16 分）
+// 造码面额 = 定价页售卖的积分包（lib/pricing.ts 唯一来源）
+const CREDIT_PRESETS = CREDIT_PACKS.map((p) => ({ credits: p.credits, price: fmtYuan(p.price) }));
 
 function fmtTime(ts: number): string {
   const d = new Date(ts);

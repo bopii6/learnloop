@@ -93,10 +93,13 @@ export function AppShell({ children }: { children: ReactNode }) {
     const onCourses = () => refreshCourses();
     const onConversations = () => refreshList();
     window.addEventListener("ll:credits-changed", onCredits);
+    const onOpenLogin = () => setAuthOpen(true);
+    window.addEventListener("ll:open-login", onOpenLogin);
     window.addEventListener("ll:courses-changed", onCourses);
     window.addEventListener("ll:conversations-changed", onConversations);
     return () => {
       window.removeEventListener("ll:credits-changed", onCredits);
+      window.removeEventListener("ll:open-login", onOpenLogin);
       window.removeEventListener("ll:courses-changed", onCourses);
       window.removeEventListener("ll:conversations-changed", onConversations);
     };
@@ -156,6 +159,8 @@ export function AppShell({ children }: { children: ReactNode }) {
             refreshMe();
             refreshCourses();
             refreshList();
+            // 通知正在等登录的页面（如生成到一半被拦下的课程）继续
+            window.dispatchEvent(new CustomEvent("ll:logged-in"));
           }}
         />
       )}

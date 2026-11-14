@@ -12,7 +12,6 @@ const fmtHours = (min?: number) =>
   min && min > 0 ? (min / 60).toFixed(1).replace(/\.0$/, "") + " 小时" : "";
 
 // 标价经 JSON 存取可能是浮点脏值（29.700000000000003），展示统一格式化
-const fmtPrice = (n: number) => `¥${n.toFixed(n % 1 === 0 ? 0 : 1)}`;
 
 type SortKey = "new" | "big" | "short";
 
@@ -281,12 +280,9 @@ export function MarketView({
                 >
                   <button onClick={() => onOpenCourse(e.courseId)} className="relative block w-full overflow-hidden text-left">
                     <CourseCover seed={e.courseId} title={e.title} rounded="rounded-none" className="w-full h-[110px] transition-transform duration-300 group-hover:scale-[1.03]" />
-                    <span
-                      className={`absolute top-2 right-2 rounded-full px-2 py-0.5 text-[10.5px] font-semibold shadow-sm ${
-                        e.price > 0 ? "bg-white/95 text-[#b45309]" : "bg-white/95 text-[#4d7c43]"
-                      }`}
-                    >
-                      {e.price > 0 ? fmtPrice(e.price) : "免费"}
+                    {/* 只有一种货币（积分）：货架上的课免费浏览，第一次上某节课才扣 1 积分 */}
+                    <span className="absolute top-2 right-2 rounded-full bg-white/95 px-2 py-0.5 text-[10.5px] font-semibold text-[#4d7c43] shadow-sm">
+                      免费浏览
                     </span>
                     {e.author === "official" && (
                       <span className="absolute top-2 left-2 rounded-full bg-accent px-2 py-0.5 text-[10px] font-medium text-white shadow-sm">

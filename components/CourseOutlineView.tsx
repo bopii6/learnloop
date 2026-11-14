@@ -26,7 +26,6 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
   const router = useRouter();
   // 上架到精品课程：好课标个价放进精品课，别人点开就能学
   const [marketOpen, setMarketOpen] = useState(false);
-  const [marketPrice, setMarketPrice] = useState("");
   const [marketNote, setMarketNote] = useState("");
   const [marketState, setMarketState] = useState<"idle" | "saving" | "done" | "error">("idle");
   // 课程内追加材料（原版同款「上传材料，扩展这门课程」）：先收文件，融入课程的后端在下一迭代
@@ -124,7 +123,6 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           courseId,
-          price: Number(marketPrice) || 0,
           note: marketNote.trim() || undefined,
         }),
       });
@@ -270,12 +268,7 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
               className="w-full rounded-lg border border-[#e4e4e7] px-2.5 py-1.5 text-[12px] outline-none focus:border-accent bg-white"
             />
             <div className="flex items-center gap-2">
-              <input
-                value={marketPrice}
-                onChange={(e) => setMarketPrice(e.target.value.replace(/[^\d.]/g, ""))}
-                placeholder="标价，留空 = 免费"
-                className="flex-1 min-w-0 rounded-lg border border-[#e4e4e7] px-2.5 py-1.5 text-[12px] outline-none focus:border-accent bg-white"
-              />
+              <span className="flex-1 min-w-0 text-[11.5px] text-ink-faint">上架后所有访客可免费浏览，学员第一次上某节课扣 1 积分。</span>
               <button
                 onClick={() => void publishToMarket()}
                 disabled={marketState === "saving"}

@@ -14,6 +14,7 @@ import { BoardLayer } from "./board/BoardLayer";
 import type { CardHandle } from "./board/NoteCard";
 import { Icon } from "./icons";
 import "./board/board.css";
+import { OutOfCredits } from "./OutOfCredits";
 
 interface WhiteboardSessionProps {
   courseId: string;
@@ -87,7 +88,7 @@ const EMPTY_STATE: BoardState = {
 export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, onExit, replay }: WhiteboardSessionProps) {
   const isReplay = Boolean(replay);
   const [status, setStatus] = useState<Status>("ready");
-  const [blocked, setBlocked] = useState<{ title: string; message: string } | null>(null);
+  const [blocked, setBlocked] = useState<{ title: string; message: string; credits?: { need: number; balance: number } } | null>(null);
   const [paused, setPaused] = useState(false);
   const [rate, setRate] = useState(1);
   const [saved, setSaved] = useState<SavedProgress | null>(null);
@@ -855,7 +856,8 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
           } else if (e.type === "credits_block") {
             setBlocked({
               title: "积分不够了",
-              message: `第一次上这节课需要 ${e.need} 积分（之后复习免费），你现在还有 ${e.balance} 积分。可以点左下角的积分徽章兑换。`,
+              message: "",
+              credits: { need: e.need, balance: e.balance },
             });
             setStatus("blocked");
           } else if (e.type === "auth_required") {
@@ -1155,7 +1157,19 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
             {(status === "ready" || status === "blocked") && (
               <div className="absolute inset-0 z-[60] flex items-center justify-center bg-[#fcfcfc]/92 px-4">
                 <div className="w-[440px] max-w-full rounded-3xl border border-[#e6e8eb] bg-white shadow-xl p-7">
-                  {status === "blocked" && blocked ? (
+                  {status === "blocked" && blocked?.credits ? (
+                    <>
+                      <OutOfCredits
+                        what="第一次上这节课"
+                        need={blocked.credits.need}
+                        balance={blocked.credits.balance}
+                        onRecharged={() => void startLesson(0)}
+                      />
+                      <button onClick={() => onExit?.()} className="mt-3 text-[12px] text-ink-faint hover:text-ink-soft">
+                        先回课程页
+                      </button>
+                    </>
+                  ) : status === "blocked" && blocked ? (
                     <>
                       <div className="text-[18px] font-bold mb-2">{blocked.title}</div>
                       <div className="text-[13px] text-ink-soft leading-relaxed mb-5">{blocked.message}</div>

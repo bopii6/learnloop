@@ -5,6 +5,7 @@
 // 出题一次扣 1 积分，重考免费——考不过再考是学习的一部分，不重复收费。
 import { useEffect, useState } from "react";
 import type { CourseLecture, CourseOutline, UnitQuizItem } from "@/types";
+import { OutOfCredits } from "./OutOfCredits";
 
 interface QuizLessonProps {
   courseId: string;
@@ -26,6 +27,7 @@ export function QuizLesson({ courseId, outline, lecture, onExit }: QuizLessonPro
   const [starting, setStarting] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [creditsBlock, setCreditsBlock] = useState<{ need: number; balance: number } | null>(null);
   const [result, setResult] = useState<{ score: number; total: number; passed: boolean; firstPass: boolean } | null>(
     null
   );
@@ -56,6 +58,7 @@ export function QuizLesson({ courseId, outline, lecture, onExit }: QuizLessonPro
   const startQuiz = async () => {
     setStarting(true);
     setMsg(null);
+    setCreditsBlock(null);
     try {
       const res = await fetch("/api/quiz", {
         method: "POST",
@@ -64,11 +67,8 @@ export function QuizLesson({ courseId, outline, lecture, onExit }: QuizLessonPro
       });
       const d = await res.json();
       if (!res.ok) {
-        setMsg(
-          d?.error === "credits_block"
-            ? `积分不足（余额 ${d.balance}，需要 ${d.need}）。出题是一次按单元内容现做的生成，花 1 积分。`
-            : d?.error || "出题失败，稍后再试"
-        );
+        if (d?.error === "credits_block") setCreditsBlock({ need: d.need, balance: d.balance });
+        else setMsg(d?.error || "出题失败，稍后再试");
         return;
       }
       setQuiz(d.quiz);
@@ -195,6 +195,11 @@ export function QuizLesson({ courseId, outline, lecture, onExit }: QuizLessonPro
               {starting ? "讲师正在按你的单元出题…" : "开始测验（⚡ 1 积分，重考免费）"}
             </button>
             {msg && <div className="text-[12px] text-red-600 mt-3">{msg}</div>}
+            {creditsBlock && (
+              <div className="mt-4 text-left">
+                <OutOfCredits compact what="出这个单元的测验" need={creditsBlock.need} balance={creditsBlock.balance} onRecharged={() => void startQuiz()} />
+              </div>
+            )}
           </div>
         )}
 

@@ -5,6 +5,7 @@
 // 流程：生成任务书（因人而异）→ 按步骤动手做 → 提交作品 → 导师对照做成标准逐条验收 → 通过即结课。
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CapstoneRecord, CourseLecture, CourseOutline } from "@/types";
+import { OutOfCredits } from "./OutOfCredits";
 
 interface CapstoneStudioProps {
   courseId: string;
@@ -77,9 +78,12 @@ export function CapstoneStudio({ courseId, outline, lecture, onExit }: CapstoneS
     });
   };
 
+  const [creditsBlock, setCreditsBlock] = useState<{ what: string; need: number; balance: number; retry: "brief" | "review" } | null>(null);
+
   const runBrief = async () => {
     setBriefState("loading");
     setBriefMsg(null);
+    setCreditsBlock(null);
     try {
       const res = await fetch("/api/capstone", {
         method: "POST",
@@ -88,11 +92,8 @@ export function CapstoneStudio({ courseId, outline, lecture, onExit }: CapstoneS
       });
       const d = await res.json();
       if (!res.ok) {
-        setBriefMsg(
-          d?.error === "credits_block"
-            ? `积分不足（余额 ${d.balance}，需要 ${d.need}）。任务书是一次个性化的课程设计，花 1 积分。`
-            : d?.error || "生成失败，稍后再试"
-        );
+        if (d?.error === "credits_block") setCreditsBlock({ what: "生成结课任务书", need: d.need, balance: d.balance, retry: "brief" });
+        else setBriefMsg(d?.error || "生成失败，稍后再试");
         setBriefState("error");
         return;
       }
@@ -112,6 +113,7 @@ export function CapstoneStudio({ courseId, outline, lecture, onExit }: CapstoneS
     }
     setReviewState("loading");
     setReviewMsg(null);
+    setCreditsBlock(null);
     try {
       const res = await fetch("/api/capstone", {
         method: "POST",
@@ -126,11 +128,8 @@ export function CapstoneStudio({ courseId, outline, lecture, onExit }: CapstoneS
       });
       const d = await res.json();
       if (!res.ok) {
-        setReviewMsg(
-          d?.error === "credits_block"
-            ? `积分不足（余额 ${d.balance}，需要 ${d.need}）。每次验收是一次逐条对照的严格审稿，花 1 积分。`
-            : d?.error || "验收失败，稍后再试"
-        );
+        if (d?.error === "credits_block") setCreditsBlock({ what: "验收这份作品", need: d.need, balance: d.balance, retry: "review" });
+        else setReviewMsg(d?.error || "验收失败，稍后再试");
         setReviewState("error");
         return;
       }
@@ -264,6 +263,11 @@ export function CapstoneStudio({ courseId, outline, lecture, onExit }: CapstoneS
               {briefState === "loading" ? "导师正在为你设计任务书…" : "生成我的任务书（⚡ 1 积分）"}
             </button>
             {briefMsg && <div className="text-[12px] text-red-600 mt-3">{briefMsg}</div>}
+            {creditsBlock?.retry === "brief" && (
+              <div className="mt-4 text-left">
+                <OutOfCredits compact what={creditsBlock.what} need={creditsBlock.need} balance={creditsBlock.balance} onRecharged={() => void runBrief()} />
+              </div>
+            )}
           </div>
         ) : (
           <div className="rounded-2xl border border-[#e4e4e7] bg-white overflow-hidden">
@@ -424,6 +428,9 @@ export function CapstoneStudio({ courseId, outline, lecture, onExit }: CapstoneS
                 <span className="text-[11.5px] text-ink-faint">过与不过都会给逐条判定和改法；不过可以改完再交。</span>
               </div>
               {reviewMsg && <div className="text-[12px] text-red-600">{reviewMsg}</div>}
+              {creditsBlock?.retry === "review" && (
+                <OutOfCredits compact what={creditsBlock.what} need={creditsBlock.need} balance={creditsBlock.balance} onRecharged={() => void submitWork()} />
+              )}
             </div>
           </div>
         )}
