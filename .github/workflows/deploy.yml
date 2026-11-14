@@ -1,14 +1,40 @@
-# 部署到 Cloudflare Workers：每次 push 到 main 自动构建上线
-# OpenNext 的构建步骤在 Windows 上有已知限制，因此用 GitHub Actions 的 Linux 环境构建
-name: Deploy to Cloudflare Workers
+# 检查 + 部署到 Cloudflare Workers
+# - 每次 push / PR：先跑质量闸门（类型检查、单元测试、生产构建），任何一项失败都不会部署
+# - push 到 main 且闸门通过：用 OpenNext 构建并上线（OpenNext 在 Windows 上有已知限制，所以在 Linux 上构建）
+name: Check & Deploy
 
 on:
   push:
     branches: [main]
+  pull_request: {}
   workflow_dispatch: {} # 允许手动触发
 
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 类型检查
+        run: npm run typecheck
+
+      - name: 单元测试
+        run: npm test
+
+      - name: 生产构建
+        run: npm run build
+
   deploy:
+    needs: check
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

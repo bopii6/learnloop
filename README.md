@@ -39,6 +39,18 @@ npm run dev
 LLM 可换任何 OpenAI 兼容端点（GLM / 通义 / 中转站），改三个变量即可。
 语音播报选型调研与细节见 [docs/白板语音播报TTS选型与接入.md](docs/白板语音播报TTS选型与接入.md)。
 
+## 开发与发布
+
+```bash
+npm run typecheck   # 类型检查
+npm test            # 单元测试（tests/*.test.ts，Node 内置 test runner，无需额外依赖）
+npm run build       # 生产构建
+node scripts/smoke.mjs [baseUrl]   # 冒烟：主要页面与只读接口过一遍，不调大模型；部署后对线上域名跑一次
+npm run eval -- --only=ml-systematic,cooking-zero,r-for-elderly   # 课程质量评测（改提示词前后各跑一次）
+```
+
+push 到 `main` 会触发 GitHub Actions：先跑 **类型检查 → 单元测试 → 生产构建**，全部通过才部署到 Cloudflare Workers；PR 只跑检查不部署。
+
 ## 技术栈
 
 Next.js 15 (App Router) + TypeScript + Tailwind + Vercel AI SDK + JSON 文件存储

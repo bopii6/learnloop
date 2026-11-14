@@ -9,7 +9,9 @@
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "cf:build": "opennextjs-cloudflare build",
     "cf:typecheck": "tsc --noEmit",
-    "eval": "tsx eval/run.ts"
+    "eval": "tsx eval/run.ts",
+    "test": "node --import tsx --test \"tests/*.test.ts\"",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@ai-sdk/openai": "^1.3.0",
@@ -43,5 +45,16 @@
     "tsx": "^4.23.13",
     "typescript": "^5.7.0",
     "wrangler": "^4.129.1"
+  },
+  "overrides": {
+    "katex": "$katex",
+    "lodash-es": "^4.17.24",
+    "postcss": "$postcss",
+    "@excalidraw/excalidraw": {
+      "nanoid": "^3.3.18"
+    },
+    "@excalidraw/mermaid-to-excalidraw": {
+      "nanoid": "^5.1.16"
+    }
   }
 }
