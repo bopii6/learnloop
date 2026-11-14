@@ -14,9 +14,6 @@ import { boardCssVars, CHROME_VARS, boardColors } from "@/lib/board-themes";
 import { createTtsPlayer, fetchTtsSegments, prefetchTts, resetTtsDisabled, ttsDisabledReason, ttsUnavailable } from "@/lib/tts-client";
 import { AuthModal } from "./AuthModal";
 import { exportBoardPoster, exportScriptPoster, downloadBlob, copyImageToClipboard, safeFilename } from "@/lib/board-poster";
-import { VerticalClipModal, type ClipBeat } from "./VerticalClipModal";
-import { renderKnowledgeMapSkeleton } from "@/lib/comic-kb-render";
-import type { KnowledgeStoryboard } from "@/lib/agent/comic";
 import { Icon } from "./icons";
 
 interface CourseSessionProps {
@@ -265,13 +262,10 @@ export function CourseSession({
   const [quizOpen, setQuizOpen] = useState(false);
   // 讲解语速：嫌慢可以直接提速，不用等讲师"讲快点"
   const [rate, setRate] = useState(1);
-  // ---- 面向传播的三个产物：知识海报 / 回放链接 / 60 秒竖屏速览 ----
+  // ---- 面向传播的产物：知识海报 / 回放链接 ----
   const [posterBusy, setPosterBusy] = useState(false);
-  const [kbBusy, setKbBusy] = useState(false);
-  const [kbDone, setKbDone] = useState(false);
   const [posterMsg, setPosterMsg] = useState<{ text: string; href?: string } | null>(null);
   const [replayUrl, setReplayUrl] = useState("");
-  const [clipOpen, setClipOpen] = useState(false);
   // 白板缩放（单一控件）：由 Whiteboard onChange 实时上报，摄像机自动运镜时读数跟着走
   const [zoomPct, setZoomPct] = useState(100);
   // 退出确认：× 是破坏性操作的入口（停讲解、断语音），必须有一步确认
@@ -1153,51 +1147,6 @@ export function CourseSession({
     if (cp) void sendChat(answer, { question: cp.question, options: cp.options });
   };
 
-  // ---- 产物〇：知识地图（讲完本节，把知识卡片长图画到长卷末尾；与 /comic 知识地图共用同一份数据） ----
-  const generateKnowledgeMap = async () => {
-    if (kbBusy || kbDone) return;
-    setKbBusy(true);
-    setPosterMsg(null);
-    try {
-      const res = await fetch("/api/comic", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "storyboard_knowledge", courseId, unitId, lectureId }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "知识地图生成失败");
-      const kb = data.storyboard as KnowledgeStoryboard;
-      const api = excalidrawApiRef.current;
-      if (!api) throw new Error("白板还没就绪");
-      // 长卷末尾 = 当前场景最大底边
-      let maxY = 0;
-      for (const e of api.getSceneElements?.() || []) {
-        if (e.isDeleted) continue;
-        const bottom = (e.y || 0) + (e.height || 0);
-        if (bottom > maxY) maxY = bottom;
-      }
-      const { elements, height } = renderKnowledgeMapSkeleton(kb, 60, maxY + 90);
-      void height;
-      const mod = await import("@excalidraw/excalidraw");
-      const converted = mod.convertToExcalidrawElements(elements as any);
-      const keep = (api.getSceneElements?.() || []).filter((e: any) => !e.isDeleted);
-      api.updateScene({ elements: [...keep, ...converted] });
-      try {
-        api.scrollToContent(converted, { fitToViewport: true, viewportZoomFactor: 0.8 });
-      } catch {
-        // 老版本 API 不支持数组入参，忽略（用户可自己拖到末尾）
-      }
-      setKbDone(true);
-      setPosterMsg({ text: "知识地图已长到长卷末尾，往下滚就是" });
-      window.setTimeout(() => setPosterMsg(null), 3200);
-    } catch (e) {
-      setPosterMsg({ text: e instanceof Error ? e.message : "知识地图生成失败" });
-      window.setTimeout(() => setPosterMsg(null), 3200);
-    } finally {
-      setKbBusy(false);
-    }
-  };
-
   // ---- 产物一：知识海报（优先讲义式：片段要点+图表+金句；无剧本时退回白板终态） ----
   const generatePoster = async () => {
     if (posterBusy) return;
@@ -1326,39 +1275,6 @@ export function CourseSession({
     replaySavedRef.current = true;
     void saveReplay();
   }, [playback, buildReelFromScript, saveReplay]);
-
-  // ---- 产物三：60 秒竖屏速览的素材（从剧本里均匀取拍） ----
-  const buildClipBeats = useCallback((): ClipBeat[] => {
-    const segs = [...wsScriptRef.current].sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
-    const flat = segs.flatMap((seg) =>
-      (seg.beats || []).map((b: TeachBeat) => ({
-        say: b.say,
-        section: b.section,
-        items: b.items || [],
-        segmentTitle: seg.title,
-      }))
-    );
-    if (flat.length === 0) return [];
-    const N = Math.min(7, flat.length);
-    const picked: typeof flat = [];
-    for (let i = 0; i < N; i++) {
-      picked.push(flat[Math.round((i * (flat.length - 1)) / (N - 1))]);
-    }
-    let lastSection = "";
-    return picked.map((b) => {
-      if (b.section) lastSection = b.section;
-      const withText = b.items.find((it: { text?: string; kind: string }) => it.text && it.kind !== "note");
-      const keyText =
-        withText?.text ||
-        (b.items.find((it: { kind: string }) => it.kind === "diagram")?.nodes || []).join("→") ||
-        b.say.slice(0, 12);
-      return {
-        keyText: keyText.slice(0, 20),
-        sectionLabel: lastSection || b.segmentTitle,
-        say: b.say,
-      };
-    });
-  }, []);
 
   // ---- 语音输入（文字模式下的辅助：说完填入输入框；语音模式用顶栏的自动聆听） ----
   const manualRecRef = useRef<any>(null);
@@ -1540,7 +1456,7 @@ export function CourseSession({
               对照原文
             </button>
           )}
-          {/* 传播产物：海报 / 竖屏速览 / 回放链接。海报 = 全节讲义，讲完才生成，保证与白板终态一致。
+          {/* 传播产物：海报 / 回放链接。海报 = 全节讲义，讲完才生成，保证与白板终态一致。
               未就绪的按钮用外层 span 承接点击给出解释——disabled 按钮点了没反应，用户只会以为坏了 */}
           <span
             onClick={() => {
@@ -1561,24 +1477,6 @@ export function CourseSession({
               {posterBusy ? "生成中…" : "海报"}
             </button>
           </span>
-          {/* 知识地图：讲完本节后把知识卡片长图画到长卷末尾（与 /comic 知识地图共用数据） */}
-          <button
-            onClick={() => void generateKnowledgeMap()}
-            disabled={kbBusy || playback !== "done"}
-            className="flex items-center gap-1.5 rounded-lg border border-[#e6e8eb] px-3 py-1.5 text-[12px] text-ink-soft hover:border-accent hover:text-accent transition-colors disabled:opacity-45 disabled:hover:border-[#e6e8eb] disabled:hover:text-ink-soft disabled:cursor-not-allowed"
-            title={playback === "done" ? "把这节课的知识地图画到白板长卷末尾" : "讲完本节后可生成"}
-          >
-            {kbBusy ? "长出中…" : kbDone ? "知识地图 ✓" : "知识地图"}
-          </button>
-          <button
-            onClick={() => setClipOpen(true)}
-            disabled={wsScriptRef.current.length === 0}
-            className="flex items-center gap-1.5 rounded-lg border border-[#e6e8eb] px-3 py-1.5 text-[12px] text-ink-soft hover:border-accent hover:text-accent transition-colors disabled:opacity-45 disabled:cursor-not-allowed"
-            title="录一条 60 秒竖屏速览视频，直接发抖音/小红书"
-          >
-            <Icon name="clip" />
-            竖屏速览
-          </button>
           <span
             onClick={() => {
               if (!replayUrl && playbackRef.current !== "done") {
@@ -2049,14 +1947,6 @@ export function CourseSession({
         </div>
       )}
 
-      {/* 60 秒竖屏速览录制器 */}
-      <VerticalClipModal
-        open={clipOpen}
-        onClose={() => setClipOpen(false)}
-        courseTitle={outline.title}
-        lectureTitle={lectureTitle}
-        beats={buildClipBeats()}
-      />
     </div>
   );
 }

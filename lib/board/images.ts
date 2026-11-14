@@ -14,7 +14,7 @@ const BOARD_STYLE_HEAD =
 const KEY_PREFIX = "board-images/";
 
 function channels(): string[] {
-  // 板卡配图独立选通道：COMIC_PROVIDER 的锁只服务漫画（实测 tuzi key 失效会连带拖垮配图）
+  // 板卡配图通道：BOARD_IMAGE_PROVIDER 锁定单通道，否则按顺序自动降级
   const p = process.env.BOARD_IMAGE_PROVIDER?.trim();
   if (p === "tuzi" || p === "zhipu" || p === "momoai" || p === "wanx") return [p];
   return ["momoai", "zhipu", "wanx", "tuzi"];

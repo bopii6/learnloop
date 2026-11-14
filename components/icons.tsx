@@ -16,7 +16,6 @@ export function Icon({
     | "speed"
     | "fit"
     | "poster"
-    | "clip"
     | "link"
     | "zoom-in"
     | "zoom-out"
@@ -90,13 +89,6 @@ export function Icon({
         <svg {...common}>
           <rect x="6" y="3" width="12" height="18" rx="2" />
           <path d="M9 7.5h6M9 11h6M9 14.5h3.5" />
-        </svg>
-      );
-    case "clip":
-      return (
-        <svg {...common}>
-          <rect x="7" y="2.5" width="10" height="19" rx="2.5" />
-          <path d="m10.5 9.5 4 2.5-4 2.5z" fill="currentColor" stroke="none" />
         </svg>
       );
     case "link":
