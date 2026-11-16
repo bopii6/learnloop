@@ -43,14 +43,14 @@ export function ClarifyCard({
 
   return (
     <div className="rounded-xl border border-accent-border/50 bg-white px-5 py-4 space-y-5 fade-up">
-      <div className="text-[14px] text-ink-soft">
+      <div className="text-[13px] text-ink-soft">
         在给出讲解之前，先确认几件事，好让内容贴合你：
       </div>
       {questions.map((q, qi) => (
         <div key={q.id}>
           <div className="text-[14px] font-medium mb-2">
             Q{qi + 1}　{q.question}
-            <span className="ml-2 text-[12px] text-ink-faint font-normal">
+            <span className="ml-2 text-[11px] text-ink-faint font-normal">
               {q.multi ? "多选" : "单选"}
             </span>
           </div>
@@ -64,12 +64,12 @@ export function ClarifyCard({
                   className={`text-left rounded-lg border px-3.5 py-2.5 transition-all ${
                     active
                       ? "border-accent bg-accent-soft"
-                      : "border-line bg-white hover:border-accent-border"
+                      : "border-[#e7e5dc] bg-white hover:border-accent-border"
                   }`}
                 >
-                  <div className="text-[14.5px] font-medium text-ink">{o.label}</div>
+                  <div className="text-[13.5px] font-medium text-ink">{o.label}</div>
                   {o.desc && (
-                    <div className="text-[13px] text-ink-soft mt-0.5">{o.desc}</div>
+                    <div className="text-[12px] text-ink-soft mt-0.5">{o.desc}</div>
                   )}
                 </button>
               );
@@ -81,13 +81,13 @@ export function ClarifyCard({
         <button
           onClick={submit}
           disabled={!anyPicked}
-          className="rounded-lg bg-accent px-4 py-2 text-[14px] text-white font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
+          className="rounded-lg bg-accent px-4 py-2 text-[13px] text-white font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
         >
           继续
         </button>
         <button
           onClick={onSkip}
-          className="text-[13.5px] text-ink-faint hover:text-ink transition-colors"
+          className="text-[12.5px] text-ink-faint hover:text-ink transition-colors"
         >
           跳过，直接回答
         </button>

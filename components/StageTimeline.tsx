@@ -26,16 +26,16 @@ export function LiveTimeline({ stages }: { stages: LiveStage[] }) {
       aria-label="Agent 执行过程"
     >
       <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2 text-[13px] font-semibold text-ink">
+        <div className="flex items-center gap-2 text-[12px] font-semibold text-ink">
           <span className="agent-pulse" aria-hidden="true" />
           Agent 工作流
         </div>
-        <span className="text-[12px] text-ink-faint">
+        <span className="text-[11px] text-ink-faint">
           {active ? `当前：${active.label}` : "已完成"}
         </span>
       </div>
       {stages.map((s, i) => (
-        <div key={`${s.name}-${i}`} className="agent-stage flex items-start gap-2.5 text-[14px]" style={{ animationDelay: `${i * 45}ms` }}>
+        <div key={`${s.name}-${i}`} className="agent-stage flex items-start gap-2.5 text-[13px]" style={{ animationDelay: `${i * 45}ms` }}>
           <div className="relative flex w-4 shrink-0 justify-center">
             {i < stages.length - 1 && <span className="agent-connector" aria-hidden="true" />}
             {s.status === "active" ? (
@@ -49,7 +49,7 @@ export function LiveTimeline({ stages }: { stages: LiveStage[] }) {
               {s.label}
             </span>
             {s.detail && (
-              <div className="text-[13px] text-ink-faint truncate">{s.detail}</div>
+              <div className="text-[12px] text-ink-faint truncate">{s.detail}</div>
             )}
           </div>
         </div>
@@ -66,21 +66,21 @@ export function CollapsedTimeline({ stages }: { stages: StageRecord[] }) {
     <div className="mb-2">
       <button
         onClick={() => setOpen(!open)}
-        className="text-[13px] text-ink-faint hover:text-accent transition-colors"
+        className="text-[12px] text-ink-faint hover:text-accent transition-colors"
       >
         {open ? "▾ 收起执行过程" : `▸ 查看执行过程（${stages.length} 步）`}
       </button>
       {open && (
-        <div className="mt-2 rounded-lg border border-line bg-white px-4 py-3 space-y-2 fade-up">
+        <div className="mt-2 rounded-lg border border-[#e4e4e7] bg-white px-4 py-3 space-y-2 fade-up">
           {stages.map((s, i) => (
-            <div key={i} className="flex items-start gap-2.5 text-[14px]">
+            <div key={i} className="flex items-start gap-2.5 text-[13px]">
               <span className="mt-0.5 w-4 text-center text-accent">
                 {STAGE_ICONS[s.name] || "✓"}
               </span>
               <div className="min-w-0">
                 <span className="text-ink-soft">{s.label}</span>
                 {s.detail && (
-                  <div className="text-[13px] text-ink-faint">{s.detail}</div>
+                  <div className="text-[12px] text-ink-faint">{s.detail}</div>
                 )}
               </div>
             </div>

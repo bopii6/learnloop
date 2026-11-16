@@ -46,15 +46,15 @@ const SECTIONS: { h: string; ps: string[] }[] = [
 export default function PrivacyPage() {
   return (
     <div className="max-w-[720px] mx-auto px-6 py-12">
-      <div className="text-[12px] text-accent font-semibold tracking-[.1em] mb-1">Superlearn</div>
+      <div className="text-[11px] text-accent font-semibold tracking-[.1em] mb-1">Superlearn</div>
       <h1 className="text-[24px] font-bold mb-1">隐私政策</h1>
-      <div className="text-[13px] text-ink-faint mb-8">更新日期：2026-09-08</div>
+      <div className="text-[12px] text-ink-faint mb-8">更新日期：2026-09-08</div>
       <div className="space-y-7">
         {SECTIONS.map((s) => (
           <section key={s.h}>
             <h2 className="text-[15px] font-bold mb-2">{s.h}</h2>
             {s.ps.map((p, i) => (
-              <p key={i} className="text-[14px] text-ink-soft leading-relaxed mb-2">
+              <p key={i} className="text-[13px] text-ink-soft leading-relaxed mb-2">
                 {p}
               </p>
             ))}

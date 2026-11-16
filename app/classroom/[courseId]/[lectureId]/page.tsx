@@ -49,7 +49,7 @@ export default function LecturePage({
           </div>
           <button
             onClick={() => router.push(`/course/${courseId}`)}
-            className="rounded-full bg-accent px-5 py-2 text-[14px] text-white font-medium hover:opacity-90"
+            className="rounded-full bg-accent px-5 py-2 text-[13px] text-white font-medium hover:opacity-90"
           >
             回课程页
           </button>

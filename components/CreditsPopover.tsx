@@ -64,30 +64,30 @@ export function CreditsPopover({
   }, []);
 
   return (
-    <div className="absolute bottom-full left-0 right-0 mb-2 rounded-2xl border border-line bg-white shadow-xl p-4 z-50" role="dialog" aria-label="积分明细">
-      {!data && !error && <div className="py-4 text-center text-[13px] text-ink-faint">正在加载…</div>}
-      {error && <div className="py-4 text-center text-[13px] text-red-600">加载失败，请稍后再试</div>}
+    <div className="absolute bottom-full left-0 right-0 mb-2 rounded-2xl border border-[#e4e4e7] bg-white shadow-xl p-4 z-50" role="dialog" aria-label="积分明细">
+      {!data && !error && <div className="py-4 text-center text-[12px] text-ink-faint">正在加载…</div>}
+      {error && <div className="py-4 text-center text-[12px] text-red-600">加载失败，请稍后再试</div>}
       {data && (
         <>
           <div className="flex items-baseline justify-between mb-1">
-            <div className="text-[13px] text-ink-soft">当前余额</div>
+            <div className="text-[12px] text-ink-soft">当前余额</div>
             <div className="text-[20px] font-bold text-accent leading-none">
-              {data.balance} <span className="text-[12px] font-medium">积分</span>
+              {data.balance} <span className="text-[11px] font-medium">积分</span>
             </div>
           </div>
-          <div className="text-[12px] text-ink-faint mb-3">累计获得 {data.granted} · 累计消耗 {data.spent}</div>
+          <div className="text-[11px] text-ink-faint mb-3">累计获得 {data.granted} · 累计消耗 {data.spent}</div>
 
-          <div className="rounded-xl bg-sunken border border-line px-3 py-2.5 mb-3 text-[12.5px] text-ink-soft leading-relaxed">
+          <div className="rounded-xl bg-[#faf9f4] border border-[#efede4] px-3 py-2.5 mb-3 text-[11.5px] text-ink-soft leading-relaxed">
             <div className="font-semibold text-ink mb-1">怎么扣积分</div>
             <div>生成一门课程 {data.rules.courseGenerate} 分 · 首次听一节课 {data.rules.teachingSession} 分（复习免费）</div>
             <div>课堂提问不收费（每节上限 {data.rules.chatLimitPerLecture} 条）· 结课工坊与测验每次 {data.rules.capstoneBrief} 分</div>
           </div>
 
-          <div className="text-[12px] text-ink-faint font-medium tracking-wider mb-1.5">最近记录</div>
+          <div className="text-[11px] text-ink-faint font-medium tracking-wider mb-1.5">最近记录</div>
           <div className="max-h-40 overflow-y-auto space-y-1 mb-3">
-            {data.log.length === 0 && <div className="text-[12.5px] text-ink-faint">还没有记录</div>}
+            {data.log.length === 0 && <div className="text-[11.5px] text-ink-faint">还没有记录</div>}
             {data.log.map((e, i) => (
-              <div key={`${e.at}-${i}`} className="flex items-center justify-between text-[12.5px]">
+              <div key={`${e.at}-${i}`} className="flex items-center justify-between text-[11.5px]">
                 <span className="text-ink-soft truncate">
                   {reasonLabel(e.reason)}
                   <span className="text-ink-faint ml-1.5">
@@ -105,13 +105,13 @@ export function CreditsPopover({
             <Link
               href="/pricing"
               onClick={onClose}
-              className="flex-1 rounded-xl bg-accent px-3 py-2 text-center text-[13px] font-medium text-white hover:opacity-90 transition-opacity"
+              className="flex-1 rounded-xl bg-accent px-3 py-2 text-center text-[12px] font-medium text-white hover:opacity-90 transition-opacity"
             >
               购买积分
             </Link>
             <button
               onClick={() => setRedeemOpen(true)}
-              className="flex-1 rounded-xl border border-line px-3 py-2 text-[13px] text-ink-soft hover:border-accent hover:text-accent transition-colors"
+              className="flex-1 rounded-xl border border-[#e4e4e7] px-3 py-2 text-[12px] text-ink-soft hover:border-accent hover:text-accent transition-colors"
             >
               输入兑换码
             </button>

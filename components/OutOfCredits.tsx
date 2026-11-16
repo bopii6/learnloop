@@ -23,18 +23,18 @@ export function OutOfCredits({
 }) {
   const [redeemOpen, setRedeemOpen] = useState(false);
   return (
-    <div className={`rounded-2xl border border-accent-border bg-accent-soft/40 ${compact ? "px-3.5 py-3" : "px-5 py-4"}`} role="alert">
-      <div className="text-[14.5px] font-semibold text-ink mb-1">积分不够了</div>
-      <div className="text-[13.5px] text-ink-soft leading-relaxed mb-3">
+    <div className={`rounded-2xl border border-[#f1e3c8] bg-[#fffaf0] ${compact ? "px-3.5 py-3" : "px-5 py-4"}`} role="alert">
+      <div className="text-[13.5px] font-semibold text-ink mb-1">积分不够了</div>
+      <div className="text-[12.5px] text-ink-soft leading-relaxed mb-3">
         {what}需要 {need} 积分，你现在还有 {balance} 积分。只为成功交付的内容扣分：生成失败自动退回，复习和课堂提问都免费。
       </div>
       <div className="flex flex-wrap gap-2">
-        <Link href="/pricing" className="rounded-full bg-accent px-4 py-1.5 text-[13.5px] font-medium text-white hover:opacity-90">
+        <Link href="/pricing" className="rounded-full bg-accent px-4 py-1.5 text-[12.5px] font-medium text-white hover:opacity-90">
           查看积分包
         </Link>
         <button
           onClick={() => setRedeemOpen(true)}
-          className="rounded-full border border-line bg-white px-4 py-1.5 text-[13.5px] text-ink-soft hover:border-accent hover:text-accent"
+          className="rounded-full border border-[#e4e4e7] bg-white px-4 py-1.5 text-[12.5px] text-ink-soft hover:border-accent hover:text-accent"
         >
           我有兑换码
         </button>

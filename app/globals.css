@@ -4,23 +4,13 @@
 
 :root {
   color-scheme: light;
-  /* 视觉系统「私教的红笔」：暖纸 + 墨黑 + 朱红笔（空格分隔 RGB，供 Tailwind 透明度写法） */
-  --paper-rgb: 250 248 243;      /* #FAF8F3 页面底 */
-  --surface-rgb: 255 255 253;    /* 卡片 */
-  --sunken-rgb: 243 240 232;     /* #F3F0E8 凹陷 / 悬停 */
-  --line-rgb: 229 223 211;       /* #E5DFD3 细线 */
-  --line-strong-rgb: 208 200 185;/* #D0C8B9 强调线 */
-  --ink-rgb: 28 27 25;           /* #1C1B19 墨 */
-  --ink-soft-rgb: 88 84 76;      /* #58544C */
-  --ink-faint-rgb: 150 144 132;  /* #969084 */
-  --pass-rgb: 62 120 78;         /* #3E784E 过关 / 免费 */
 }
 
 html,
 body {
   height: 100%;
-  background: rgb(var(--paper-rgb));
-  color: rgb(var(--ink-rgb));
+  background: #ffffff;
+  color: #18181b;
 }
 
 /* 全局专业度细节：字体渲染 / 选中色 / 键盘焦点环 */
@@ -34,22 +24,11 @@ h1 {
   letter-spacing: -0.015em;
 }
 ::selection {
-  background: rgb(var(--accent-soft-rgb));
+  background: #dbeafe;
 }
 :focus-visible {
-  outline: 2px solid rgb(var(--accent-rgb) / 0.45);
+  outline: 2px solid rgba(37, 99, 235, 0.45);
   outline-offset: 2px;
-}
-
-/* 衬线数字：分数、价格、积分、编号统一用等宽旧式数字的衬线体 */
-.font-display { font-feature-settings: "lnum" 1, "tnum" 1; letter-spacing: -0.01em; }
-
-/* 红笔：手绘圈 / 下划线。SVG 走 currentColor，描画动画只播一次 */
-.redpen { color: rgb(var(--accent-rgb)); }
-.redpen-draw path { stroke-dasharray: 600; stroke-dashoffset: 600; animation: redpen-draw 0.9s 0.25s cubic-bezier(.65,0,.35,1) forwards; }
-@keyframes redpen-draw { to { stroke-dashoffset: 0; } }
-@media (prefers-reduced-motion: reduce) {
-  .redpen-draw path { animation: none; stroke-dashoffset: 0; }
 }
 /* 文本输入聚焦不画矩形框（用户要求）；键盘焦点环只留给按钮/链接 */
 input:focus-visible,
@@ -58,12 +37,11 @@ select:focus-visible {
   outline: none;
 }
 
-/* 主区底：暖纸 + 极淡的作业本横线（只在页面顶部一屏内可见，往下渐隐） */
+/* 首页主区：原版点阵背景 + 顶部浅绿渐变 */
 .home-bg main {
-  background-color: rgb(var(--paper-rgb));
-  background-image:
-    linear-gradient(to bottom, rgb(var(--paper-rgb) / 0) 0, rgb(var(--paper-rgb)) 420px),
-    repeating-linear-gradient(to bottom, transparent 0 31px, rgb(var(--line-rgb) / 0.32) 31px 32px);
+  background-color: #fafafa;
+  background-image: radial-gradient(circle, rgba(24, 24, 27, 0.07) 1px, transparent 1px);
+  background-size: 22px 22px;
 }
 
 /* markdown 内容样式 */
@@ -401,11 +379,11 @@ select:focus-visible {
 
 /* ---- 主题 accent（Tailwind accent 系列经这些变量取色，带透明度写法依然可用） ----
    全站默认蓝点缀；课堂/回放等 .classroom-sunny 作用域内切到墨纸主题的深墨蓝 */
-/* 全站默认 = 朱红笔（老师批改的那支笔：圈重点、打勾、主操作） */
+/* 全站默认 = 白底 + 锌灰墨 + 蓝点缀 */
 :root {
-  --accent-rgb: 205 61 38;        /* #CD3D26 */
-  --accent-soft-rgb: 250 232 226; /* #FAE8E2 */
-  --accent-border-rgb: 238 190 177;
+  --accent-rgb: 37 99 235;
+  --accent-soft-rgb: 219 234 254;
+  --accent-border-rgb: 191 219 254;
 }
 /* 类名保留（历史），取值已随墨纸主题改为深墨蓝 */
 .classroom-sunny {
@@ -416,7 +394,7 @@ select:focus-visible {
 
 /* 滚动条 */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-thumb { background: rgb(var(--line-strong-rgb)); border-radius: 4px; }
+::-webkit-scrollbar-thumb { background: #d3d1c7; border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: #b4b2a9; }
 
 /* 入口问答卡：带引用回答的 Markdown 排版 */

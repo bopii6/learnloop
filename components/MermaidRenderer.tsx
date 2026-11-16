@@ -30,7 +30,7 @@ export function MermaidRenderer({ code }: MermaidRendererProps) {
       } catch (e) {
         console.error("Mermaid render error:", e);
         if (containerRef.current) {
-          containerRef.current.innerHTML = `<pre class="text-[13px] text-ink-soft whitespace-pre-wrap">${code}</pre>`;
+          containerRef.current.innerHTML = `<pre class="text-[12px] text-ink-soft whitespace-pre-wrap">${code}</pre>`;
         }
       }
     };

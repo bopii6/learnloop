@@ -146,49 +146,49 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
         cx="42" cy="42" r="34" fill="none" stroke="rgb(var(--accent-rgb))" strokeWidth="8" strokeLinecap="round"
         strokeDasharray={`${(213.6 * pct) / 100} 999`} transform="rotate(-90 42 42)"
       />
-      <text x="42" y="41" textAnchor="middle" className="fill-ink text-[17px] font-bold">{pct}%</text>
-      <text x="42" y="57" textAnchor="middle" className="fill-[#a1a1aa] text-[10px]">完成</text>
+      <text x="42" y="41" textAnchor="middle" className="fill-[#18181b] text-[17px] font-bold">{pct}%</text>
+      <text x="42" y="57" textAnchor="middle" className="fill-[#a1a1aa] text-[9px]">完成</text>
     </svg>
   );
   const VariantC = () => (
     <div className="min-h-screen">
       <div className="mx-auto max-w-[840px] pt-10 px-6 pb-24">
         <h1 className="text-[24px] font-bold leading-snug tracking-tight">{outline.title}</h1>
-        <p className="mt-1.5 text-[14px] text-ink-soft">{outline.audience}</p>
+        <p className="mt-1.5 text-[13px] text-ink-soft">{outline.audience}</p>
 
         <div className="mt-5 grid gap-3 sm:grid-cols-3">
-          <div className="rounded-2xl border border-line bg-white p-4 flex items-center gap-3">
+          <div className="rounded-2xl border border-[#e4e4e7] bg-white p-4 flex items-center gap-3">
             <Ring />
-            <div className="text-[13px] text-ink-faint leading-relaxed">课程进度<br /><span className="text-[14px] text-ink font-medium">已学 {visitedCount}/{learnableLectures.length} 讲</span></div>
+            <div className="text-[12px] text-ink-faint leading-relaxed">课程进度<br /><span className="text-[13px] text-ink font-medium">已学 {visitedCount}/{learnableLectures.length} 讲</span></div>
           </div>
-          <div className="rounded-2xl border border-line bg-white p-4">
-            <div className="text-[12px] text-ink-faint">课程体量</div>
-            <div className="mt-1.5 text-[20px] font-bold text-ink">{totalLectures} <span className="text-[13px] font-normal text-ink-faint">课节</span></div>
-            <div className="mt-1 text-[12.5px] text-ink-faint">{outline.units.length} 个单元{totalMin > 0 ? ` · ${fmtDuration(totalMin)}` : ""}</div>
+          <div className="rounded-2xl border border-[#e4e4e7] bg-white p-4">
+            <div className="text-[11px] text-ink-faint">课程体量</div>
+            <div className="mt-1.5 text-[20px] font-bold text-ink">{totalLectures} <span className="text-[12px] font-normal text-ink-faint">课节</span></div>
+            <div className="mt-1 text-[11.5px] text-ink-faint">{outline.units.length} 个单元{totalMin > 0 ? ` · ${fmtDuration(totalMin)}` : ""}</div>
           </div>
-          <div className="rounded-2xl border border-line bg-white p-4">
-            <div className="text-[12px] text-ink-faint">结课作品</div>
-            <div className="mt-1.5 text-[14.5px] font-semibold leading-snug text-ink">{outline.capstone?.name || "—"}</div>
+          <div className="rounded-2xl border border-[#e4e4e7] bg-white p-4">
+            <div className="text-[11px] text-ink-faint">结课作品</div>
+            <div className="mt-1.5 text-[13.5px] font-semibold leading-snug text-ink">{outline.capstone?.name || "—"}</div>
             {projectLecture && !capstonePassed && (
-              <button onClick={() => openLecture(projectLecture)} className="mt-1 text-[12.5px] text-accent hover:underline">去结课工坊 →</button>
+              <button onClick={() => openLecture(projectLecture)} className="mt-1 text-[11.5px] text-accent hover:underline">去结课工坊 →</button>
             )}
           </div>
         </div>
 
         {/* 体系门面：这门课不是一堆视频，是一条设计好的路——从哪起步、分几步、走到哪个作品 */}
-        <div className="mt-4 rounded-2xl border border-line bg-white p-4">
+        <div className="mt-4 rounded-2xl border border-[#e4e4e7] bg-white p-4">
           <div className="flex items-baseline justify-between gap-3">
-            <div className="text-[12px] font-medium text-ink-faint">学习路径</div>
-            <div className="text-[11.5px] text-ink-faint/80">共 {outline.units.length} 个单元 · 按顺序学完即达结课作品</div>
+            <div className="text-[11px] font-medium text-ink-faint">学习路径</div>
+            <div className="text-[10.5px] text-ink-faint/80">共 {outline.units.length} 个单元 · 按顺序学完即达结课作品</div>
           </div>
           <div className="mt-2.5 flex flex-wrap items-center gap-y-2">
             {outline.units.map((unit, ui) => (
               <span key={unit.id} className="flex items-center">
-                {ui > 0 && <span className="mx-1 text-[12px] text-line-strong">→</span>}
+                {ui > 0 && <span className="mx-1 text-[11px] text-[#d4d4d8]">→</span>}
                 <button
                   onClick={() => jumpToUnit(unit.id)}
                   title={unit.title}
-                  className="max-w-[230px] truncate rounded-full border border-line bg-sunken px-3 py-1.5 text-left text-[13px] text-ink transition-colors hover:border-accent hover:text-accent"
+                  className="max-w-[230px] truncate rounded-full border border-[#e4e4e7] bg-[#fafafa] px-3 py-1.5 text-left text-[12px] text-ink transition-colors hover:border-accent hover:text-accent"
                 >
                   <span className="mr-1 font-bold text-accent">{ui + 1}</span>
                   {unit.title}
@@ -197,8 +197,8 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
             ))}
             {outline.capstone?.name && (
               <span className="flex items-center">
-                <span className="mx-1 text-[12px] text-line-strong">→</span>
-                <span className="max-w-[220px] truncate rounded-full bg-accent-soft/70 px-3 py-1.5 text-[13px] font-medium text-ink">
+                <span className="mx-1 text-[11px] text-[#d4d4d8]">→</span>
+                <span className="max-w-[220px] truncate rounded-full bg-accent-soft/70 px-3 py-1.5 text-[12px] font-medium text-ink">
                   🏆 结课作品 · {outline.capstone.name}
                 </span>
               </span>
@@ -207,18 +207,18 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
         </div>
 
         {!completed && nextLecture && (
-          <div className="mt-4 flex items-center gap-4 rounded-2xl bg-ink p-5 text-white">
+          <div className="mt-4 flex items-center gap-4 rounded-2xl bg-[#18181b] p-5 text-white">
             <div className="min-w-0 flex-1">
-              <div className="text-[12px] opacity-70">{visitedCount > 0 ? "继续学习 · 下一讲" : "开始学习 · 第 1 讲"}</div>
+              <div className="text-[11px] opacity-70">{visitedCount > 0 ? "继续学习 · 下一讲" : "开始学习 · 第 1 讲"}</div>
               <div className="truncate text-[15px] font-semibold">{nextLecture.title}</div>
             </div>
-            <button onClick={() => openLecture(nextLecture)} className="shrink-0 rounded-full bg-white px-4 py-2 text-[13.5px] font-semibold text-ink hover:opacity-90">
+            <button onClick={() => openLecture(nextLecture)} className="shrink-0 rounded-full bg-white px-4 py-2 text-[12.5px] font-semibold text-[#18181b] hover:opacity-90">
               ▶ 开始本讲
             </button>
           </div>
         )}
 
-        <div className="mt-4 flex items-center gap-4 text-[13px] text-ink-faint">
+        <div className="mt-4 flex items-center gap-4 text-[12px] text-ink-faint">
           <button
             onClick={() => materialRef.current?.click()}
             disabled={materialState === "uploading"}
@@ -238,7 +238,7 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
             </button>
           )}
           <span className="flex-1" />
-          <span className="text-[11.5px] text-ink-faint/80">内容由 AI 生成，请以权威来源为准</span>
+          <span className="text-[10.5px] text-ink-faint/80">内容由 AI 生成，请以权威来源为准</span>
         </div>
         <input
           ref={materialRef}
@@ -252,35 +252,35 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
           }}
         />
         {(materialState !== "idle" || marketState === "done") && (
-          <div className="mt-3 text-[12.5px]">
-            {materialState === "done" && <div className="text-pass">✓ 已解析入库《{materialName}》（纳入讲解的能力开发中，先帮你存好了）</div>}
+          <div className="mt-3 text-[11.5px]">
+            {materialState === "done" && <div className="text-[#4d7c43]">✓ 已解析入库《{materialName}》（纳入讲解的能力开发中，先帮你存好了）</div>}
             {materialState === "uploading" && <div className="text-ink-faint">正在解析《{materialName}》…</div>}
             {materialState === "error" && <div className="text-red-600">《{materialName}》解析失败，换个文件试试</div>}
-            {marketState === "done" && <div className="text-pass">✓ 已上架精品课程，所有访客都能看到</div>}
+            {marketState === "done" && <div className="text-[#4d7c43]">✓ 已上架精品课程，所有访客都能看到</div>}
           </div>
         )}
         {marketOpen && marketState !== "done" && (
-          <div className="mt-3 rounded-xl border border-line bg-sunken p-3 space-y-2">
+          <div className="mt-3 rounded-xl border border-[#e4e4e7] bg-[#fafafa] p-3 space-y-2">
             <input
               value={marketNote}
               onChange={(e) => setMarketNote(e.target.value)}
               placeholder="一句话推荐语（可选）"
-              className="w-full rounded-lg border border-line px-2.5 py-1.5 text-[13px] outline-none focus:border-accent bg-white"
+              className="w-full rounded-lg border border-[#e4e4e7] px-2.5 py-1.5 text-[12px] outline-none focus:border-accent bg-white"
             />
             <div className="flex items-center gap-2">
-              <span className="flex-1 min-w-0 text-[12.5px] text-ink-faint">上架后所有访客可免费浏览，学员第一次上某节课扣 1 积分。</span>
+              <span className="flex-1 min-w-0 text-[11.5px] text-ink-faint">上架后所有访客可免费浏览，学员第一次上某节课扣 1 积分。</span>
               <button
                 onClick={() => void publishToMarket()}
                 disabled={marketState === "saving"}
-                className="shrink-0 rounded-lg bg-ink px-3.5 py-1.5 text-[13px] text-white font-medium hover:bg-ink/85 disabled:opacity-40"
+                className="shrink-0 rounded-lg bg-[#18181b] px-3.5 py-1.5 text-[12px] text-white font-medium hover:bg-[#3f3f46] disabled:opacity-40"
               >
                 {marketState === "saving" ? "上架中…" : "确认上架"}
               </button>
-              <button onClick={() => setMarketOpen(false)} className="shrink-0 text-[12.5px] text-ink-faint hover:text-ink">
+              <button onClick={() => setMarketOpen(false)} className="shrink-0 text-[11.5px] text-ink-faint hover:text-ink">
                 取消
               </button>
             </div>
-            {marketState === "error" && <div className="text-[12px] text-red-600">上架失败，稍后再试</div>}
+            {marketState === "error" && <div className="text-[11px] text-red-600">上架失败，稍后再试</div>}
           </div>
         )}
 
@@ -291,35 +291,35 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
             const unitVisited = unitLearnable.filter((l) => visited.has(l.id)).length;
             const unitPct = Math.round((unitVisited / Math.max(unitLearnable.length, 1)) * 100);
             return (
-              <div key={unit.id} id={`unit-${unit.id}`} className="scroll-mt-6 rounded-2xl border border-line bg-white p-4">
+              <div key={unit.id} id={`unit-${unit.id}`} className="scroll-mt-6 rounded-2xl border border-[#e4e4e7] bg-white p-4">
                 <button onClick={() => toggleUnit(unit.id)} className="flex w-full items-center gap-3 text-left">
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-sunken text-[13px] font-bold text-ink">{ui + 1}</span>
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#f4f4f5] text-[12px] font-bold text-ink">{ui + 1}</span>
                   <span className="min-w-0 flex-1 text-[14px] font-semibold text-ink">{unit.title}</span>
-                  <span className="shrink-0 text-[12px] text-ink-faint">{unitPct}%</span>
-                  <span className={`shrink-0 text-[12px] text-ink-faint transition-transform ${open ? "rotate-180" : ""}`}>▾</span>
+                  <span className="shrink-0 text-[11px] text-ink-faint">{unitPct}%</span>
+                  <span className={`shrink-0 text-[11px] text-ink-faint transition-transform ${open ? "rotate-180" : ""}`}>▾</span>
                 </button>
-                <div className="mt-2 h-1 rounded-full bg-sunken overflow-hidden">
+                <div className="mt-2 h-1 rounded-full bg-[#f4f4f5] overflow-hidden">
                   <div className="h-full rounded-full bg-accent transition-all duration-500" style={{ width: `${unitPct}%` }} />
                 </div>
                 {open && (
-                  <div className="mt-2 space-y-0.5 border-t border-sunken pt-2">
+                  <div className="mt-2 space-y-0.5 border-t border-[#f4f4f5] pt-2">
                     {unit.lectures.map((lec) => {
                       const done = visited.has(lec.id);
                       const isNext = nextLecture?.id === lec.id;
                       return (
-                        <div key={lec.id} onClick={() => openLecture(lec)} className={`flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 transition-colors ${isNext ? "bg-accent-soft/60" : "hover:bg-sunken"}`}>
-                          <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] ${done ? "bg-accent text-white" : "border-[1.5px] border-line-strong text-transparent"}`}>{done ? "✓" : "·"}</span>
-                          <span className={`min-w-0 flex-1 truncate text-[14px] ${done ? "text-ink-faint" : "text-ink"}`}>{lec.title}</span>
+                        <div key={lec.id} onClick={() => openLecture(lec)} className={`flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 transition-colors ${isNext ? "bg-accent-soft/60" : "hover:bg-[#fafafa]"}`}>
+                          <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] ${done ? "bg-accent text-white" : "border-[1.5px] border-[#d4d4d8] text-transparent"}`}>{done ? "✓" : "·"}</span>
+                          <span className={`min-w-0 flex-1 truncate text-[13px] ${done ? "text-ink-faint" : "text-ink"}`}>{lec.title}</span>
                           {lec.content_type === "quiz" ? (
-                            <span className={`shrink-0 text-[12px] ${quizPassed.get(lec.id) ? "text-pass" : "text-ink-faint"}`}>
+                            <span className={`shrink-0 text-[11px] ${quizPassed.get(lec.id) ? "text-[#4d7c43]" : "text-ink-faint"}`}>
                               {quizPassed.get(lec.id) ? "✓ 测验通过" : "📝 单元测验"}
                             </span>
                           ) : lec.content_type === "project" ? (
-                            <span className={`shrink-0 text-[12px] ${capstonePassed ? "text-pass" : "text-ink-faint"}`}>
+                            <span className={`shrink-0 text-[11px] ${capstonePassed ? "text-[#4d7c43]" : "text-ink-faint"}`}>
                               {capstonePassed ? "✓ 已结课" : "🏆 结课作品"}
                             </span>
                           ) : (
-                            <span className="shrink-0 text-[12px] text-ink-faint">{lec.duration_min} 分钟</span>
+                            <span className="shrink-0 text-[11px] text-ink-faint">{lec.duration_min} 分钟</span>
                           )}
                         </div>
                       );

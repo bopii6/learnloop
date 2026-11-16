@@ -66,23 +66,23 @@ export function RedeemModal({
   }, [code]);
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-ink/45 backdrop-blur-[2px]">
-      <div className="w-[400px] max-w-[90%] rounded-3xl border border-line bg-white shadow-2xl p-7 fade-up">
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-[#2b2a26]/45 backdrop-blur-[2px]">
+      <div className="w-[400px] max-w-[90%] rounded-3xl border border-[#e4e4e7] bg-white shadow-2xl p-7 fade-up">
         <div className="flex items-center justify-between mb-1">
-          <div className="text-[12px] text-accent font-semibold tracking-[.1em]">Superlearn</div>
+          <div className="text-[11px] text-accent font-semibold tracking-[.1em]">Superlearn</div>
           <button onClick={onClose} className="text-ink-faint hover:text-ink text-[16px]" aria-label="关闭">
             ×
           </button>
         </div>
         <div className="text-[19px] font-bold mb-1">兑换积分</div>
-        <div className="text-[13.5px] text-ink-soft mb-4">
+        <div className="text-[12.5px] text-ink-soft mb-4">
           当前余额 <span className="font-semibold text-accent">⚡ {balance ?? "—"}</span> 积分
-          <span className="mx-1.5 text-line-strong">·</span>1 积分 = ¥1
+          <span className="mx-1.5 text-[#d4d4d8]">·</span>1 积分 = ¥1
         </div>
 
-        <div className="rounded-2xl bg-sunken border border-line p-4 space-y-3">
+        <div className="rounded-2xl bg-[#fafafa] border border-[#e4e4e7] p-4 space-y-3">
           <div>
-            <div className="text-[13px] text-ink-soft mb-1.5">输入管理员发给你的兑换码（支持直接粘贴）</div>
+            <div className="text-[12px] text-ink-soft mb-1.5">输入管理员发给你的兑换码（支持直接粘贴）</div>
             <input
               value={code}
               onChange={(e) => {
@@ -93,28 +93,28 @@ export function RedeemModal({
               placeholder="SL-XXXXX-XXXXX"
               autoFocus
               spellCheck={false}
-              className="w-full rounded-xl border border-line bg-white px-3.5 py-2.5 font-mono text-[15px] tracking-wider text-ink outline-none focus:border-accent transition-colors"
+              className="w-full rounded-xl border border-[#e4e4e7] bg-white px-3.5 py-2.5 font-mono text-[15px] tracking-wider text-ink outline-none focus:border-accent transition-colors"
             />
           </div>
           <button
             onClick={() => void submit(code)}
             disabled={state === "submitting" || code.trim().length < 5}
-            className="w-full rounded-full bg-accent px-5 py-2.5 text-[14px] font-medium text-white hover:opacity-90 disabled:opacity-40 transition-opacity"
+            className="w-full rounded-full bg-accent px-5 py-2.5 text-[13px] font-medium text-white hover:opacity-90 disabled:opacity-40 transition-opacity"
           >
             {state === "submitting" ? "兑换中…" : state === "done" ? "✓ 已到账" : "立即兑换"}
           </button>
           {state === "done" && (
-            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-2.5 text-[13.5px] text-emerald-700">
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-2.5 text-[12.5px] text-emerald-700">
               {msg}
               {newBalance !== null && (
-                <div className="mt-0.5 text-[13px]">最新余额 <span className="font-semibold">⚡ {newBalance} 积分</span>，去开一门新课吧</div>
+                <div className="mt-0.5 text-[12px]">最新余额 <span className="font-semibold">⚡ {newBalance} 积分</span>，去开一门新课吧</div>
               )}
             </div>
           )}
-          {state === "error" && msg && <div className="text-[13px] text-red-600">{msg}</div>}
+          {state === "error" && msg && <div className="text-[12px] text-red-600">{msg}</div>}
         </div>
 
-        <div className="mt-4 text-[12px] text-ink-faint leading-relaxed">
+        <div className="mt-4 text-[11px] text-ink-faint leading-relaxed">
           没有兑换码？联系管理员私下转账后获取（¥9.9 → 10 积分起）。
           <br />
           生成一门课 10 积分 · 首次听一节课 1 积分 · 复习和追问免费

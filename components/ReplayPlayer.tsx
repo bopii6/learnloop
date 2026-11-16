@@ -39,7 +39,7 @@ export function ReplayPlayer({ replayId }: { replayId: string }) {
       <div className="min-h-screen flex items-center justify-center px-6">
         <div className="text-center">
           <div className="text-[15px] text-ink-soft mb-4">{error}</div>
-          <button onClick={() => router.push("/")} className="rounded-full bg-accent px-5 py-2 text-[14px] text-white font-medium hover:opacity-90">
+          <button onClick={() => router.push("/")} className="rounded-full bg-accent px-5 py-2 text-[13px] text-white font-medium hover:opacity-90">
             去首页生成一门课
           </button>
         </div>
@@ -47,7 +47,7 @@ export function ReplayPlayer({ replayId }: { replayId: string }) {
     );
   }
   if (!reel || !actions) {
-    return <div className="min-h-screen flex items-center justify-center text-[14px] text-ink-soft">正在加载回放…</div>;
+    return <div className="min-h-screen flex items-center justify-center text-[13px] text-ink-soft">正在加载回放…</div>;
   }
   return (
     <WhiteboardSession

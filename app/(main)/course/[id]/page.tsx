@@ -41,7 +41,7 @@ export default function CourseDetailPage({ params }: { params: Promise<{ id: str
           <div className="text-[15px] text-ink-soft mb-4">{error}</div>
           <button
             onClick={() => router.push("/")}
-            className="rounded-full bg-accent px-5 py-2 text-[14px] text-white font-medium hover:opacity-90"
+            className="rounded-full bg-accent px-5 py-2 text-[13px] text-white font-medium hover:opacity-90"
           >
             回首页
           </button>

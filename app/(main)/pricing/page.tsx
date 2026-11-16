@@ -63,34 +63,34 @@ export default function PricingPage() {
                 onClick={() => setPicked(p)}
                 aria-pressed={active}
                 className={`relative text-left rounded-2xl border bg-white p-4 transition-colors ${
-                  active ? "border-accent ring-2 ring-accent/20" : "border-line hover:border-accent/60"
+                  active ? "border-accent ring-2 ring-accent/20" : "border-[#e4e4e7] hover:border-accent/60"
                 }`}
               >
                 {p.popular && (
-                  <span className="absolute -top-2.5 left-4 rounded-full bg-accent px-2 py-0.5 text-[11.5px] font-semibold text-white">最多人选</span>
+                  <span className="absolute -top-2.5 left-4 rounded-full bg-accent px-2 py-0.5 text-[10.5px] font-semibold text-white">最多人选</span>
                 )}
-                <div className="text-[13.5px] text-ink-soft mb-1">{p.name}</div>
+                <div className="text-[12.5px] text-ink-soft mb-1">{p.name}</div>
                 <div className="flex items-baseline gap-1.5 mb-1">
                   <span className="text-[26px] font-bold leading-none">{fmtYuan(p.price)}</span>
                 </div>
-                <div className="text-[14px] font-semibold text-accent mb-2">{p.credits} 积分</div>
-                <div className="text-[13px] text-ink-soft leading-relaxed min-h-[54px]">{p.pitch}</div>
-                <div className="mt-2 text-[12px] text-ink-faint">约 {fmtYuan(pricePerCredit(p))} / 积分</div>
+                <div className="text-[13px] font-semibold text-accent mb-2">{p.credits} 积分</div>
+                <div className="text-[12px] text-ink-soft leading-relaxed min-h-[54px]">{p.pitch}</div>
+                <div className="mt-2 text-[11px] text-ink-faint">约 {fmtYuan(pricePerCredit(p))} / 积分</div>
               </button>
             );
           })}
         </div>
 
         {/* 怎么买 */}
-        <section className="rounded-2xl border border-line bg-white p-6 mb-12" aria-labelledby="how-to-buy">
+        <section className="rounded-2xl border border-[#e4e4e7] bg-white p-6 mb-12" aria-labelledby="how-to-buy">
           <h2 id="how-to-buy" className="text-[16px] font-semibold mb-1">怎么买</h2>
           {purchasable && picked ? (
             <div className="flex flex-col sm:flex-row gap-6 mt-3">
               {PURCHASE_QR_URL && (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={PURCHASE_QR_URL} alt="收款码" className="w-40 h-40 rounded-xl border border-line object-contain shrink-0" />
+                <img src={PURCHASE_QR_URL} alt="收款码" className="w-40 h-40 rounded-xl border border-[#e4e4e7] object-contain shrink-0" />
               )}
-              <ol className="text-[14px] text-ink-soft leading-relaxed space-y-2 list-decimal pl-5">
+              <ol className="text-[13px] text-ink-soft leading-relaxed space-y-2 list-decimal pl-5">
                 <li>
                   {PURCHASE_QR_URL ? "扫码" : `联系 ${PURCHASE_CONTACT} `}支付 <b className="text-ink">{fmtYuan(picked.price)}</b>（「{picked.name}」{picked.credits} 积分），付款备注里写上你的登录邮箱。
                 </li>
@@ -99,28 +99,28 @@ export default function PricingPage() {
               </ol>
             </div>
           ) : (
-            <p className="text-[14px] text-ink-soft leading-relaxed mt-2">在线购买即将开放。已经拿到兑换码的话，直接在下面兑换。</p>
+            <p className="text-[13px] text-ink-soft leading-relaxed mt-2">在线购买即将开放。已经拿到兑换码的话，直接在下面兑换。</p>
           )}
           <div className="mt-5 flex items-center gap-3">
-            <button onClick={() => setRedeemOpen(true)} className="rounded-full bg-accent px-5 py-2 text-[14px] font-medium text-white hover:opacity-90">
+            <button onClick={() => setRedeemOpen(true)} className="rounded-full bg-accent px-5 py-2 text-[13px] font-medium text-white hover:opacity-90">
               输入兑换码
             </button>
-            {redeemed != null && <span className="text-[13.5px] text-pass">✓ 已到账，当前余额 {redeemed} 积分</span>}
+            {redeemed != null && <span className="text-[12.5px] text-[#4d7c43]">✓ 已到账，当前余额 {redeemed} 积分</span>}
           </div>
         </section>
 
         {/* 积分能换什么 */}
         <section className="mb-12" aria-labelledby="what-credits-buy">
           <h2 id="what-credits-buy" className="text-[16px] font-semibold mb-1">积分花在哪</h2>
-          <p className="text-[13.5px] text-ink-faint mb-3">完整学完一门 20 节左右的课（含测验和结课验收），大约 {CREDITS_PER_FULL_COURSE} 积分。</p>
-          <div className="rounded-2xl border border-line bg-white divide-y divide-line">
+          <p className="text-[12.5px] text-ink-faint mb-3">完整学完一门 20 节左右的课（含测验和结课验收），大约 {CREDITS_PER_FULL_COURSE} 积分。</p>
+          <div className="rounded-2xl border border-[#e4e4e7] bg-white divide-y divide-[#f1f1f3]">
             {USES.map((u) => (
               <div key={u.label} className="flex items-center justify-between gap-4 px-4 py-3">
                 <div>
-                  <div className="text-[14px] font-medium">{u.label}</div>
-                  <div className="text-[12.5px] text-ink-faint">{u.note}</div>
+                  <div className="text-[13px] font-medium">{u.label}</div>
+                  <div className="text-[11.5px] text-ink-faint">{u.note}</div>
                 </div>
-                <div className={`shrink-0 text-[14px] font-semibold ${u.cost === "免费" ? "text-pass" : "text-ink"}`}>{u.cost}</div>
+                <div className={`shrink-0 text-[13px] font-semibold ${u.cost === "免费" ? "text-[#4d7c43]" : "text-ink"}`}>{u.cost}</div>
               </div>
             ))}
           </div>
@@ -131,9 +131,9 @@ export default function PricingPage() {
           <h2 id="faq" className="text-[16px] font-semibold mb-3">常见问题</h2>
           <div className="space-y-3">
             {FAQ.map((f) => (
-              <div key={f.q} className="rounded-2xl border border-line bg-white px-4 py-3">
-                <div className="text-[14px] font-medium mb-1">{f.q}</div>
-                <div className="text-[13.5px] text-ink-soft leading-relaxed">{f.a}</div>
+              <div key={f.q} className="rounded-2xl border border-[#e4e4e7] bg-white px-4 py-3">
+                <div className="text-[13px] font-medium mb-1">{f.q}</div>
+                <div className="text-[12.5px] text-ink-soft leading-relaxed">{f.a}</div>
               </div>
             ))}
           </div>
