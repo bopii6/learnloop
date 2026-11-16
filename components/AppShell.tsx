@@ -2,7 +2,7 @@
 
 // 全站外壳：侧栏 + 登录态 + 课程/对话列表，挂在 (main) 路由组布局上。
 // 导航全部走真 URL（router.push），地址栏与视图保持同步，刷新/后退/分享可用。
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import type { ConversationMeta } from "@/types";
 import { Sidebar } from "./Sidebar";
@@ -17,7 +17,6 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [courses, setCourses] = useState<{ id: string; title: string }[]>([]);
   const [conversations, setConversations] = useState<ConversationMeta[]>([]);
   const [user, setUser] = useState<{ id: string; email: string } | null>(null);
-  const [credits, setCredits] = useState<number | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
 
@@ -57,31 +56,10 @@ export function AppShell({ children }: { children: ReactNode }) {
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         setUser(d?.user || null);
-        setCredits(typeof d?.credits === "number" ? d.credits : null);
         setIsAdmin(Boolean(d?.isAdmin));
       })
       .catch(() => {});
   }, []);
-
-  // 余额变动可见：积分被扣时给一条 toast，不再让数字无声地变小。
-  // 轮询兜底（20s，仅页签可见时）——并非所有扣费路径都会广播事件。
-  const creditsRef = useRef<number | null>(null);
-  const [creditToast, setCreditToast] = useState<{ delta: number; balance: number } | null>(null);
-  useEffect(() => {
-    const prev = creditsRef.current;
-    creditsRef.current = credits;
-    if (prev !== null && credits !== null && credits !== prev) {
-      setCreditToast({ delta: credits - prev, balance: credits });
-      const t = window.setTimeout(() => setCreditToast(null), 4200);
-      return () => window.clearTimeout(t);
-    }
-  }, [credits]);
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") refreshMe();
-    }, 20000);
-    return () => window.clearInterval(timer);
-  }, [refreshMe]);
 
   useEffect(() => {
     refreshList();
@@ -89,18 +67,15 @@ export function AppShell({ children }: { children: ReactNode }) {
     refreshMe();
   }, [refreshList, refreshCourses, refreshMe]);
 
-  // 子页面/生成器通过事件通知外壳刷新列表（积分扣减 → 余额；建课 → 课程计数；建对话 → 历史列表）
+  // 子页面/生成器通过事件通知外壳刷新列表（建课 → 课程计数；建对话 → 历史列表；需要登录 → 弹登录框）
   useEffect(() => {
-    const onCredits = () => refreshMe();
     const onCourses = () => refreshCourses();
     const onConversations = () => refreshList();
-    window.addEventListener("ll:credits-changed", onCredits);
     const onOpenLogin = () => setAuthOpen(true);
     window.addEventListener("ll:open-login", onOpenLogin);
     window.addEventListener("ll:courses-changed", onCourses);
     window.addEventListener("ll:conversations-changed", onConversations);
     return () => {
-      window.removeEventListener("ll:credits-changed", onCredits);
       window.removeEventListener("ll:open-login", onOpenLogin);
       window.removeEventListener("ll:courses-changed", onCourses);
       window.removeEventListener("ll:conversations-changed", onConversations);
@@ -137,19 +112,9 @@ export function AppShell({ children }: { children: ReactNode }) {
         isAdmin={isAdmin}
         onLogin={() => setAuthOpen(true)}
         onLogout={() => void logout()}
-        credits={credits}
       />
 
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">{children}</main>
-
-      {/* 积分变动 toast：扣了/加了都吱一声 */}
-      {creditToast && (
-        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[95] rounded-xl bg-[#2b2a26] px-4 py-2.5 text-[12.5px] text-white shadow-xl fade-up">
-          {creditToast.delta < 0
-            ? `已消耗 ${-creditToast.delta} 积分，余额 ${creditToast.balance}`
-            : `积分 +${creditToast.delta}，余额 ${creditToast.balance}`}
-        </div>
-      )}
 
       {authOpen && (
         <AuthModal
@@ -157,7 +122,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           onLoggedIn={(u) => {
             setUser(u);
             setAuthOpen(false);
-            // 登录后课程列表与积分余额按归属变化，刷新
+            // 登录后课程列表按归属变化，刷新
             refreshMe();
             refreshCourses();
             refreshList();

@@ -2,10 +2,9 @@
 
 // 单元测验课节：quiz 课节的真实体验。5 道场景化题覆盖整个单元，
 // 60% 过关；答案在服务端判分（前端拿不到），交卷后逐题对答案看解析。
-// 出题一次扣 1 积分，重考免费——考不过再考是学习的一部分，不重复收费。
+// 题目生成后缓存：重考用同一套题，考不过再考是学习的一部分。
 import { useEffect, useState } from "react";
 import type { CourseLecture, CourseOutline, UnitQuizItem } from "@/types";
-import { OutOfCredits } from "./OutOfCredits";
 
 interface QuizLessonProps {
   courseId: string;
@@ -27,7 +26,6 @@ export function QuizLesson({ courseId, outline, lecture, onExit }: QuizLessonPro
   const [starting, setStarting] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
-  const [creditsBlock, setCreditsBlock] = useState<{ need: number; balance: number } | null>(null);
   const [result, setResult] = useState<{ score: number; total: number; passed: boolean; firstPass: boolean } | null>(
     null
   );
@@ -58,7 +56,6 @@ export function QuizLesson({ courseId, outline, lecture, onExit }: QuizLessonPro
   const startQuiz = async () => {
     setStarting(true);
     setMsg(null);
-    setCreditsBlock(null);
     try {
       const res = await fetch("/api/quiz", {
         method: "POST",
@@ -67,8 +64,7 @@ export function QuizLesson({ courseId, outline, lecture, onExit }: QuizLessonPro
       });
       const d = await res.json();
       if (!res.ok) {
-        if (d?.error === "credits_block") setCreditsBlock({ need: d.need, balance: d.balance });
-        else setMsg(d?.error || "出题失败，稍后再试");
+        setMsg(d?.error || "出题失败，稍后再试");
         return;
       }
       setQuiz(d.quiz);
@@ -192,14 +188,9 @@ export function QuizLesson({ courseId, outline, lecture, onExit }: QuizLessonPro
               disabled={starting}
               className="mt-5 rounded-full bg-accent px-6 py-2.5 text-[13px] text-white font-medium hover:opacity-90 disabled:opacity-50"
             >
-              {starting ? "讲师正在按你的单元出题…" : "开始测验（⚡ 1 积分，重考免费）"}
+              {starting ? "讲师正在按你的单元出题…" : "开始测验"}
             </button>
             {msg && <div className="text-[12px] text-red-600 mt-3">{msg}</div>}
-            {creditsBlock && (
-              <div className="mt-4 text-left">
-                <OutOfCredits compact what="出这个单元的测验" need={creditsBlock.need} balance={creditsBlock.balance} onRecharged={() => void startQuiz()} />
-              </div>
-            )}
           </div>
         )}
 

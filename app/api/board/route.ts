@@ -3,8 +3,7 @@
 //                 以 SSE 按 Hyperknow 帧格式下发（group/board/speak/new_page/circle/ask/reward_user/done）；
 // action=answer → 有 ask：学员作答后的"讲师点评"；无 ask：课堂追问 / "没听懂"，讲师现场接住。
 // 讲稿按（用户 × 课节）缓存：复习回放零成本。
-// 计费与 /api/teach 同口径：首次开讲扣 COST_TEACHING_SESSION（生成失败退回），复习免费；
-// 课堂追问不扣分，但每节课有 CHAT_LIMIT_PER_LECTURE 条上限；公网（R2 模式）必须登录。
+// 课堂追问每节课有 CHAT_LIMIT_PER_LECTURE 条上限（防滥用）；公网（R2 模式）必须登录。
 import { NextRequest } from "next/server";
 import { getCourseState } from "@/lib/agent/course";
 import { buildLectureContext } from "@/lib/agent/lecture-context";
@@ -14,8 +13,7 @@ import { userFromCookieHeader } from "@/lib/auth";
 import { normalizeText } from "@/lib/board/snippet";
 import { newPageId } from "@/lib/board/layout";
 import { generateBoardImage, imageGenerationAvailable } from "@/lib/board/images";
-import { CHAT_LIMIT_PER_LECTURE, COST_TEACHING_SESSION, refundCredits, trySpend } from "@/lib/credits";
-import { bumpChatCount } from "@/lib/chat-limit";
+import { CHAT_LIMIT_PER_LECTURE, bumpChatCount } from "@/lib/chat-limit";
 import { storageMode } from "@/lib/storage";
 import { BOARD_SYSTEM, ANSWER_SYSTEM, FOLLOWUP_SYSTEM, type BoardScript } from "@/lib/board/prompts";
 import { logStruggle } from "@/lib/ops";
@@ -185,7 +183,7 @@ export async function POST(req: NextRequest) {
         }
         const me = await userFromCookieHeader(req.headers.get("cookie"));
         if (!me && storageMode === "r2") {
-          await send({ type: "auth_required", message: "登录后就能开始上课（课堂进度与积分跟着账号走）" });
+          await send({ type: "auth_required", message: "登录后就能开始上课（课堂进度跟着账号走）" });
           controller.close();
           return;
         }
@@ -282,17 +280,6 @@ export async function POST(req: NextRequest) {
           media = cached.media || [];
           usedPageId = cached.pageId;
         } else {
-          // 首次开讲：先扣分再生成，生成失败退回（只为成功交付的课付费）
-          let spent = false;
-          if (me) {
-            const spend = await trySpend(me.id, COST_TEACHING_SESSION, `白板课堂：${(ctx.lectureTitle || "").slice(0, 24)}`);
-            if (!spend.ok) {
-              await send({ type: "credits_block", balance: spend.balance, need: COST_TEACHING_SESSION });
-              controller.close();
-              return;
-            }
-            spent = true;
-          }
           const script = await generateJson<BoardScript>(
             BOARD_SYSTEM,
             `课程：《${ctx.courseTitle}》（面向：${ctx.audience}）
@@ -304,8 +291,7 @@ ${referenceMaterial ? `参考资料（事实、数字、案例优先取自这里
 请生成这个教学段的白板脚本（6-9 张卡 + 课堂题 + 徽章）。`, { task: "script", maxTokens: 2600, schema: boardScriptSchema }
           );
           if (!script?.cards?.length) {
-            if (spent && me) await refundCredits(me.id, COST_TEACHING_SESSION, "课堂生成失败退回");
-            await send({ type: "error", message: "讲师备课失败了，积分已退回。请稍后重试。" });
+            await send({ type: "error", message: "讲师备课失败了，请稍后重试。" });
             controller.close();
             return;
           }

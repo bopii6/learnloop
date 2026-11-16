@@ -2,10 +2,7 @@
 
 // 侧栏：浮动圆角白卡，导航 + 继续学习 + 历史。
 // 图标统一用内联 SVG 线性图标（stroke=currentColor），选中态走品牌绿。
-import { NEW_USER_GRANT } from "@/lib/pricing";
-import { useState } from "react";
 import type { ConversationMeta } from "@/types";
-import { CreditsPopover } from "./CreditsPopover";
 
 export interface SidebarCourse {
   id: string;
@@ -70,7 +67,6 @@ export function Sidebar({
   isAdmin,
   onLogin,
   onLogout,
-  credits,
 }: {
   mode: "course" | "chat" | "market" | "records" | "other";
   onMode: (m: "course" | "chat" | "market" | "records") => void;
@@ -83,9 +79,7 @@ export function Sidebar({
   isAdmin?: boolean;
   onLogin: () => void;
   onLogout: () => void;
-  credits?: number | null;
 }) {
-  const [creditsOpen, setCreditsOpen] = useState(false);
   const navItems = [
     { key: "course", label: "首页", icon: "home" as const },
     { key: "records", label: "课程记录", icon: "library" as const },
@@ -229,16 +223,6 @@ export function Sidebar({
                   {user.email}
                 </div>
                 <div className="flex items-center gap-2">
-                  {typeof credits === "number" && (
-                    <button
-                      onClick={() => setCreditsOpen((v) => !v)}
-                      aria-expanded={creditsOpen}
-                      className="rounded-full bg-accent-soft px-1.5 py-px text-[10px] font-semibold text-accent hover:opacity-80 transition-opacity"
-                      title="积分余额与明细：怎么扣的、花在哪，点开一目了然"
-                    >
-                      ⚡ {credits} 积分
-                    </button>
-                  )}
                   <button onClick={onLogout} className="text-[10.5px] text-ink-faint hover:text-red-500 transition-colors">
                     退出
                   </button>
@@ -246,23 +230,12 @@ export function Sidebar({
               </div>
             </div>
           ) : (
-            <>
-              <button
-                onClick={onLogin}
-                className="w-full rounded-xl bg-[#18181b] px-3 py-2.5 text-[12.5px] font-medium text-white hover:bg-[#3f3f46] transition-colors"
-              >
-                登录 / 注册
-              </button>
-              <a href="/pricing" className="mt-2 block text-center text-[11px] text-ink-faint hover:text-accent">
-                注册送 {NEW_USER_GRANT} 积分 · 查看积分与价格
-              </a>
-            </>
-          )}
-          {creditsOpen && user && (
-            <CreditsPopover
-              onClose={() => setCreditsOpen(false)}
-              onChanged={() => window.dispatchEvent(new CustomEvent("ll:credits-changed"))}
-            />
+            <button
+              onClick={onLogin}
+              className="w-full rounded-xl bg-[#18181b] px-3 py-2.5 text-[12.5px] font-medium text-white hover:bg-[#3f3f46] transition-colors"
+            >
+              登录 / 注册
+            </button>
           )}
         </div>
       </div>

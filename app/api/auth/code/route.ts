@@ -1,6 +1,6 @@
 // POST /api/auth/code —— 发送邮箱验证码
 // Brevo/SMTP 已配置 → 真发信；都没配置时：开发模式返回 devCode（仅本地），生产模式报错不泄露验证码。
-// 防刷三闸：IP 发码日限频 / 临时邮箱域名拦截 / 邮箱别名归一（免费积分不能靠 +tag 无限薅）。
+// 防刷三闸：IP 发码日限频 / 临时邮箱域名拦截 / 邮箱别名归一（一人不能靠 +tag 无限建号）。
 import { NextRequest, NextResponse } from "next/server";
 import {
   issueCode,
@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "请使用常用邮箱注册（不支持临时邮箱）" }, { status: 400 });
   }
 
-  // 同一 IP 一天最多发 20 封验证码：挡批量造号刷免费积分，不影响真人（一人一天顶多错几次）
+  // 同一 IP 一天最多发 20 封验证码：挡批量造号刷接口，不影响真人（一人一天顶多错几次）
   const quota = await consumeDailyQuota(ipSubject(req), "codeRequests", 1, AUTH_CODE_IP_DAILY_LIMIT);
   if (!quota.ok) {
     return NextResponse.json(

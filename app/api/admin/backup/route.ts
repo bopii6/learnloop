@@ -1,5 +1,5 @@
 // POST /api/admin/backup —— 关键数据备份：复制到 backup/{YYYY-MM-DD}/ 前缀
-// 覆盖"丢了无法再生"的小而关键的文件：用户、积分账本、集市登记表、举报、课程索引。
+// 覆盖"丢了无法再生"的小而关键的文件：用户、集市登记表、举报、课程索引。
 // 课程正文不在此列（可重新生成，且应开启 R2 版本控制兜底——控制台开关，见上线评审）。
 // 建议节奏：每天收工时点一次；将来挂 Cloudflare Cron Trigger 可全自动。
 import { NextResponse } from "next/server";
@@ -37,11 +37,11 @@ export async function POST(req: Request) {
   }
 
   // 固定关键文件
-  for (const key of ["users.json", "marketplace.json", "market-reports.json", "credits.json"]) {
+  for (const key of ["users.json", "marketplace.json", "market-reports.json"]) {
     await copyKey(key);
   }
-  // 每用户积分账本 + 课程小索引（整目录）
-  for (const prefix of ["credits/", "course-meta/"]) {
+  // 课程小索引（整目录）
+  for (const prefix of ["course-meta/"]) {
     const items = await listKeys(prefix).catch(() => []);
     for (const it of items) await copyKey(it.key);
   }

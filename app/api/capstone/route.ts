@@ -1,6 +1,6 @@
 // POST /api/capstone —— 结课作品工坊
-// action: "brief"（生成个性化任务书，⚡1 积分，缓存后免费）
-//       | "review"（验收提交的作品，对照做成标准逐条判定，⚡1 积分/次）
+// action: "brief"（生成个性化任务书，生成后缓存）
+//       | "review"（验收提交的作品，对照做成标准逐条判定）
 // GET  ?courseId= —— 拉当前学员的工坊记录（任务书/提交历史/是否结课）
 import { NextRequest, NextResponse } from "next/server";
 import { getCourseState } from "@/lib/agent/course";
@@ -12,7 +12,6 @@ import {
 } from "@/lib/capstone";
 import { getProfile } from "@/lib/profile";
 import { userFromCookieHeader } from "@/lib/auth";
-import { COST_CAPSTONE_BRIEF, COST_CAPSTONE_REVIEW, refundCredits, trySpend } from "@/lib/credits";
 import { storageMode } from "@/lib/storage";
 import { logOpsError } from "@/lib/ops";
 import type { CapstoneRecord, CourseLecture, CourseUnit, CourseOutline } from "@/types";
@@ -49,9 +48,9 @@ export async function POST(req: NextRequest) {
 
   try {
     const me = await userFromCookieHeader(req.headers.get("cookie"));
-    // 与课堂同规则：本地自用放行匿名，公网部署（R2 模式）消耗积分必须登录
+    // 与课堂同规则：本地自用放行匿名，公网部署（R2 模式）必须登录
     if (!me && storageMode === "r2") {
-      return NextResponse.json({ error: "请先登录后再使用结课工坊（验收消耗积分，与账号绑定）" }, { status: 401 });
+      return NextResponse.json({ error: "请先登录后再使用结课工坊（作品记录跟着账号走）" }, { status: 401 });
     }
     const userId = me?.id || "anonymous";
 
@@ -83,22 +82,11 @@ export async function POST(req: NextRequest) {
     };
 
     if (body.action === "brief") {
-      // 缓存命中：任务书已生成过就不再收费（改要求后可手动重新生成，重新计费）
+      // 缓存命中：任务书已生成过就直接返回
       const existing = await loadCapstoneRecord(body.courseId || "", userId);
       if (existing?.brief) return NextResponse.json({ record: existing, cached: true });
 
-      let spent = 0;
-      if (me) {
-        const spend = await trySpend(me.id, COST_CAPSTONE_BRIEF, `结课任务书：${shared.courseTitle.slice(0, 24)}`);
-        if (!spend.ok) {
-          return NextResponse.json(
-            { error: "credits_block", balance: spend.balance, need: COST_CAPSTONE_BRIEF, reason: "生成结课任务书" },
-            { status: 402 }
-          );
-        }
-        spent = COST_CAPSTONE_BRIEF;
-      }
-      try {
+      {
         // LLM 瞬断重试一次：任务书是学员动手前的第一脚，不能一脚踩空
         const brief =
           (await generateCapstoneBrief({
@@ -127,10 +115,7 @@ export async function POST(req: NextRequest) {
           updatedAt: Date.now(),
         };
         await saveCapstoneRecord(rec);
-        return NextResponse.json({ record: rec, spent });
-      } catch (e) {
-        if (spent && me) await refundCredits(me.id, spent, "任务书生成失败退回");
-        throw e;
+        return NextResponse.json({ record: rec });
       }
     }
 
@@ -139,18 +124,7 @@ export async function POST(req: NextRequest) {
       if (text.length < 20) {
         return NextResponse.json({ error: "多写一点：做了什么、怎么做的、结果如何（至少 20 字），导师才能对照标准验收" }, { status: 400 });
       }
-      let spent = 0;
-      if (me) {
-        const spend = await trySpend(me.id, COST_CAPSTONE_REVIEW, `作品验收：${shared.courseTitle.slice(0, 24)}`);
-        if (!spend.ok) {
-          return NextResponse.json(
-            { error: "credits_block", balance: spend.balance, need: COST_CAPSTONE_REVIEW, reason: "验收结课作品" },
-            { status: 402 }
-          );
-        }
-        spent = COST_CAPSTONE_REVIEW;
-      }
-      try {
+      {
         const review = await reviewCapstoneSubmission({
           ...shared,
           submissionText: text,
@@ -178,10 +152,7 @@ export async function POST(req: NextRequest) {
           rec.passedAt = Date.now();
         }
         await saveCapstoneRecord(rec);
-        return NextResponse.json({ record: rec, review, spent });
-      } catch (e) {
-        if (spent && me) await refundCredits(me.id, spent, "验收失败退回");
-        throw e;
+        return NextResponse.json({ record: rec, review });
       }
     }
 

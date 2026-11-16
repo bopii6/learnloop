@@ -250,7 +250,7 @@ export async function readJson<T>(key: string, fallback: T): Promise<T> {
 
 /**
  * 严格读取：对象损坏（截断/半截 JSON）时抛错而不是返回 fallback。
- * 全用户集合文件（users/credits/集市登记表）必须走这条路——
+ * 全用户集合文件（users/集市登记表）必须走这条路——
  * 否则一次坏读 + 一次例行写回 = 用一个只含单条记录的新文件覆盖全量数据（静默清空）。
  * 拒绝服务好过丢数据：解析失败时上层接口报错，用户重试即可，原文件还在。
  */

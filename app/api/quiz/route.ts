@@ -1,5 +1,5 @@
 // POST /api/quiz —— 单元测验（quiz 课节）
-// action: "start"（出题，⚡1 积分一次，题目缓存后重考免费）
+// action: "start"（出题，题目缓存后重考不再生成）
 //       | "submit"（交卷，服务端判分；答案永不下发前端）
 // GET  ?courseId=            —— 当前学员本课程全部测验的通过情况（课程页徽章用）
 // GET  ?courseId=&lectureId= —— 单个测验的进行中档案（不含答案）
@@ -14,7 +14,6 @@ import {
   stripAnswers,
 } from "@/lib/unit-quiz";
 import { userFromCookieHeader } from "@/lib/auth";
-import { COST_UNIT_QUIZ, refundCredits, trySpend } from "@/lib/credits";
 import { storageMode } from "@/lib/storage";
 import { logOpsError } from "@/lib/ops";
 
@@ -50,7 +49,7 @@ export async function POST(req: NextRequest) {
   try {
     const me = await userFromCookieHeader(req.headers.get("cookie"));
     if (!me && storageMode === "r2") {
-      return NextResponse.json({ error: "请先登录后再参加单元测验（出题消耗积分，与账号绑定）" }, { status: 401 });
+      return NextResponse.json({ error: "请先登录后再参加单元测验（成绩跟着账号走）" }, { status: 401 });
     }
     const userId = me?.id || "anonymous";
 
@@ -71,24 +70,13 @@ export async function POST(req: NextRequest) {
     }
 
     if (body.action === "start") {
-      // 题目缓存命中：重考免费（考不过再考是学习的一部分，不该重复收费）
+      // 题目缓存命中：重考直接用同一套题，不重新生成
       const existing = await loadQuizRecord(body.courseId || "", lecture.id, userId);
       if (existing?.quiz) {
         return NextResponse.json({ quiz: stripAnswers(existing.quiz), cached: true });
       }
 
-      let spent = 0;
-      if (me) {
-        const spend = await trySpend(me.id, COST_UNIT_QUIZ, `单元测验：${(lecture.title || "").slice(0, 24)}`);
-        if (!spend.ok) {
-          return NextResponse.json(
-            { error: "credits_block", balance: spend.balance, need: COST_UNIT_QUIZ, reason: "生成单元测验" },
-            { status: 402 }
-          );
-        }
-        spent = COST_UNIT_QUIZ;
-      }
-      try {
+      {
         const capstoneName = state.outline.capstone?.name;
         const genArgs = {
           courseTitle: state.outline.title || state.title || "",
@@ -116,10 +104,7 @@ export async function POST(req: NextRequest) {
           updatedAt: Date.now(),
         };
         await saveQuizRecord(rec);
-        return NextResponse.json({ quiz: stripAnswers(quiz), spent });
-      } catch (e) {
-        if (spent && me) await refundCredits(me.id, spent, "测验出题失败退回");
-        throw e;
+        return NextResponse.json({ quiz: stripAnswers(quiz) });
       }
     }
 

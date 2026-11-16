@@ -46,7 +46,7 @@ function usageKey(subject: string): string {
   return `usage/${today()}/${subject}.json`;
 }
 
-// 与 lib/credits.ts 同款的每键读改写锁（usage 文件高频小写，串行化防互相覆盖）
+// 每键读改写锁（usage 文件高频小写，串行化防互相覆盖）
 const fileLocks = new Map<string, Promise<unknown>>();
 
 async function withFileLock<T>(key: string, fn: () => Promise<T>): Promise<T> {

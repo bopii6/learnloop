@@ -27,7 +27,7 @@ export function normalizeEmail(email: string): string {
   return (email || "").trim().toLowerCase();
 }
 
-/** 别名归一化：+tag 后缀与 gmail 点号视为同一邮箱（免费积分防刷：一人不能靠别名无限建号） */
+/** 别名归一化：+tag 后缀与 gmail 点号视为同一邮箱（防刷：一人不能靠别名无限建号） */
 export function canonicalEmail(email: string): string {
   const at = email.lastIndexOf("@");
   if (at <= 0) return email;

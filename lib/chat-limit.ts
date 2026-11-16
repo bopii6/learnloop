@@ -1,7 +1,10 @@
-// 课堂追问计数（每用户每节课）：防滥用的护栏，而不是计费——追问本身不扣积分。
+// 课堂追问计数（每用户每节课）：防滥用的护栏。
 import { readJson, writeJson } from "@/lib/storage";
 
 const USAGE_PREFIX = "teach-usage/";
+
+/** 每用户每节课的课堂提问上限 */
+export const CHAT_LIMIT_PER_LECTURE = 30;
 
 interface LectureUsage {
   // key: courseId:unitId:lectureId → { chatCount, updatedAt }

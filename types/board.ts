@@ -218,8 +218,6 @@ export type BoardEvent =
       speed: number;
     }
   | { type: "response_complete"; is_complete: boolean; status: string }
-  /** 开讲需要积分而余额不足（首次开讲扣分，复习免费） */
-  | { type: "credits_block"; balance: number; need: number }
   /** 需要登录（公网部署时课堂与账号绑定） */
   | { type: "auth_required"; message: string }
   /** 富媒体生成失败：客户端撤掉对应占位卡 */

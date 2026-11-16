@@ -77,13 +77,13 @@ POST /api/course (SSE)
 
 POST /api/board (SSE)
   → start：生成本节板书脚本（卡片 + 口播 + 圈画 + 小测 + 徽章）→ 媒体导演决定配图/互动动画
-           → 按 group 帧下发；讲稿按 用户×课节 缓存（复习/回放零成本）；首次开讲扣 1 积分，失败退回
+           → 按 group 帧下发；讲稿按 用户×课节 缓存（复习 / 回放直接读缓存，不再生成）
   → answer：有小测 = 点评；无小测 = 课堂追问 /「没听懂」，回应插队到当前这拍之后播放
 POST /api/replay → 把讲稿快照存成只读回放链接（/replay/:id）
   → 打断：提问注入「当前片段 + 已写板书 + 画像」，答完自动续播
 ```
 
-事件协议（SSE JSON）：课程 `stage / clarify_round / sources / blueprint / outline / done / error`；课堂 `session_ready / group / generated_image / generated_animation / media_failed / credits_block / auth_required / response_complete / error`。
+事件协议（SSE JSON）：课程 `stage / clarify_round / sources / blueprint / outline / done / error`；课堂 `session_ready / group / generated_image / generated_animation / media_failed / auth_required / response_complete / error`。
 前端只认事件，后续加工具（文件阅读、资产生成）不用改前端框架。
 
 ## 已知取舍（MVP）

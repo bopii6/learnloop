@@ -1,21 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CREDIT_PACKS, CREDITS_PER_FULL_COURSE, NEW_USER_GRANT, COST_COURSE_GENERATE, pricePerCredit } from "../lib/pricing";
 import { buildLectureContext } from "../lib/agent/lecture-context";
 import { boardScriptKey, isBoardScriptOfCourse } from "../lib/board/script-store";
 import type { CourseOutline } from "../types";
-
-test("积分包：价格与积分为正，越大的包单价越低", () => {
-  for (const p of CREDIT_PACKS) assert.ok(p.price > 0 && p.credits > 0);
-  const unit = CREDIT_PACKS.map(pricePerCredit);
-  for (let i = 1; i < unit.length; i++) assert.ok(unit[i] <= unit[i - 1], `第 ${i} 档单价不应高于上一档`);
-});
-
-test("注册赠送够生成一门课；最多人选的包够新开并学完一门", () => {
-  assert.ok(NEW_USER_GRANT >= COST_COURSE_GENERATE);
-  const popular = CREDIT_PACKS.find((p) => p.popular)!;
-  assert.ok(popular.credits >= CREDITS_PER_FULL_COURSE);
-});
 
 test("buildLectureContext：带出单元关键概念与同单元前情（跳过测验/项目课节）", () => {
   const outline = {

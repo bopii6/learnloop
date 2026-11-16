@@ -15,7 +15,6 @@ import { getProfile, captureCourseProfile, profileText, profileHintForClarify } 
 import { constraintsBlock } from "@/lib/agent/lang";
 import { loadTextbook, textbookToSources, buildTextbookExcerpt } from "@/lib/textbook";
 import { userFromCookieHeader } from "@/lib/auth";
-import { COST_COURSE_GENERATE, getBalance, refundCredits, trySpend } from "@/lib/credits";
 import { storageMode } from "@/lib/storage";
 import { drainToUsage, ipSubject, logOpsError } from "@/lib/ops";
 import type { CourseEvent, SourceItem, TextbookPage } from "@/types";
@@ -25,9 +24,9 @@ export const dynamic = "force-dynamic";
 
 // ---- 真取消（R2）：取消不再只是前端 abort ----
 // cancelledCourses：用户点了取消的课。管线里的 send() 在每个事件边界检查它，直接抛错中止
-// 后续 LLM 调用；inFlightSpends：已扣 10 积分但大纲还没跑完的课程，取消时据此退分。
+// 后续 LLM 调用；inFlightCourses：大纲正在后台生成的课程（"继续这次生成"据此显示进行中）。
 const cancelledCourses = new Set<string>();
-const inFlightSpends = new Map<string, string>(); // courseId -> userId
+const inFlightCourses = new Set<string>();
 
 /** 把已读网页压缩成给 LLM 的资料摘要（top 4 页 × 1800 字符，控 token 预算） */
 function buildPageExcerpts(
@@ -76,7 +75,7 @@ export async function POST(req: NextRequest) {
         query: state.query,
         title: state.title,
         cancelled: Boolean((state as any).cancelled),
-        generating: inFlightSpends.has(courseId),
+        generating: inFlightCourses.has(courseId),
         sources: state.sources ?? [],
         blueprint: state.blueprint ?? null,
         outline: state.outline ?? null,
@@ -95,15 +94,8 @@ export async function POST(req: NextRequest) {
       (state as any).cancelled = true;
       await setCourseState(courseId, state).catch(() => {});
     }
-    // 已扣分且还在跑：立即退回（跑完再取消的没有扣分，退个寂寞是 bug）
-    let refunded = false;
-    const owner = inFlightSpends.get(courseId);
-    if (owner) {
-      await refundCredits(owner, COST_COURSE_GENERATE, "用户取消生成，积分退回");
-      inFlightSpends.delete(courseId);
-      refunded = true;
-    }
-    return new Response(JSON.stringify({ ok: true, refunded }), {
+    inFlightCourses.delete(courseId);
+    return new Response(JSON.stringify({ ok: true }), {
       headers: { "Content-Type": "application/json; charset=utf-8" },
     });
   }
@@ -148,19 +140,6 @@ export async function POST(req: NextRequest) {
           if (!query && tb) query = `系统学习《${tb.title}》教材`;
           if (!query) {
             await send({ type: "error", message: "empty query" });
-            controller.close();
-            return;
-          }
-
-          // 积分预检：在大括其前先告诉用户"分不够"，而不是让他做完搜索+澄清+蓝图编辑
-          // （约 2 分钟投入）后才在扣费点撞墙。查询免费，扣费点仍在最贵的大纲步骤不变。
-          if (me && (await getBalance(me.id)) < COST_COURSE_GENERATE) {
-            await send({
-              type: "credits_block",
-              balance: await getBalance(me.id),
-              need: COST_COURSE_GENERATE,
-              reason: "生成课程大纲",
-            });
             controller.close();
             return;
           }
@@ -522,25 +501,14 @@ mode 为 course 或 answer 时，额外做需求抽取（认真对待用户说�
           // 如果前端传了编辑后的蓝图，用编辑后的版本
           const finalBlueprint = body.blueprint || state.blueprint;
 
-          // 积分门卫：大纲生成是全管线最贵的一步，课程资产此刻才真正落袋。
-          // 未登录：本地自用放行（无公开暴露面）；公网部署（R2 模式）必须登录，否则积分形同虚设。
+          // 大纲生成是全管线最贵的一步，课程从这里才归属到账号。
+          // 未登录：本地自用放行（无公开暴露面）；公网部署（R2 模式）必须登录，防匿名刷接口。
           if (!me && storageMode === "r2") {
-            await send({ type: "auth_required", message: "登录后就能生成完整课程——新用户注册送 20 积分，够生成这门课并上 10 节。" });
+            await send({ type: "auth_required", message: "登录后就能生成完整课程，课程会保存在你的账号里。" });
             controller.close();
             return;
           }
-          let creditsSpent = false;
-          if (me) {
-            const spend = await trySpend(me.id, COST_COURSE_GENERATE, `生成课程大纲：${(state.query || "").slice(0, 24)}`);
-            if (!spend.ok) {
-              await send({ type: "credits_block", balance: spend.balance, need: COST_COURSE_GENERATE, reason: "生成课程大纲" });
-              controller.close();
-              return;
-            }
-            creditsSpent = true;
-            // 登记"已扣分、正在跑"：用户此刻点取消，cancel 动作据此退分
-            inFlightSpends.set(courseId, me.id);
-          }
+          inFlightCourses.add(courseId);
 
           try {
             const { outline, title } = await runOutlineStep({
@@ -575,16 +543,8 @@ mode 为 course 或 answer 时，额外做需求抽取（认真对待用户说�
             }
 
             await send({ type: "done", courseId, title, saveFailed });
-          } catch (e) {
-            // 生成失败退回积分：用户只为成功交付的资产付费。
-            // 用户主动取消的情况已由 cancel 动作退过（在 inFlightSpends 里销了账），不重复退
-            const userCancelled = cancelledCourses.has(courseId);
-            if (creditsSpent && me && !userCancelled && inFlightSpends.has(courseId)) {
-              await refundCredits(me.id, COST_COURSE_GENERATE, "课程生成失败退回");
-            }
-            inFlightSpends.delete(courseId);
-            throw e;
           } finally {
+            inFlightCourses.delete(courseId);
             cancelledCourses.delete(courseId);
           }
         } else if (action === "save_course") {

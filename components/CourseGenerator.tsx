@@ -18,7 +18,6 @@ import { consumeSse } from "@/lib/sse";
 import { uploadTextbookPdf } from "@/lib/textbook-client";
 import { useRouter } from "next/navigation";
 import { resetGeneratorState, useGeneratorState } from "@/hooks/useGeneratorState";
-import { OutOfCredits } from "./OutOfCredits";
 
 interface CourseGeneratorProps {
   onComplete?: (courseId: string, title: string, outline: CourseOutline) => void;
@@ -42,8 +41,6 @@ const CLARIFY_STATUS = ["正在构思整体框架", "翻开了书本", "正在�
 
 // F5 找回进行中的生成：courseId 落在 sessionStorage（课程号在 course_created 事件里第一时间下发）
 const RESUME_KEY = "ll:gen-course";
-
-const TTS_COST = 10; // 与后端 COST_COURSE_GENERATE 对齐：确认大纲时才真正扣分
 
 // 输入页底部特性区：三个卖点一句话讲清产品（线性 SVG 图标，统一品牌气质）
 const HOME_FEATURES = [
@@ -165,10 +162,8 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
   const [outline, setOutline] = useGeneratorState<CourseOutline | null>("outline", null);
   const [courseId, setCourseId] = useGeneratorState("courseId", "");
   const [error, setError] = useGeneratorState<string | null>("error", null);
-  // 积分不够：给出买积分 / 兑换码两条路，充值后直接接着生成
-  // 公网未登录：到扣费点时请登录，登录成功后自动接着生成
+  // 公网未登录：到生成大纲这一步时请登录，登录成功后自动接着生成
   const [authBlock, setAuthBlock] = useGeneratorState<string | null>("authBlock", null);
-  const [creditsBlock, setCreditsBlock] = useGeneratorState<{ what: string; need: number; balance: number } | null>("creditsBlock", null);
   const [selectedOptions, setSelectedOptions] = useGeneratorState<string[]>("selectedOptions", []);
   const [customAnswer, setCustomAnswer] = useGeneratorState("customAnswer", "");
   const [loading, setLoading] = useGeneratorState("loading", false);
@@ -318,15 +313,10 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
       setLoading(false);
       setProgress(null);
       setSaveFailed(Boolean(e.saveFailed));
-      // 课程交付完毕，积分已扣：通知侧栏刷新余额
-      window.dispatchEvent(new Event("ll:credits-changed"));
     } else if (e.type === "save_ok") {
       setSaveFailed(false);
     } else if (e.type === "auth_required") {
       setAuthBlock(e.message);
-      setLoading(false);
-    } else if (e.type === "credits_block") {
-      setCreditsBlock({ what: e.reason, need: e.need, balance: e.balance });
       setLoading(false);
     } else if (e.type === "error") {
       setError(e.message);
@@ -355,9 +345,9 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
         await consumeSse<CourseEvent>(res, handleEvent);
       } catch (e) {
         if ((e as Error).name !== "AbortError") {
-          // 超时与裸状态码都要翻译成人话：用户得知道该等还是该重试、钱退不退
+          // 超时与裸状态码都要翻译成人话：用户得知道该等还是该重试
           if (e instanceof Error && e.name === "TimeoutError") {
-            setError("请求超时：服务长时间没有响应，请重试。已扣的积分会自动退回。");
+            setError("请求超时：服务长时间没有响应，请重试。");
           } else {
             setError(e instanceof Error ? e.message : String(e));
           }
@@ -393,7 +383,6 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
     if ((!query.trim() && !textbookId) || loading) return;
     setLoading(true);
     setError(null);
-    setCreditsBlock(null);
     setCancelNotice(null);
     setStep("search");
     setSources([]);
@@ -437,7 +426,6 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
 
   const confirmBlueprint = useCallback(async () => {
     if (!courseId || loading) return;
-    setCreditsBlock(null);
     setAuthBlock(null);
     setLoading(true);
     setStep("outline");
@@ -477,23 +465,18 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
     setLoading(false);
   }, [courseId, loading, streamRequest]);
 
-  // 真取消：告诉服务端停掉管线（事件边界抛错中止 LLM 调用），已扣的积分立即退回
+  // 真取消：告诉服务端停掉管线（事件边界抛错中止 LLM 调用）
   const cancelGeneration = useCallback(async () => {
     const cid = courseId;
     abortRef.current?.abort();
-    let refunded = false;
     if (cid) {
       try {
-        const res = await fetch("/api/course", {
+        await fetch("/api/course", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "cancel", courseId: cid }),
           signal: AbortSignal.timeout(8000),
         });
-        if (res.ok) {
-          const d = await res.json();
-          refunded = Boolean(d.refunded);
-        }
       } catch {
         // 取消请求失败也照样本地退出：不能因为通知不到就不让用户走
       }
@@ -506,11 +489,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
     setReadingDoc("idle");
     setConfirmed(false);
     setSaveFailed(false);
-    setCancelNotice(
-      refunded
-        ? "已取消生成，本次消耗的积分已全额退回。"
-        : "已取消生成。本次未产生扣费（积分只在确认大纲后才扣）。"
-    );
+    setCancelNotice("已取消生成。");
     window.setTimeout(() => setCancelNotice(null), 8000);
   }, [courseId]);
 
@@ -527,8 +506,8 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
 
   // ---- 内联阶段标题（accent 粗体 ｜ 第 N 步，共 M 步 ✓/…；文档建课为 5 步）----
   const stageTotal = textbookId ? 5 : 4;
-  // 生成被拦下（积分不够 / 需要登录 / 出错）时，进行中的阶段改显"已暂停"，不再假装还在转
-  const halted = !loading && Boolean(creditsBlock || authBlock || error);
+  // 生成被拦下（需要登录 / 出错）时，进行中的阶段改显"已暂停"，不再假装还在转
+  const halted = !loading && Boolean(authBlock || error);
   const StageHeader = ({ title, n, state }: { title: string; n: number; state: "running" | "done" }) => (
     <div className="flex items-center gap-2.5 mb-3">
       <span className="text-[14.5px] font-bold text-accent">{title}</span>
@@ -572,11 +551,10 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
                 即时协助
               </button>
             </div>
-            <h1 className="mb-3 text-[30px] font-bold leading-[1.4] tracking-tight text-ink">
-              使用 <span className="inline-block align-[-0.12em] text-[26px]">🛸</span> Superlearn 打造你的
-              <span className="rounded-md bg-[linear-gradient(transparent_58%,rgb(var(--accent-border-rgb)/0.9)_58%)] px-1">专属课程</span>
+            <h1 className="mb-3 text-[34px] font-bold leading-[1.35] tracking-[-0.02em] text-ink">
+              一句话，打造你的专属课程
             </h1>
-            <p className="text-[14px] text-ink-soft">
+            <p className="text-[15px] text-ink-soft">
               讲解 + 板书 + 课后练习，像一对一辅导一样系统学完一学期的内容
             </p>
           </div>
@@ -757,7 +735,7 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
               }}
               placeholder={textbookId ? `想怎么学《${textbookTitle}》？可留空直接生成，如：两周过完这本书` : "输入你想系统学习的主题，如：系统讲解 LLM Agent 的 Tool Use 设计模式"}
               rows={3}
-              className="w-full resize-none bg-transparent px-1.5 py-1 text-[15px] leading-relaxed text-ink outline-none placeholder:text-ink-faint/80"
+              className="w-full resize-none bg-transparent px-1.5 py-1 text-[16px] leading-relaxed text-ink outline-none placeholder:text-ink-faint/80"
             />
             <div className="mt-2 flex items-center justify-between gap-3">
               {/* 文档上传：附件卡（图标+文件名+大小）+ 实时改价 10 → 13 */}
@@ -820,12 +798,6 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
                 {uploadError && <span className="truncate text-[11.5px] text-red-600">{uploadError}</span>}
               </div>
               <div className="flex shrink-0 items-center gap-2.5">
-                <span
-                  className="inline-flex cursor-help items-center gap-1 rounded-full bg-[#f4f4f5] px-2.5 py-1 text-[12px] text-ink-soft"
-                  title={`生成本课程需消耗 ${textbookId ? 13 : 10} 个积分${textbookId ? "（含文档处理 3 积分）" : ""}`}
-                >
-                  ✦ {textbookId ? 13 : 10}
-                </span>
                 <button
                   onClick={() => {
                     // 空输入不置灰（主按钮保持视觉引力），点了聚焦输入框
@@ -867,23 +839,10 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
                   onClick={() => setQuery(`系统讲解 ${s}`)}
                   className="rounded-full border border-[#e4e4e7] bg-white px-3.5 py-1.5 text-[12px] text-ink-soft transition-colors hover:border-accent/50 hover:text-accent"
                 >
-                  <span className="mr-1.5 text-accent/80">✦</span>
                   {s}
                 </button>
               ))}
             </div>
-          </div>
-
-          {/* 能力信任条：只说产品真做到的事，不虚构数据 */}
-          <div className="mt-7 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[12px] text-ink-faint">
-            {["引用真实网页来源", "逐句板书讲解", "课后练习即时检验"].map((t) => (
-              <span key={t} className="inline-flex items-center gap-1.5">
-                <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 text-accent" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                  <path d="m5 12.5 4.5 4.5L19 7.5" />
-                </svg>
-                {t}
-              </span>
-            ))}
           </div>
 
           {/* 产品特性 */}
@@ -1240,9 +1199,8 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
                   onClick={confirmBlueprint}
                   disabled={loading}
                   className="rounded-full bg-accent px-6 py-2.5 text-[13px] text-white font-medium hover:opacity-90 disabled:opacity-40"
-                  title="从这一步起开始消耗积分：生成失败或中途取消会自动退回"
                 >
-                  ✓ 没问题，继续生成课程细节（消耗 {TTS_COST} 积分）
+                  ✓ 没问题，继续生成课程细节
                 </button>
               </div>
             </>
@@ -1406,12 +1364,6 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
           >
             登录 / 注册
           </button>
-        </div>
-      )}
-
-      {creditsBlock && (
-        <div className="mt-4">
-          <OutOfCredits what={creditsBlock.what} need={creditsBlock.need} balance={creditsBlock.balance} onRecharged={() => void (courseId ? confirmBlueprint() : startGeneration())} />
         </div>
       )}
 

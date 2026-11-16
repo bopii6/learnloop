@@ -268,7 +268,7 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
               className="w-full rounded-lg border border-[#e4e4e7] px-2.5 py-1.5 text-[12px] outline-none focus:border-accent bg-white"
             />
             <div className="flex items-center gap-2">
-              <span className="flex-1 min-w-0 text-[11.5px] text-ink-faint">上架后所有访客可免费浏览，学员第一次上某节课扣 1 积分。</span>
+              <span className="flex-1 min-w-0 text-[11.5px] text-ink-faint">上架后所有访客都能看到这门课。</span>
               <button
                 onClick={() => void publishToMarket()}
                 disabled={marketState === "saving"}
