@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CourseCover } from "./CourseCover";
 import { fmtDuration } from "@/lib/format";
+import { prefetchCourse } from "@/lib/course-cache";
 
 interface RecordCourse {
   id: string;
@@ -246,6 +247,7 @@ export function CourseRecordsView({
       {pickup && (
         <button
           onClick={() => onOpenCourse(pickup.id)}
+          onMouseEnter={() => void prefetchCourse(pickup.id)}
           className="group w-full text-left rounded-3xl border border-accent/25 bg-gradient-to-r from-accent-soft/60 via-white to-white px-6 py-5 mb-7 flex items-center gap-6 hover:border-accent/50 hover:shadow-[0_6px_24px_rgba(15,110,86,0.10)] transition-all fade-up"
         >
           <div className="min-w-0 flex-1">
@@ -363,6 +365,7 @@ export function CourseRecordsView({
             <div key={c.id} className="relative group card-fade-up" style={{ animationDelay: `${Math.min(idx, 8) * 45}ms` }}>
               <button
                 onClick={() => onOpenCourse(c.id)}
+                onMouseEnter={() => void prefetchCourse(c.id)}
                 aria-label={`${c.started ? "继续学习" : "开始学习"}：${c.title}`}
                 className="w-full text-left rounded-2xl border border-[#e4e4e7] bg-white overflow-hidden flex flex-col transition-all duration-200 hover:-translate-y-0.5 hover:border-accent/45 hover:shadow-[0_10px_28px_rgba(26,26,24,0.09)]"
               >

@@ -38,6 +38,23 @@ function offsetWithin(el: HTMLElement, root: HTMLElement): { x: number; y: numbe
 const CHROME_SELECTOR = ".overlay-note-title-highlight, table, th, td";
 const UNIT_SELECTOR = ".katex, img, .tw-unit";
 
+/** 讲解进度（0..1，来自真实语音 / 字幕）：板书按它落字，而不是按估算时长——话说到哪，字写到哪 */
+let speechNow: { text: string; p: number } | null = null;
+const spokenDone = new Set<string>();
+export function reportSpeechProgress(text: string, p: number) {
+  speechNow = { text, p };
+  if (p >= 1) {
+    if (spokenDone.size > 300) spokenDone.clear();
+    spokenDone.add(text);
+  }
+}
+function speechProgressOf(text: string): number {
+  if (speechNow && speechNow.text === text) return speechNow.p;
+  return spokenDone.has(text) ? 1 : 0;
+}
+/** 板书比讲解略快一点写完：讲到 80% 时字已写满，留出看的时间 */
+const SYNC_LEAD = 0.8;
+
 /** 课堂暂停时笔也停（模块级开关：播放器 togglePause 时设置） */
 let penPaused = false;
 export function setTypewriterPaused(paused: boolean) {
@@ -51,6 +68,8 @@ export function useTypewriter(
     contentKey: string;
     /** 期望写完整张卡的时长（≈ 配对那句讲解的时长）：字跟着话一起往外写，而不是 3 秒内整块蹦出 */
     durationMs?: number;
+    /** 配对讲解的原文：有它时按这句话的真实播放进度落字（语音还没开口，笔就等着） */
+    syncText?: string;
     onDone?: () => void;
     onPen?: (p: { x: number; y: number } | null) => void;
   }
@@ -61,6 +80,8 @@ export function useTypewriter(
   const revealedAllRef = useRef(false);
   const onDoneRef = useRef(opts.onDone);
   const onPenRef = useRef(opts.onPen);
+  const syncTextRef = useRef(opts.syncText);
+  syncTextRef.current = opts.syncText;
   const finishRef = useRef<() => void>(() => {});
   onDoneRef.current = opts.onDone;
   onPenRef.current = opts.onPen;
@@ -215,12 +236,20 @@ export function useTypewriter(
       }
       acc += dt;
 
+      // 跟着讲解写：目标位置 = 讲解进度；追赶时也一个字一个字地写（最快 40ms/字），不整块蹦
+      const sync = syncTextRef.current;
+      const target = sync
+        ? Math.min(units.length, Math.ceil(Math.min(1, speechProgressOf(sync) / SYNC_LEAD) * units.length))
+        : units.length;
+      const interval = sync ? Math.min(per, 40) : per;
+
       let lastUnit: Unit | null = null;
-      while (acc >= per && cursor < units.length) {
+      if (sync && cursor >= target) acc = Math.min(acc, interval);
+      while (acc >= interval && cursor < target) {
         lastUnit = units[cursor];
         revealUnit(lastUnit);
         cursor += 1;
-        acc -= per;
+        acc -= interval;
       }
       if (cursor >= units.length) {
         // 实测语义：落字完成即完成（讲解可同时进行）；闸门仅作提前放行的加速器

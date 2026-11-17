@@ -249,6 +249,16 @@
   background: #fff;
 }
 
+/* ---- 字幕里与白板同词的片段：讲到时扫上和白板标题同款的黄色记号 ---- */
+.caption-hit {
+  background: linear-gradient(transparent 58%, rgba(254, 230, 138, 0.85) 58%) no-repeat 0 0 / 0% 100%;
+  border-radius: 2px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  transition: background-size 380ms ease;
+}
+.caption-hit-on { background-size: 100% 100%; }
+
 /* ---- 题卡上的红笔批改：勾 / 划线，像讲师当场用红笔画上去 ---- */
 .ask-pen-mark { overflow: visible; }
 .ask-pen-mark path {

@@ -4,10 +4,22 @@
 // 白板课 → 白板课堂；测验课 → 单元测验；项目课 → 结课作品工坊。退出回课程详情页。
 import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import type { CourseOutline } from "@/types";
-import { WhiteboardSession } from "@/components/WhiteboardSession";
-import { CapstoneStudio } from "@/components/CapstoneStudio";
-import { QuizLesson } from "@/components/QuizLesson";
+import { readCourseCache, writeCourseCache } from "@/lib/course-cache";
+
+// 三种课节各自按需加载：进白板课不必把测验 / 结课工坊的代码一起下载
+const Spinner = () => (
+  <div className="min-h-screen flex items-center justify-center">
+    <span className="stage-spinner inline-block" style={{ width: 18, height: 18 }} />
+  </div>
+);
+const WhiteboardSession = dynamic(() => import("@/components/WhiteboardSession").then((m) => m.WhiteboardSession), {
+  ssr: false,
+  loading: Spinner,
+});
+const CapstoneStudio = dynamic(() => import("@/components/CapstoneStudio").then((m) => m.CapstoneStudio), { ssr: false, loading: Spinner });
+const QuizLesson = dynamic(() => import("@/components/QuizLesson").then((m) => m.QuizLesson), { ssr: false, loading: Spinner });
 
 export default function LecturePage({
   params,
@@ -21,12 +33,19 @@ export default function LecturePage({
 
   useEffect(() => {
     let alive = true;
+    // 从课程页点进来：大纲已在缓存里，不再等一次请求
+    const cached = readCourseCache(courseId);
+    if (cached) {
+      setOutline(cached.outline);
+      return;
+    }
     fetch(`/api/courses/${courseId}`)
       .then(async (r) => {
         if (!r.ok) throw new Error(r.status === 404 ? "课程不存在或已失效" : `加载失败 (${r.status})`);
         return r.json();
       })
       .then((d) => {
+        writeCourseCache(courseId, { outline: d.course.outline, visited: d.visited || [] });
         if (alive) setOutline(d.course.outline);
       })
       .catch((e) => {

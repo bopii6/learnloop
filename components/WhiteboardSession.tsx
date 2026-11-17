@@ -11,11 +11,13 @@ import { COL_STEP_GAP, addColumn, colWidth, colX, computeLayoutParams, createPag
 import { consumeSse } from "@/lib/sse";
 import { groupActions } from "@/lib/board/actions";
 import { fetchTtsSegments, prefetchTts, ttsUnavailable } from "@/lib/tts-client";
+import { browserTtsSupported, speakBrowser, warmBrowserVoices, type BrowserSpeech } from "@/lib/browser-tts";
 import { Whiteboard, type WhiteboardCamera } from "./Whiteboard";
 import { BoardLayer } from "./board/BoardLayer";
 import { AskCard, type AskSubmit } from "./board/AskCard";
 import type { CardHandle } from "./board/NoteCard";
-import { setTypewriterPaused } from "./board/useTypewriter";
+import { reportSpeechProgress, setTypewriterPaused } from "./board/useTypewriter";
+import { Caption } from "./board/Caption";
 import { Icon } from "./icons";
 import "./board/board.css";
 
@@ -38,7 +40,17 @@ interface QueueItem {
   /** script = 讲稿（计入进度）；reply = 即时反馈 / 追问回应（插队播放，不计进度） */
   origin: "script" | "reply";
 }
-type SingleAction = QueueItem & { action: BoardAction };
+/** 同一拍里的动作并行跑：板书等这一拍的讲解播完再收尾（speechDone），不靠估时保险丝硬切 */
+/** 预先开讲：开课卡还在时就把第一段的事件流攒下来 */
+interface Prewarm {
+  from: number;
+  events: BoardEvent[];
+  sink: ((e: BoardEvent) => void) | null;
+  done: Promise<void>;
+  failed?: string;
+  ctrl: AbortController;
+}
+type SingleAction = QueueItem & { action: BoardAction; speechDone?: Promise<void>; resolveSpeech?: () => void };
 
 /** ready = 课前；preparing = 备课中；thinking = 等下一段生成；blocked = 需登录 / 失败 */
 type Status = "ready" | "preparing" | "playing" | "ask" | "thinking" | "done" | "blocked";
@@ -134,7 +146,7 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
   const progKey = progressKey(courseId, unitId, lectureId);
   const [board, setBoard] = useState<BoardState>(EMPTY_STATE);
   const [camera, setCamera] = useState<WhiteboardCamera>({ scrollX: 0, scrollY: 0, zoom: 1, vpW: 1200, vpH: 700 });
-  const [caption, setCaption] = useState<{ text: string; reveal: number }>({ text: "", reveal: 0 });
+  const [caption, setCaption] = useState<{ text: string; reveal: number; board?: string }>({ text: "", reveal: 0 });
   const [ask, setAsk] = useState<AskState | null>(null);
   const [reward, setReward] = useState<{ title: string; desc: string } | null>(null);
   const [log, setLog] = useState<LogMsg[]>([]);
@@ -176,6 +188,7 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
   const rateRef = useRef(1);
   rateRef.current = rate;
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const browserSpeechRef = useRef<BrowserSpeech | null>(null);
   const lastSpeechRef = useRef("");
   const askWaiterRef = useRef<(() => void) | null>(null);
   const askRef = useRef<AskState | null>(null);
@@ -193,11 +206,35 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
   /** 下一句讲话在课堂记录里的标签（板书 / 圈画 / 配图） */
   const sayLabelRef = useRef<string | undefined>(undefined);
   const tweenRef = useRef(0);
+  /** 进课堂就先备课：学员还在看开课卡时，第一段已经在生成；点「开始上课」直接接上，不再干等 */
+  const prewarmRef = useRef<Prewarm | null>(null);
   /** fetchNext 定义在 runAction 之后：经由 ref 调用 */
   const fetchNextRef = useRef<((index: number, answer: Record<string, unknown>) => Promise<void>) | null>(null);
 
   useEffect(() => {
-    if (!isReplay) setSaved(loadProgress(progKey));
+    if (!isReplay) {
+      const sp = loadProgress(progKey);
+      setSaved(sp);
+      // 预先开讲（与开课卡默认按钮同一个起点）：结果先攒着，点开始时整包交给播放器
+      const from = sp && !sp.finished ? sp.segment : 0;
+      if (!prewarmRef.current) {
+        const ctrl = new AbortController();
+        const pw: Prewarm = { from, events: [], sink: null, ctrl, done: Promise.resolve() };
+        pw.done = (async () => {
+          const res = await fetch("/api/board", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "start", courseId, unitId, lectureId, resumeSegment: from }),
+            signal: ctrl.signal,
+          });
+          if (!res.ok || !res.body) throw new Error(`请求失败 (${res.status})`);
+          await consumeSse<BoardEvent>(res, (e) => (pw.sink ? pw.sink(e) : void pw.events.push(e)));
+        })().catch((e) => {
+          if (!ctrl.signal.aborted) pw.failed = e instanceof Error ? e.message : String(e);
+        });
+        prewarmRef.current = pw;
+      }
+    }
     try {
       if (window.localStorage.getItem("wb-panel") === "open") setPanelOpen(true);
     } catch {
@@ -293,9 +330,15 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
 
   // ---------------- 语音：TTS + 字幕逐字 ----------------
 
-  const speak = useCallback(async (text: string): Promise<void> => {
+  const speak = useCallback(async (text: string, board?: string): Promise<void> => {
     lastSpeechRef.current = text;
     const estMs = Math.max(1100, text.length * 165 + 350);
+    // 一个出口同时推字幕和板书：板书按同一个进度落字，字幕与白板永远对得上
+    const report = (p: number) => {
+      reportSpeechProgress(text, p);
+      setCaption({ text, board, reveal: Math.round(p * text.length) });
+    };
+    report(0);
     return new Promise<void>((resolve) => {
       let settled = false;
       const finish = () => {
@@ -303,7 +346,8 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
         settled = true;
         speechStopRef.current = null;
         audioRef.current = null;
-        setCaption((c) => ({ ...c, reveal: text.length }));
+        browserSpeechRef.current = null;
+        report(1);
         resolve();
       };
       if (exitedRef.current) return finish();
@@ -315,7 +359,7 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
           if (!pausedRef.current) elapsed += (now - last) * rateRef.current;
           last = now;
           const p = Math.min(1, elapsed / estMs);
-          setCaption({ text, reveal: Math.round(p * text.length) });
+          report(p);
           if (p < 1 && !exitedRef.current) raf = requestAnimationFrame(tick);
           else finish();
         };
@@ -325,11 +369,33 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
           finish();
         };
       };
-      if (!voiceRef.current || ttsUnavailable()) return readAlong();
+      // 没配云端语音（或未登录）：用浏览器自带音色（Windows / Edge 上是微软的中文音色）照样讲出来
+      const viaBrowser = () => {
+        if (!browserTtsSupported()) return readAlong();
+        void (async () => {
+          const ctl = await speakBrowser(text, {
+            rate: rateRef.current,
+            isPaused: () => pausedRef.current,
+            onProgress: (p) => {
+              if (!settled) report(p);
+            },
+            onEnd: finish,
+          });
+          if (settled) {
+            ctl?.stop();
+            return;
+          }
+          if (!ctl) return readAlong();
+          browserSpeechRef.current = ctl;
+          speechStopRef.current = () => ctl.stop();
+        })();
+      };
+      if (!voiceRef.current) return readAlong();
+      if (ttsUnavailable()) return viaBrowser();
       void (async () => {
         const segs = await fetchTtsSegments(text);
         if (settled) return;
-        if (!segs || segs.length === 0) return readAlong();
+        if (!segs || segs.length === 0) return ttsUnavailable() ? viaBrowser() : readAlong();
         const audios = segs.map((u) => {
           const a = new Audio(u);
           a.preload = "auto";
@@ -358,7 +424,7 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
             const onTime = () => {
               const frac = a.duration > 0 ? Math.min(1, a.currentTime / a.duration) : 0;
               const overall = Math.min(1, (doneDur + frac * durations[i]) / totalDur);
-              setCaption({ text, reveal: Math.round(overall * text.length) });
+              report(overall);
             };
             a.addEventListener("timeupdate", onTime);
             a.addEventListener("ended", () => next(), { once: true });
@@ -503,7 +569,7 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
           const lp = lpRef.current;
           const { cur, layout, pos } = placeNew(estimateCardHeight(action.board_content, colWidth(lp)));
           const id = `card-${action.board_uid}-${Date.now().toString(36)}`;
-          // 字跟着话写：整卡在配对那句讲解的约 85% 时长内写完（与字幕逐字推进同一套估时）
+          // 字跟着话写：按配对讲解的真实播放进度落字（revealMs 只在没有进度时兜底）
           const paired = item.actions.find((a) => a.type === "speak") as { spoken_text: string } | undefined;
           const revealMs = paired ? (Math.max(1100, paired.spoken_text.length * 165 + 350) / rateRef.current) * 0.85 : undefined;
           const card: NoteCardItem = {
@@ -521,6 +587,7 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
             animateReveal: !fastRef.current,
             revealGateStep: item.gateStep,
             revealMs,
+            syncText: paired?.spoken_text,
           };
           addItem(cur.id, layout, card);
           await new Promise((r) => window.setTimeout(r, 50));
@@ -529,10 +596,12 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
             await new Promise((r) => window.setTimeout(r, 30));
             return;
           }
-          // 保险丝：按期望书写时长留足余量（太短会把慢写的卡强行一次性显出）；暂停时由打字机自己停，不在这里计
-          const failSafe = new Promise<void>((r) =>
-            window.setTimeout(r, Math.min(45000, Math.max(4000 + 24 * action.board_content.length, (revealMs ?? 0) * 1.6 + 3000)))
-          );
+          // 收尾：有配对讲解就等它讲完（再给 1.2s 写完尾巴）；没有讲解按估时；总上限 60s 防卡死
+          const failSafe = new Promise<void>((r) => {
+            window.setTimeout(r, 60000);
+            if (paired && item.speechDone) void item.speechDone.then(() => window.setTimeout(r, 1200));
+            else window.setTimeout(r, Math.max(4000 + 24 * action.board_content.length, (revealMs ?? 0) * 1.6 + 3000));
+          });
           await Promise.race([waitCard(id), failSafe]);
           cardHandles.current.get(id)?.forceFinish();
           await new Promise((r) => window.setTimeout(r, 60));
@@ -550,7 +619,9 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
           }
           pushLog({ kind: "say", text: action.spoken_text, label });
           prefetchTts(action.spoken_text);
-          await speak(action.spoken_text);
+          const pairedBoard = item.actions.find((a) => a.type === "board") as { board_content: string } | undefined;
+          await speak(action.spoken_text, pairedBoard?.board_content);
+          item.resolveSpeech?.();
           if (item.gateStep != null) for (const [, h] of cardHandles.current) h.openGate();
           return;
         }
@@ -751,7 +822,9 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
     if (next.origin === "reply" && replyInsertRef.current > 0) replyInsertRef.current -= 1;
     setStatus((s) => (s === "ask" ? s : "playing"));
     try {
-      await Promise.all(next.actions.map((action) => runAction({ ...next, action })));
+      let resolveSpeech = () => {};
+      const speechDone = new Promise<void>((r) => (resolveSpeech = r));
+      await Promise.all(next.actions.map((action) => runAction({ ...next, action, speechDone, resolveSpeech })));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -826,28 +899,40 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
         for (const g of groupActions(replay.actions)) handleEvent({ type: "group", actions: g }, "script");
         return;
       }
+      let started = false;
+      const onEvent = (e: BoardEvent) => {
+        if (exitedRef.current) return;
+        if (e.type === "session_ready") started = true;
+        else if (e.type === "auth_required") {
+          setBlocked({ title: "先登录再上课", message: e.message });
+          setStatus("blocked");
+        } else if (e.type === "error") {
+          if (started) setError(e.message);
+          else {
+            setBlocked({ title: "这节课没能开讲", message: e.message });
+            setStatus("blocked");
+          }
+        } else handleEvent(e, "script");
+      };
       try {
+        // 进课堂时已经预先开讲：先把攒下的事件放出来，后续事件直接流进播放器
+        const pw = prewarmRef.current;
+        prewarmRef.current = null;
+        if (pw && pw.from === resumeFrom && !pw.failed) {
+          pw.sink = onEvent;
+          for (const e of pw.events.splice(0)) onEvent(e);
+          await pw.done;
+          if (pw.failed) throw new Error(pw.failed);
+          return;
+        }
+        pw?.ctrl.abort();
         const res = await fetch("/api/board", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "start", courseId, unitId, lectureId, resumeSegment: resumeFrom }),
         });
         if (!res.ok || !res.body) throw new Error(`请求失败 (${res.status})`);
-        let started = false;
-        await consumeSse<BoardEvent>(res, (e) => {
-          if (exitedRef.current) return;
-          if (e.type === "session_ready") started = true;
-          else if (e.type === "auth_required") {
-            setBlocked({ title: "先登录再上课", message: e.message });
-            setStatus("blocked");
-          } else if (e.type === "error") {
-            if (started) setError(e.message);
-            else {
-              setBlocked({ title: "这节课没能开讲", message: e.message });
-              setStatus("blocked");
-            }
-          } else handleEvent(e, "script");
-        });
+        await consumeSse<BoardEvent>(res, onEvent);
       } catch (e) {
         setBlocked({ title: "网络出了点问题", message: e instanceof Error ? e.message : String(e) });
         setStatus("blocked");
@@ -1015,8 +1100,12 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
   }, [courseId, lectureId, sharing, unitId]);
 
   useEffect(() => {
+    // 提前加载浏览器音色：没配云端语音时，开讲第一句就能出声
+    warmBrowserVoices();
     return () => {
       exitedRef.current = true;
+      prewarmRef.current?.ctrl.abort();
+      prewarmRef.current = null;
       speechStopRef.current?.();
       askWaiterRef.current?.();
       setTypewriterPaused(false);
@@ -1032,9 +1121,13 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
     setPaused(next);
     setTypewriterPaused(next);
     const a = audioRef.current;
-    if (next) a?.pause();
-    else {
+    const b = browserSpeechRef.current;
+    if (next) {
+      a?.pause();
+      b?.pause();
+    } else {
       if (a) void a.play().catch(() => {});
+      b?.resume();
       void pump();
     }
   }, [pump]);
@@ -1330,10 +1423,7 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
         {ask && <AskCard key={ask.stepId} ask={ask} busy={chatBusy} onSubmit={answerAsk} onSkip={skipAsk} />}
         {caption.text && status !== "done" && !(ask && !ask.answered) && (
           <div className="max-w-[800px] px-4 text-center">
-            <span className="inline rounded-[14px] bg-[rgba(250,250,250,0.82)] px-3.5 py-1.5 text-[16px] font-medium leading-[1.7] [box-decoration-break:clone] [-webkit-box-decoration-break:clone]">
-              <span className="text-[#1f1f1f]">{caption.text.slice(0, caption.reveal)}</span>
-              <span className="text-[#c4c4c4]">{caption.text.slice(caption.reveal)}</span>
-            </span>
+            <Caption text={caption.text} reveal={caption.reveal} board={caption.board} />
           </div>
         )}
         {/* 等下一句：不放转圈和文字，笔停在板上要落笔的地方轻点（见 BoardLayer thinking） */}

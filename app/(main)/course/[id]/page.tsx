@@ -6,6 +6,7 @@ import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { CourseOutline } from "@/types";
 import { CourseOutlineView } from "@/components/CourseOutlineView";
+import { readCourseCache, writeCourseCache } from "@/lib/course-cache";
 
 export default function CourseDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const [outline, setOutline] = useState<CourseOutline | null>(null);
@@ -16,18 +17,25 @@ export default function CourseDetailPage({ params }: { params: Promise<{ id: str
 
   useEffect(() => {
     let alive = true;
+    // 缓存里有（课程记录悬停预取 / 刚从课堂回来）：立刻出画面，下面的请求只做刷新
+    const cached = readCourseCache(id);
+    if (cached) {
+      setOutline(cached.outline);
+      setVisited(new Set<string>(cached.visited || []));
+    }
     fetch(`/api/courses/${id}`)
       .then(async (r) => {
         if (!r.ok) throw new Error(r.status === 404 ? "课程不存在或已失效" : `加载失败 (${r.status})`);
         return r.json();
       })
       .then((d) => {
+        writeCourseCache(id, { outline: d.course.outline, visited: d.visited || [] });
         if (!alive) return;
         setOutline(d.course.outline);
         setVisited(new Set<string>(d.visited || []));
       })
       .catch((e) => {
-        if (alive) setError(e instanceof Error ? e.message : String(e));
+        if (alive && !cached) setError(e instanceof Error ? e.message : String(e));
       });
     return () => {
       alive = false;

@@ -35,6 +35,8 @@ export interface NoteCardItem {
   typed?: boolean;
   /** 整卡写完的期望时长（≈ 配对讲解的时长）：字跟着话写出来 */
   revealMs?: number;
+  /** 配对讲解原文：板书按这句话的真实播放进度落字 */
+  syncText?: string;
 }
 
 export interface BoardImageItem {

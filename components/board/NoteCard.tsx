@@ -55,6 +55,7 @@ function NoteCardInner({ item, zoom, register, onHeight, onTypingDone, onCardCli
     enabled: item.animateReveal !== false,
     contentKey: `${item.id}:${item.content.length}`,
     durationMs: item.revealMs,
+    syncText: item.syncText,
     onDone,
     onPen: handlePen,
   });

@@ -141,6 +141,9 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
   };
   useEffect(() => {
     if (nextLecture) router.prefetch(`/classroom/${courseId}/${nextLecture.id}`);
+    // 白板课堂的代码包较大：在课程页空闲时先下好，点进去就能直接开
+    const t = window.setTimeout(() => void import("@/components/WhiteboardSession"), 600);
+    return () => window.clearTimeout(t);
   }, [router, courseId, nextLecture?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* 方案 C：学习仪表盘（进度环 + 统计 + 单元卡） */
@@ -330,19 +333,7 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
                               {capstonePassed ? "✓ 已结课" : "🏆 结课作品"}
                             </span>
                           ) : (
-                            <>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  router.push(`/lesson/${courseId}/${lec.id}`);
-                                }}
-                                title="自己掌握节奏：讲一点、做一题、再往下"
-                                className="shrink-0 rounded-full border border-[#e4e4e7] px-2 py-0.5 text-[11px] text-ink-soft hover:border-accent hover:text-accent"
-                              >
-                                分步学（试用）
-                              </button>
-                              <span className="shrink-0 text-[11px] text-ink-faint">{lec.duration_min} 分钟</span>
-                            </>
+                            <span className="shrink-0 text-[11px] text-ink-faint">{lec.duration_min} 分钟</span>
                           )}
                         </div>
                       );
