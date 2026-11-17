@@ -54,6 +54,7 @@ function NoteCardInner({ item, zoom, register, onHeight, onTypingDone, onCardCli
     // 断点续播的快进阶段不做逐字动画：内容直接可见
     enabled: item.animateReveal !== false,
     contentKey: `${item.id}:${item.content.length}`,
+    durationMs: item.revealMs,
     onDone,
     onPen: handlePen,
   });
@@ -81,8 +82,10 @@ function NoteCardInner({ item, zoom, register, onHeight, onTypingDone, onCardCli
     };
   }, [item.id, item.content, zoom, onHeight]);
 
-  // 一次性渲染成 HTML：React 不再协调这棵子树，打字机的 span 不会被重渲染冲掉
-  const html = useMemo(() => renderMarkdownToHtml(item.content), [item.content]);
+  // 一次性渲染成 HTML：React 不再协调这棵子树，打字机的 span 不会被重渲染冲掉。
+  // 注意必须把 {__html} 对象本身记住：React 19 按对象引用比较这个属性，每次渲染新建对象就会整块重设 innerHTML，
+  // 把逐字 span 全部冲掉——卡片量高度/镜头缩放都会触发重渲染，结果就是"字一块一块蹦出来"。
+  const html = useMemo(() => ({ __html: renderMarkdownToHtml(item.content) }), [item.content]);
 
   return (
     <div
@@ -105,7 +108,7 @@ function NoteCardInner({ item, zoom, register, onHeight, onTypingDone, onCardCli
         }
       }}
     >
-      <div ref={bodyRef} className="board-note-body" dangerouslySetInnerHTML={{ __html: html }} />
+      <div ref={bodyRef} className="board-note-body" dangerouslySetInnerHTML={html} />
       {item.decorations && item.decorations.length > 0 ? (
         <Decorations rootRef={bodyRef} decorations={item.decorations} zoom={zoom} version={decorReady} />
       ) : null}

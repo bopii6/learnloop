@@ -433,3 +433,10 @@ select:focus-visible {
   .skeleton::after { animation: none; }
 }
 
+
+/* 分步学习课：正文读起来舒服——行高放松、标题去掉白板的高亮条 */
+.lesson-md p, .lesson-md li { line-height: 1.85; }
+.lesson-md p { margin: 0.7em 0; }
+.lesson-md strong { font-weight: 600; color: #18181b; }
+.lesson-md .overlay-note-title-highlight { background: none; padding: 0; }
+.lesson-md pre { margin: 0.9em 0; }

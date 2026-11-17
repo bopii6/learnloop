@@ -9,8 +9,7 @@
 }
 
 .wb-hand {
-  font-family: "Excalifont", var(--wb-cjk-font, "Segoe UI"), "PingFang SC", "Microsoft YaHei", system-ui,
-    sans-serif;
+  font-family: var(--board-font, Virgil, Xiaolai, "Segoe UI Emoji", "Apple Color Emoji", "PingFang SC", "Microsoft YaHei", sans-serif);
 }
 
 /* ---- 画布底：近白 + 点阵（与 Hyperknow 相同语言） ---- */
@@ -28,55 +27,98 @@
 .board-note-card {
   position: absolute;
   box-sizing: border-box;
-  color: #17181a;
+  color: #262626;
   pointer-events: none;
 }
 .board-note-body {
   position: relative;
-  padding: 0 13px 4px;
-  font-size: var(--board-body-fs, 20px);
-  line-height: 1.62;
+  padding: 0 11px 2px;
+  font-size: var(--board-body-fs, 17px);
+  line-height: 1.625;
+  overflow-wrap: anywhere;
 }
+.board-note-body p { margin: 0.2em 0; line-height: 1.5; }
+.board-note-body ul,
+.board-note-body ol { margin: 0; padding-left: 1.25em; }
+.board-note-body ul { list-style: none; }
+.board-note-body ol { list-style: decimal; }
+.board-note-body li { margin: 0.32em 0; }
+.board-note-body li > p { margin: 0; }
 .board-note-body h1,
 .board-note-body h2,
 .board-note-body h3 {
-  font-size: var(--board-title-fs, 24px);
+  font-size: 1.18em;
   font-weight: 700;
-  line-height: 1.35;
-  margin: 0.1em 0 0.35em;
+  line-height: 1.4;
+  margin: 0.15em 0 0.3em;
 }
-.board-note-body h2 { font-size: calc(var(--board-title-fs, 24px) * 0.92); }
-.board-note-body h3 { font-size: calc(var(--board-title-fs, 24px) * 0.84); }
-.board-note-body p { margin: 0.18em 0; }
-.board-note-body ul,
-.board-note-body ol { margin: 0.18em 0; padding-left: 1.25em; }
-.board-note-body li { margin: 0.12em 0; }
-.board-note-body strong { font-weight: 700; }
+.board-note-body strong { font-size: 1.18em; font-weight: 700; }
+.board-note-body h1 strong, .board-note-body h2 strong, .board-note-body h3 strong { font-size: 1em; }
 .board-note-body code {
   font-family: "Cascadia Code", ui-monospace, monospace;
-  font-size: calc(var(--board-body-fs, 20px) * 0.82);
-  background: #0000000d;
+  font-size: 0.82em;
+  background: #0000000a;
   border-radius: 4px;
   padding: 0 4px;
 }
+.board-note-body pre {
+  margin: 0.4em 0;
+  padding: 0.55em 0.75em;
+  border-radius: 6px;
+  background: #f6f6f4;
+  overflow-x: auto;
+  line-height: 1.5;
+}
+.board-note-body pre code { background: transparent; padding: 0; font-size: 0.8em; }
+/* 表格：手绘抖动边框（SVG 位移滤镜，定义在 BoardLayer） */
 .board-note-body table {
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   width: 100%;
-  margin: 0.3em 0;
-  font-size: calc(var(--board-body-fs, 20px) * 0.86);
+  margin: 0.45em 0;
+  line-height: 1.45;
+  position: relative;
+}
+.board-note-body table::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border: 1.7px solid rgba(38, 38, 38, 0.6);
+  border-radius: 4px;
+  filter: url(#wb-wob-a);
 }
 .board-note-body th,
 .board-note-body td {
-  border: 1.4px solid #c9c4ba;
-  padding: 5px 8px;
+  position: relative;
+  padding: 0.24em 0.55em;
   text-align: left;
+  vertical-align: top;
+  border: none;
 }
-.board-note-body th { font-weight: 700; background: #00000008; }
-.board-note-body .katex { font-size: 1.02em; }
+.board-note-body th::before,
+.board-note-body td::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border: 0 solid rgba(38, 38, 38, 0.48);
+  filter: url(#wb-wob-b);
+}
+.board-note-body th:not(:last-child)::before,
+.board-note-body td:not(:last-child)::before { border-right-width: 1.4px; }
+.board-note-body thead th::before { border-bottom-width: 2.2px; }
+.board-note-body tbody tr:not(:last-child) td::before { border-bottom-width: 1.4px; }
+.board-note-body th { font-weight: 700; }
+.board-note-body .katex { font: 1.05em KaTeX_Main, "Times New Roman", serif; }
+.board-note-body .katex-display { margin: 0.5em 0; }
 
 /* 标题标记条（chrome：跟着字写完才扫入） */
 .overlay-note-title-highlight {
-  background: linear-gradient(transparent 58%, #fde68a 58%, #fde68a 92%, transparent 92%);
+  background: linear-gradient(transparent 55%, rgba(254, 243, 199, 0.78) 55%);
+  border-radius: 2px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
   background-repeat: no-repeat;
   background-size: 100% 100%;
 }
@@ -109,6 +151,42 @@
   z-index: 30;
   pointer-events: none;
   transition: left 60ms linear, top 60ms linear;
+}
+
+/* 讲师在想下一句：笔停在要落笔的地方，像人思考时笔尖轻点纸面，点出三个淡墨点 */
+.board-idle-pen {
+  position: absolute;
+  z-index: 30;
+  pointer-events: none;
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  animation: board-idle-in 400ms ease both;
+}
+.board-idle-pen > svg {
+  transform-origin: 2px 22px;
+  animation: board-pen-tap 1.5s ease-in-out infinite;
+}
+.board-idle-dots { display: flex; gap: 5px; padding-bottom: 2px; }
+.board-idle-dots i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #262626;
+  opacity: 0;
+  animation: board-dot 1.5s ease-in-out infinite;
+}
+.board-idle-dots i:nth-child(2) { animation-delay: 0.25s; }
+.board-idle-dots i:nth-child(3) { animation-delay: 0.5s; }
+@keyframes board-idle-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes board-pen-tap {
+  0%, 100% { transform: translateY(-3px) rotate(-4deg); }
+  45% { transform: translateY(0) rotate(0); }
+}
+@keyframes board-dot {
+  0%, 20% { opacity: 0; }
+  40%, 70% { opacity: 0.28; }
+  100% { opacity: 0; }
 }
 
 /* ---- 圈画 / 高亮（SVG 文本锚定） ---- */
@@ -146,7 +224,7 @@
   margin-top: 6px;
   text-align: center;
   color: #6b7076;
-  font-size: calc(var(--board-body-fs, 20px) * 0.72);
+  font-size: calc(var(--board-body-fs, 17px) * 0.72);
 }
 .board-media-pending {
   width: 100%;
@@ -157,7 +235,7 @@
   align-items: center;
   justify-content: center;
   color: #9aa0a6;
-  font-size: calc(var(--board-body-fs, 20px) * 0.7);
+  font-size: calc(var(--board-body-fs, 17px) * 0.7);
   animation: wb-pulse 1.4s ease-in-out infinite;
 }
 @keyframes wb-pulse {
@@ -170,3 +248,18 @@
   border-radius: 4px;
   background: #fff;
 }
+
+/* ---- 题卡上的红笔批改：勾 / 划线，像讲师当场用红笔画上去 ---- */
+.ask-pen-mark { overflow: visible; }
+.ask-pen-mark path {
+  fill: none;
+  stroke: #c2410c;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: ask-pen-draw 520ms 120ms ease-out forwards;
+}
+@keyframes ask-pen-draw { to { stroke-dashoffset: 0; } }
+.ask-feedback { animation: tw-fade 360ms 420ms ease both; }

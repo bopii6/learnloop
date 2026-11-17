@@ -110,8 +110,9 @@ export function Decorations({ rootRef, decorations = EMPTY_DECOS, zoom, version 
             ry={g.ry}
             fill="none"
             stroke={g.color || CIRCLE_COLOR}
-            strokeWidth={2}
+            strokeWidth={2.5}
             strokeLinecap="round"
+            filter="url(#wb-rough)"
             style={{
               strokeDasharray: ellipsePerimeter(g.rx, g.ry),
               strokeDashoffset: ellipsePerimeter(g.rx, g.ry),

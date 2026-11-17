@@ -18,6 +18,7 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { generateText, streamText, type LanguageModelUsage } from "ai";
 import type { ZodTypeAny } from "zod";
+import { jsonrepair } from "jsonrepair";
 
 export type LlmTask = "fast" | "chat" | "design" | "script" | "judge";
 type Thinking = "off" | "low" | "high" | "max";
@@ -165,6 +166,15 @@ export async function generateJson<T>(system: string, user: string, opts: JsonOp
       if (parsed === null) {
         lastProblem = finishReason === "length" ? "输出被截断（超长），请精简内容" : "输出不是合法 JSON";
         console.warn(`[llm:${opts.task}] 无法解析（finish=${finishReason}，${text.length} 字）：${text.slice(0, 160).replace(/\s+/g, " ")}`);
+        if (process.env.LLM_DEBUG_DUMP) {
+          try {
+            JSON.parse(text.trim());
+          } catch (e) {
+            const m = /position (\d+)/.exec(String(e));
+            const at = m ? Number(m[1]) : 0;
+            console.warn(`[llm:debug] ${String(e).slice(0, 120)} …${JSON.stringify(text.slice(Math.max(0, at - 80), at + 40))}`);
+          }
+        }
       } else if (opts.schema) {
         const check = opts.schema.safeParse(parsed);
         if (check.success) return check.data as T;
@@ -192,8 +202,26 @@ function parseJson(text: string): unknown | null {
   try {
     return JSON.parse(text.trim());
   } catch {
-    return extractJson(text);
+    const got = extractJson(text);
+    if (got != null) return got;
+    // 常见畸形：中文句子里夹了英文双引号（谁是"一"谁是"多"），把字符串提前截断了——换成「」再试
+    const repaired = repairCjkQuotes(text);
+    const fixedQuotes = repaired !== text ? extractJson(repaired) : null;
+    if (fixedQuotes != null) return fixedQuotes;
+    // 结构性畸形（括号没闭合 / 多了一层 / 漏逗号）：交给 jsonrepair
+    try {
+      return JSON.parse(jsonrepair(repaired));
+    } catch {
+      return null;
+    }
   }
+}
+
+/** 两侧紧贴中文（或中文标点）的成对英文双引号 → 「」。JSON 结构里的引号两侧是 : , { [ 空白，不会被误伤 */
+export function repairCjkQuotes(text: string): string {
+  // 引号内容不能以 JSON 结构符号开头（否则会把 "正常","好" 两个字符串之间的边界误当成一对引号）
+  const re = /([㐀-鿿＀-￯　-〿])"(?![\s,:[\]{}])([^"\n]{1,40}?)"(?=[㐀-鿿＀-￯　-〿]|"\s*[,}\]])/g;
+  return text.replace(re, "$1「$2」");
 }
 
 /** 从模型输出中容错提取 JSON（模型带 ```json 包裹或多余文字时） */
@@ -257,6 +285,137 @@ export async function generatePlainText(
 }
 
 // ---- 流式回答 ----
+/**
+ * JSON Lines 增量解析器（纯函数，可单测）：push(文本块) 逐块喂，end() 收尾。
+ * 一行是完整对象就立刻交出；模型若把一个对象美化成多行（实测会），就继续攒行，
+ * 括号配平（字符串感知）后再解析——宁可晚一点交，也不丢内容。坏块先修引号、再 jsonrepair，修不了记 badLines。
+ */
+export function createJsonLinesParser(onObject: (obj: Record<string, unknown>) => void | Promise<void>) {
+  let buf = "";
+  let pending = "";
+  const stats = { objects: 0, badLines: 0 };
+  const depthOf = (s: string) => {
+    let depth = 0;
+    let inStr = false;
+    let esc = false;
+    for (const ch of s) {
+      if (inStr) {
+        if (esc) esc = false;
+        else if (ch === "\\") esc = true;
+        else if (ch === '"') inStr = false;
+        continue;
+      }
+      if (ch === '"') inStr = true;
+      else if (ch === "{" || ch === "[") depth++;
+      else if (ch === "}" || ch === "]") depth--;
+    }
+    return depth;
+  };
+  const parseLoose = (s: string): unknown => {
+    const body = s.trim().replace(/,\s*$/, "");
+    try {
+      return JSON.parse(body);
+    } catch {
+      try {
+        return JSON.parse(jsonrepair(repairCjkQuotes(body)));
+      } catch {
+        return null;
+      }
+    }
+  };
+  const emit = async (obj: unknown) => {
+    if (obj && typeof obj === "object" && !Array.isArray(obj)) {
+      stats.objects += 1;
+      await onObject(obj as Record<string, unknown>);
+    } else stats.badLines += 1;
+  };
+  const take = async (line: string) => {
+    const raw = line.replace(/\r$/, "");
+    const s = raw.trim();
+    if (/^```(json|jsonl)?$/i.test(s)) return;
+    if (!pending) {
+      if (!s.startsWith("{")) return;
+      pending = s;
+    } else {
+      pending += "\n" + raw;
+    }
+    if (depthOf(pending) > 0) {
+      // 多行对象还没写完：等下一行；防失控：攒太长就放弃这一块
+      if (pending.length > 24000) {
+        stats.badLines += 1;
+        pending = "";
+      }
+      return;
+    }
+    const block = pending;
+    pending = "";
+    await emit(parseLoose(block));
+  };
+  return {
+    stats,
+    async push(chunk: string) {
+      buf += chunk;
+      let nl: number;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl);
+        buf = buf.slice(nl + 1);
+        await take(line);
+      }
+    },
+    async end() {
+      await take(buf);
+      buf = "";
+      if (pending) {
+        // 流结束时还没配平（被截断）：尽力修一次
+        const block = pending;
+        pending = "";
+        await emit(parseLoose(block));
+      }
+    },
+  };
+}
+
+/**
+ * 流式逐行 JSON（JSONL）：模型每写完一个对象就回调一次——白板课靠它"边生成边上板"，不必等整段写完。
+ */
+export async function streamJsonLines(
+  system: string,
+  user: string,
+  onObject: (obj: Record<string, unknown>) => void | Promise<void>,
+  opts: { task: LlmTask; maxTokens?: number; temperature?: number; thinking?: Thinking } = { task: "script" }
+): Promise<{ objects: Record<string, unknown>[]; text: string; badLines: number; firstLineMs: number | null }> {
+  const base = routeFor(opts.task);
+  const route = opts.thinking ? { ...base, thinking: opts.thinking } : base;
+  const t0 = Date.now();
+  const result = streamText({
+    model: modelFor(route, false),
+    system: system + "\n\n【输出格式】JSON Lines：每行一个完整的 JSON 对象，行与行之间只有换行；不要 Markdown 围栏、不要任何解释。字符串里的换行写成 \\n。",
+    prompt: user,
+    temperature: opts.temperature ?? route.temperature,
+    maxOutputTokens: budget(route, opts.maxTokens ?? 3000),
+    abortSignal: AbortSignal.timeout(240_000),
+  });
+  const objects: Record<string, unknown>[] = [];
+  let text = "";
+  let firstLineMs: number | null = null;
+  const parser = createJsonLinesParser(async (obj) => {
+    if (firstLineMs == null) firstLineMs = Date.now() - t0;
+    objects.push(obj);
+    await onObject(obj);
+  });
+  for await (const chunk of result.textStream) {
+    text += chunk;
+    await parser.push(chunk);
+  }
+  await parser.end();
+  try {
+    addUsage(opts.task, await result.usage);
+  } catch {
+    // 统计失败可忽略
+  }
+  return { objects, text, badLines: parser.stats.badLines, firstLineMs };
+}
+
 export async function streamAnswer(
   system: string,
   user: string,

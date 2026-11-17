@@ -2,7 +2,7 @@
 
 // 逐字落字（打字机）：对标 Hyperknow 的 useTypewriterReveal
 //  - 文本逐字 span 溶解（opacity+blur），公式/图片整体淡入，布局始终稳定（不换行抖动）；
-//  - 速度：单字间隔 clamp(2880/总单元数, 18, 50) ms → 整卡约 2.4-2.9s；
+//  - 速度：跟着配对讲解的时长写（字随话出）；没有时长时单字间隔 clamp(2880/总单元数, 18, 50) ms；
 //  - "chrome 保护"：标题标记条/表格线绑到其所属的第一个/最后一个字，跟着一起出现；
 //  - 闸门：全部落字完成且 gateOpen（配对讲解播完）才回调 onDone；另有 forceFinish 保险丝。
 import { useCallback, useEffect, useRef } from "react";
@@ -38,9 +38,22 @@ function offsetWithin(el: HTMLElement, root: HTMLElement): { x: number; y: numbe
 const CHROME_SELECTOR = ".overlay-note-title-highlight, table, th, td";
 const UNIT_SELECTOR = ".katex, img, .tw-unit";
 
+/** 课堂暂停时笔也停（模块级开关：播放器 togglePause 时设置） */
+let penPaused = false;
+export function setTypewriterPaused(paused: boolean) {
+  penPaused = paused;
+}
+
 export function useTypewriter(
   rootRef: React.RefObject<HTMLElement | null>,
-  opts: { enabled: boolean; contentKey: string; onDone?: () => void; onPen?: (p: { x: number; y: number } | null) => void }
+  opts: {
+    enabled: boolean;
+    contentKey: string;
+    /** 期望写完整张卡的时长（≈ 配对那句讲解的时长）：字跟着话一起往外写，而不是 3 秒内整块蹦出 */
+    durationMs?: number;
+    onDone?: () => void;
+    onPen?: (p: { x: number; y: number } | null) => void;
+  }
 ): TypewriterApi {
   const rafRef = useRef<number | null>(null);
   const gateRef = useRef(false);
@@ -69,6 +82,14 @@ export function useTypewriter(
       onDoneRef.current?.();
       return cleanupFrames;
     }
+
+    // 幂等：开发模式（StrictMode）会把副作用跑两遍，上一遍留下的逐字 span 先还原成纯文本，避免嵌套 span
+    for (const sp of Array.from(root.querySelectorAll(".tw-char"))) {
+      sp.parentNode?.replaceChild(document.createTextNode(sp.textContent || ""), sp);
+    }
+    for (const el of Array.from(root.querySelectorAll(".tw-unit"))) el.classList.remove("tw-unit", "tw-hidden", "tw-shown");
+    for (const el of Array.from(root.querySelectorAll(".tw-chrome-off, .tw-chrome-in"))) el.classList.remove("tw-chrome-off", "tw-chrome-in");
+    root.normalize();
 
     // ---- 1) 打点：文本逐字 span 化；公式/图片整元；chrome 元素收起来 ----
     const units: Unit[] = [];
@@ -136,7 +157,10 @@ export function useTypewriter(
     }
 
     // ---- 2) 落字循环 ----
-    const per = Math.max(18, Math.min(50, Math.round(2880 / Math.max(1, units.length))));
+    // 有讲解时长：整卡写满约等于这句话讲完（每字 18-160ms）；没有就沿用实测的 2.4-2.9s 整卡节奏
+    const per = opts.durationMs
+      ? Math.max(18, Math.min(160, Math.round(opts.durationMs / Math.max(1, units.length))))
+      : Math.max(18, Math.min(50, Math.round(2880 / Math.max(1, units.length))));
     let cursor = 0;
     let acc = 0;
     let last = performance.now();
@@ -185,6 +209,10 @@ export function useTypewriter(
       rafRef.current = null;
       const dt = now - last;
       last = now;
+      if (penPaused) {
+        rafRef.current = requestAnimationFrame(tick);
+        return;
+      }
       acc += dt;
 
       let lastUnit: Unit | null = null;

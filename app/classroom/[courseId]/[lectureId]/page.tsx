@@ -89,12 +89,19 @@ export default function LecturePage({
     );
   }
 
+  // 下一讲：大纲顺序里的下一节（测验 / 结课作品也算——讲完直接进单元测验是对的节奏）
+  const flat = outline.units.flatMap((u) => u.lectures);
+  const next = flat[flat.findIndex((l) => l.id === lectureId) + 1];
+
   return (
     <WhiteboardSession
+      key={lectureId}
       courseId={courseId}
       unitId={unit.id}
       lectureId={lectureId}
       lectureTitle={lecture.title}
+      nextLecture={next ? { id: next.id, title: next.title } : undefined}
+      onNextLecture={next ? () => router.push(`/classroom/${courseId}/${next.id}`) : undefined}
       onExit={() => router.push(`/course/${courseId}`)}
     />
   );

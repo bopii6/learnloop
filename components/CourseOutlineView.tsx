@@ -133,9 +133,15 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
   };
 
   // 进入课节（原版同款：点"学习"开白板课堂）—— 独立路由，可刷新、可后退
+  // 上课页模块多，首次打开要加载一会儿：点下去立刻给反馈，并提前预取"下一讲"
+  const [opening, setOpening] = useState<string | null>(null);
   const openLecture = (lec: { id: string; title: string }) => {
+    setOpening(lec.id);
     router.push(`/classroom/${courseId}/${lec.id}`);
   };
+  useEffect(() => {
+    if (nextLecture) router.prefetch(`/classroom/${courseId}/${nextLecture.id}`);
+  }, [router, courseId, nextLecture?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* 方案 C：学习仪表盘（进度环 + 统计 + 单元卡） */
   const pct = Math.round((visitedCount / Math.max(learnableLectures.length, 1)) * 100);
@@ -212,8 +218,12 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
               <div className="text-[11px] opacity-70">{visitedCount > 0 ? "继续学习 · 下一讲" : "开始学习 · 第 1 讲"}</div>
               <div className="truncate text-[15px] font-semibold">{nextLecture.title}</div>
             </div>
-            <button onClick={() => openLecture(nextLecture)} className="shrink-0 rounded-full bg-white px-4 py-2 text-[12.5px] font-semibold text-[#18181b] hover:opacity-90">
-              ▶ 开始本讲
+            <button
+              onClick={() => openLecture(nextLecture)}
+              disabled={opening === nextLecture.id}
+              className="shrink-0 rounded-full bg-white px-4 py-2 text-[12.5px] font-semibold text-[#18181b] hover:opacity-90 disabled:opacity-70"
+            >
+              {opening === nextLecture.id ? "正在进入…" : "▶ 开始本讲"}
             </button>
           </div>
         )}
@@ -310,6 +320,7 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
                         <div key={lec.id} onClick={() => openLecture(lec)} className={`flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 transition-colors ${isNext ? "bg-accent-soft/60" : "hover:bg-[#fafafa]"}`}>
                           <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] ${done ? "bg-accent text-white" : "border-[1.5px] border-[#d4d4d8] text-transparent"}`}>{done ? "✓" : "·"}</span>
                           <span className={`min-w-0 flex-1 truncate text-[13px] ${done ? "text-ink-faint" : "text-ink"}`}>{lec.title}</span>
+                          {opening === lec.id && <span className="shrink-0 text-[11px] text-accent">正在进入…</span>}
                           {lec.content_type === "quiz" ? (
                             <span className={`shrink-0 text-[11px] ${quizPassed.get(lec.id) ? "text-[#4d7c43]" : "text-ink-faint"}`}>
                               {quizPassed.get(lec.id) ? "✓ 测验通过" : "📝 单元测验"}
@@ -319,7 +330,19 @@ export function CourseOutlineView({ outline, courseId, visited }: CourseOutlineV
                               {capstonePassed ? "✓ 已结课" : "🏆 结课作品"}
                             </span>
                           ) : (
-                            <span className="shrink-0 text-[11px] text-ink-faint">{lec.duration_min} 分钟</span>
+                            <>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  router.push(`/lesson/${courseId}/${lec.id}`);
+                                }}
+                                title="自己掌握节奏：讲一点、做一题、再往下"
+                                className="shrink-0 rounded-full border border-[#e4e4e7] px-2 py-0.5 text-[11px] text-ink-soft hover:border-accent hover:text-accent"
+                              >
+                                分步学（试用）
+                              </button>
+                              <span className="shrink-0 text-[11px] text-ink-faint">{lec.duration_min} 分钟</span>
+                            </>
                           )}
                         </div>
                       );

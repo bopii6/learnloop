@@ -493,6 +493,13 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
     window.setTimeout(() => setCancelNotice(null), 8000);
   }, [courseId]);
 
+  /** 单选题：点了就提交（留 200ms 让选中态被看见），不用再找"继续"按钮 */
+  const pickOne = (label: string) => {
+    if (loading) return;
+    setSelectedOptions([label]);
+    window.setTimeout(() => void submitAnswer(label), 200);
+  };
+
   const toggleOption = (label: string) => {
     if (!question) return;
     if (question.multi) {
@@ -998,121 +1005,88 @@ export function CourseGenerator({ onComplete }: CourseGeneratorProps) {
           <StageHeader title="构思初步思路" n={textbookId ? 3 : 2} state={clarifyDone ? "done" : "running"} />
           {step === "clarify" && !question && loading && <LiveStatus pool={CLARIFY_STATUS} />}
 
-          {/* 已回答轮次：完整卡片回显（选项高亮所选） */}
-          {answeredRounds.map((r, i) => (
-            <div key={i} className="mb-5 opacity-75">
-              <div className="flex items-start justify-between mb-2">
-                <div className="text-[14px] font-medium flex-1">
-                  <span className="text-ink-faint mr-2">Q{i + 1}</span>
-                  {r.question.question}
+          {/* 已回答：一题一行（问题淡、回答实），不再把整组选项卡片堆在页面上 */}
+          {answeredRounds.length > 0 && (
+            <div className="mb-5 space-y-2">
+              {answeredRounds.map((r, i) => (
+                <div key={i} className="flex items-baseline gap-3 text-[13px]">
+                  <span className="w-3 shrink-0 tabular-nums text-ink-faint">{i + 1}</span>
+                  <span className="min-w-0 flex-1 truncate text-ink-faint">{r.question.question}</span>
+                  <span className="max-w-[45%] shrink-0 truncate font-medium text-ink">{r.freeText || r.selected.join("、")}</span>
                 </div>
-                <span className="text-[11px] text-accent border border-accent/30 rounded px-2 py-0.5 shrink-0">
-                  ✓ 已回答
+              ))}
+            </div>
+          )}
+
+          {/* 当前这一问：一句题干 + 一行一个选项；单选点了就走 */}
+          {question && step === "clarify" && (
+            <div key={round} className="fade-up">
+              <div className="mb-3 flex items-baseline justify-between gap-4">
+                <div className="text-[16px] font-semibold leading-snug text-ink">{question.question}</div>
+                <span className="shrink-0 text-[12px] tabular-nums text-ink-faint">
+                  {round} / {totalRounds}
                 </span>
               </div>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {r.question.options.length > 0 ? (
-                  r.question.options.map((opt) => {
-                    const picked = r.selected.includes(opt.label) || r.freeText === opt.label;
-                    return (
-                      <div
-                        key={opt.label}
-                        className={`text-left rounded-xl border px-4 py-3 ${
-                          picked ? "border-accent bg-accent/5" : "border-[#e4e4e7] bg-[#fafafa]"
-                        }`}
-                      >
-                        <div className="text-[13px] font-medium mb-0.5">{opt.label}</div>
-                        {opt.desc && <div className="text-[11.5px] text-ink-soft leading-relaxed">{opt.desc}</div>}
-                      </div>
-                    );
-                  })
-                ) : (
-                  <div className="rounded-xl border border-accent/30 bg-accent/5 px-4 py-3 text-[13px] text-ink sm:col-span-2">
-                    你的回答：{r.freeText}
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
-
-          {/* 当前轮次的问题卡 */}
-          {question && step === "clarify" && (
-            <div className="rounded-2xl border border-[#e4e4e7] bg-white p-5 fade-up">
-              <div className="flex items-start justify-between mb-1">
-                <div className="text-[15px] font-medium flex-1">
-                  <span className="text-ink-faint mr-2">Q{round}</span>
-                  {question.question}
-                  <span className="ml-2 text-[11px] text-ink-faint font-normal">已答 {answeredRounds.length} 题 · 一般 2~4 题，答完就出蓝图</span>
-                </div>
-                <div className="flex gap-2 shrink-0 ml-4">
-                  <span className="text-[11.5px] text-ink-faint border border-[#e4e4e7] rounded px-2 py-0.5">
-                    {question.multi ? "多选题" : "单选题"}
-                  </span>
-                  {question.skippable && (
+              <div className="space-y-2">
+                {question.options.map((opt) => {
+                  const on = selectedOptions.includes(opt.label);
+                  return (
                     <button
-                      onClick={() => submitAnswer("跳过")}
+                      key={opt.label}
                       disabled={loading}
-                      className="text-[11.5px] text-ink-faint border border-[#e4e4e7] rounded px-2 py-0.5 hover:border-accent hover:text-accent transition-colors"
+                      onClick={() => (question.multi ? toggleOption(opt.label) : pickOne(opt.label))}
+                      className={`flex w-full items-baseline gap-3 rounded-xl border px-4 py-3 text-left transition-colors ${
+                        on ? "border-[#262626] bg-[#fafafa]" : "border-[#ececec] bg-white hover:border-[#c4c4c4]"
+                      }`}
                     >
+                      <span className="shrink-0 text-[14px] font-medium text-ink">{opt.label}</span>
+                      {opt.desc && (
+                        <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink-faint" title={opt.desc}>
+                          {opt.desc}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+                <input
+                  value={customAnswer}
+                  onChange={(e) => {
+                    setCustomAnswer(e.target.value);
+                    if (e.target.value) setSelectedOptions([]);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.nativeEvent.isComposing && customAnswer.trim()) submitAnswer(customAnswer.trim());
+                  }}
+                  disabled={loading}
+                  placeholder="都不对？写你自己的，回车提交"
+                  className="w-full rounded-xl border border-dashed border-[#e0e0e0] bg-transparent px-4 py-2.5 text-[13.5px] outline-none placeholder:text-ink-faint focus:border-solid focus:border-[#c4c4c4] focus:bg-white"
+                />
+              </div>
+              <div className="mt-3 flex min-h-8 items-center justify-between text-[12px] text-ink-faint">
+                <span>{question.multi ? "可多选" : ""}</span>
+                <div className="flex items-center gap-4">
+                  {question.skippable && (
+                    <button onClick={() => submitAnswer("跳过")} disabled={loading} className="hover:text-ink disabled:opacity-40">
                       跳过
                     </button>
                   )}
+                  {question.multi && (
+                    <button
+                      onClick={() => submitAnswer(customAnswer.trim() ? customAnswer.trim() : selectedOptions.join("、"))}
+                      disabled={loading || (!customAnswer.trim() && selectedOptions.length === 0)}
+                      className="rounded-full bg-[#262626] px-4 py-1.5 text-[12.5px] font-medium text-white hover:opacity-90 disabled:opacity-25"
+                    >
+                      继续
+                    </button>
+                  )}
                 </div>
-              </div>
-              {question.reason && (
-                <div className="text-[12px] text-ink-faint mb-4 flex items-start gap-1.5">
-                  <span>{question.reason}</span>
-                </div>
-              )}
-              <div className="grid gap-3 sm:grid-cols-2">
-                {question.options.map((opt) => (
-                  <button
-                    key={opt.label}
-                    onClick={() => toggleOption(opt.label)}
-                    className={`text-left rounded-2xl border px-5 py-4 transition-colors ${
-                      selectedOptions.includes(opt.label)
-                        ? "border-accent bg-accent/5"
-                        : "border-[#e4e4e7] bg-white hover:border-accent/60"
-                    }`}
-                  >
-                    <div className="font-semibold text-[13.5px] mb-1">{opt.label}</div>
-                    {opt.desc && <div className="text-[12px] text-ink-soft leading-relaxed">{opt.desc}</div>}
-                  </button>
-                ))}
-                <div
-                  className={`rounded-2xl border px-5 py-4 sm:col-span-2 transition-colors ${
-                    customAnswer ? "border-accent bg-accent/5" : "border-[#e4e4e7] bg-white"
-                  }`}
-                >
-                  <div className="text-[12.5px] text-ink-soft mb-2">都不太对？写个自己的</div>
-                  <input
-                    value={customAnswer}
-                    onChange={(e) => {
-                      setCustomAnswer(e.target.value);
-                      if (e.target.value) setSelectedOptions([]);
-                    }}
-                    placeholder="其他…"
-                    className="w-full bg-transparent outline-none text-[13.5px]"
-                  />
-                </div>
-              </div>
-              <div className="mt-5 flex justify-end">
-                <button
-                  onClick={() =>
-                    submitAnswer(customAnswer.trim() ? customAnswer.trim() : selectedOptions.join("、"))
-                  }
-                  disabled={loading || (!customAnswer.trim() && selectedOptions.length === 0)}
-                  className="rounded-full border border-[#d4d4d8] px-6 py-2 text-[13px] text-ink hover:border-accent hover:text-accent disabled:opacity-40 transition-colors"
-                >
-                  {loading ? "继续中..." : "继续"}
-                </button>
               </div>
             </div>
           )}
         </section>
       )}
 
-      {/* 阶段 4（文档建课）/ 3（纯文字）：蓝图 */}
+{/* 阶段 4（文档建课）/ 3（纯文字）：蓝图 */}
       {(step === "blueprint" || step === "outline" || step === "done") && blueprint && (
         <section className="mb-8">
           <StageHeader title="打造课程" n={textbookId ? 4 : 3} state={step === "blueprint" ? (loading ? "running" : "done") : "done"} />

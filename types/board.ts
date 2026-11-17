@@ -33,6 +33,8 @@ export interface NoteCardItem {
   revealGateOpen?: boolean;
   /** 打字机是否已完成 */
   typed?: boolean;
+  /** 整卡写完的期望时长（≈ 配对讲解的时长）：字跟着话写出来 */
+  revealMs?: number;
 }
 
 export interface BoardImageItem {
@@ -126,6 +128,10 @@ export interface BoardState {
 export type BoardAction =
   | { type: "new_page"; step_id: number; page_id: string; title?: string }
   | { type: "new_column"; step_id: number; page_id: string }
+  /** 分段讲课：一段开始（客户端换列、更新进度点；final = 收尾段） */
+  | { type: "segment_start"; step_id: number; segment: number; title: string; total: number; final?: boolean }
+  /** 一段讲完且没有检查题：客户端自动请求下一段 */
+  | { type: "segment_end"; step_id: number; segment: number; auto: boolean }
   | {
       type: "board";
       step_id: number;
@@ -155,10 +161,15 @@ export type BoardAction =
       type: "ask";
       step_id: number;
       mode: "choice" | "open";
+      /** 段末检查的形式：选择 / 一句话作答 / 写代码（浏览器内运行判题） */
+      kind?: "choice" | "open" | "code";
+      /** 属于第几段（作答后据此请求下一段） */
+      segment?: number;
       question: string;
       options?: string[];
       correct_index?: number;
       explanation?: string;
+      code?: { setup: string; starter: string; solution: string };
     }
   | {
       type: "reward_user";
@@ -205,6 +216,8 @@ export type BoardAction =
 
 export type BoardEvent =
   | { type: "session_ready"; session_id: string; session_title?: string; status: string }
+  /** 本节课规划（分段标题）：顶栏进度点 */
+  | { type: "lesson_plan"; title: string; segments: { title: string }[] }
   | { type: "group"; actions: BoardAction[] }
   | BoardAction
   | {
@@ -235,9 +248,12 @@ export interface StepItem {
 
 export interface AskState {
   stepId: number;
+  kind: "choice" | "open" | "code";
+  segment?: number;
   question: string;
   options: string[];
   correctIndex?: number;
   explanation?: string;
+  code?: { setup: string; starter: string; solution: string };
   answered?: { text: string; correct?: boolean };
 }

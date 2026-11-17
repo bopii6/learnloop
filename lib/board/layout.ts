@@ -7,15 +7,18 @@
 import type { BoardItem, BoardLayoutParams, ColumnLayout } from "@/types/board";
 
 export const ROW_GAP = 2; // 卡片纵向间距（实测）
-export const COL_STEP_GAP = 18; // 列与列之间的水平间距（实测 x 差值 - 列宽）
+export const COL_STEP_GAP = 36; // 列与列之间的水平间距（实测：列步进 416 - 卡宽 380）
 export const COL_INNER_DX = 24; // 首列相对 gridLeft 的偏移（实测 54 - 30）
 
+/**
+ * 版面参数（场景坐标，与视口无关）：列宽固定 400、列距 36，由相机缩放适配屏幕（宽屏约 0.7 倍，与实测一致）。
+ * 旧版按视口宽度推列宽——白板区一窄（右侧面板、小窗口）列宽就被压到 180，一行只剩五六个字。
+ * 现在列宽恒定，窄屏时相机只看 1 列、宽屏看 2-3 列（见 WhiteboardSession 的相机逻辑）。
+ */
 export function computeLayoutParams(vpW: number, vpH: number): BoardLayoutParams {
   const colCount = 3;
   const tileGapX = 12;
-  const usableW = Math.max(600, Math.round(vpW - 60));
-  const usableH = Math.max(320, Math.round(vpH - 175));
-  const tileW = Math.max(200, Math.floor((usableW - (colCount - 1) * tileGapX) / colCount));
+  const tileW = 410; // 列宽 400（实测卡宽 380-444，取中）
   const colW = tileW - 10;
   return {
     colCount,
@@ -23,9 +26,9 @@ export function computeLayoutParams(vpW: number, vpH: number): BoardLayoutParams
     tileGapX,
     tileGapY: 12,
     gridLeft: 30,
-    gridTop: 130,
-    usableW,
-    usableH,
+    gridTop: 60,
+    usableW: Math.max(600, Math.round(vpW - 60)),
+    usableH: Math.max(320, Math.round(vpH - 175)),
     exportPixelW: Math.round(colW * 2 + 22),
   };
 }

@@ -112,17 +112,11 @@ export function findSnippet(
   const hay = index.map((c) => c.ch).join("");
   const at = hay.indexOf(target);
   if (at < 0) return null;
+  // 每个字都要量：旧版按"同一文本节点"去重只留首字，整行是一个文本节点时圈只套住第一个字
   const refs: AnchorRef[] = [];
-  let lastKey = "";
   for (let i = at; i < at + target.length; i++) {
     const ref = index[i]?.ref;
-    if (!ref) continue;
-    const key =
-      ref.type === "text" ? `t:${ref.node.data.length}:${ref.node.data.slice(0, 8)}` : `e:${(ref.el as HTMLElement).className}`;
-    if (key !== lastKey) {
-      refs.push(ref);
-      lastKey = key;
-    }
+    if (ref) refs.push(ref);
   }
   return refs.length ? refs : null;
 }

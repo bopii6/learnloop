@@ -1,17 +1,21 @@
 "use client";
 
-// 白板课堂（对标 Hyperknow 交互逻辑）：
-//   服务端按 Hyperknow 帧格式下发动作 → 本地 step 队列串行播放 → 每个动作真正完成才"回执"并前进。
-//   落字=逐字溶解；圈画=文本锚定；讲话=TTS + 卡拉OK字幕；结尾 ask → 作答 → 点评 + 徽章。
+// 白板课堂（分段 + 自适应讲课）：
+//   讲师一拍一句话、边说边写；每讲一小段就停下来问一个问题（选择 / 一句话 / 写代码）；
+//   学员答完立刻看到对错与解析，同时讲师带着他的回答生成下一段——答错了，下一段先当场纠偏。
+// 播放模型：服务端下发动作 → 本地队列串行播放（组内 board 落字与 speak 并发）→ 每个动作真正完成才前进。
+// 版面：列宽固定（场景坐标），相机按屏宽看 1-3 列、平滑跟随最新板书；字幕一行纯文字；右侧是课堂记录。
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { BoardAction, BoardEvent, BoardItem, BoardPage, BoardState, AskState, NoteCardItem } from "@/types/board";
-import { addColumn, commitHeight, computeLayoutParams, createPageLayout, newPageId, placeItem, reflowColumn } from "@/lib/board/layout";
+import type { AskState, BoardAction, BoardEvent, BoardItem, BoardPage, BoardState, NoteCardItem } from "@/types/board";
+import { COL_STEP_GAP, addColumn, colWidth, colX, computeLayoutParams, createPageLayout, placeItem, reflowColumn } from "@/lib/board/layout";
 import { consumeSse } from "@/lib/sse";
 import { groupActions } from "@/lib/board/actions";
 import { fetchTtsSegments, prefetchTts, ttsUnavailable } from "@/lib/tts-client";
 import { Whiteboard, type WhiteboardCamera } from "./Whiteboard";
 import { BoardLayer } from "./board/BoardLayer";
+import { AskCard, type AskSubmit } from "./board/AskCard";
 import type { CardHandle } from "./board/NoteCard";
+import { setTypewriterPaused } from "./board/useTypewriter";
 import { Icon } from "./icons";
 import "./board/board.css";
 
@@ -21,60 +25,61 @@ interface WhiteboardSessionProps {
   lectureId: string;
   lectureTitle: string;
   onExit?: () => void;
-  /** 只读回放：动作序列来自分享快照，不请求讲师、不计费、不记进度；课堂题本地判对错 */
+  /** 下一讲（课程页按大纲算好）：讲完后一键进入 */
+  nextLecture?: { id: string; title: string };
+  onNextLecture?: () => void;
+  /** 只读回放：动作序列来自分享快照，不请求讲师、不记进度；课堂题本地判对错 */
   replay?: { actions: BoardAction[]; courseTitle?: string };
 }
 
 interface QueueItem {
-  /** 一个 group：组内动作并发执行（board 落字与 speak 讲解同时进行），组间串行 */
   actions: BoardAction[];
-  /** 本组 speak 的 step（board 的闸门） */
   gateStep?: number;
-  /** script = 本节剧本（计入进度，可断点续播）；reply = 点评 / 追问回应（插队播放，不计进度） */
+  /** script = 讲稿（计入进度）；reply = 即时反馈 / 追问回应（插队播放，不计进度） */
   origin: "script" | "reply";
 }
-
-/** 单个动作的执行上下文（runAction 入参） */
 type SingleAction = QueueItem & { action: BoardAction };
 
-/** ready = 课前（等学员点开始）；blocked = 需要登录 / 备课失败 */
-type Status = "ready" | "preparing" | "playing" | "ask" | "done" | "blocked";
+/** ready = 课前；preparing = 备课中；thinking = 等下一段生成；blocked = 需登录 / 失败 */
+type Status = "ready" | "preparing" | "playing" | "ask" | "thinking" | "done" | "blocked";
 
 interface SavedProgress {
-  /** 已播完的剧本 group 数 */
-  done: number;
+  /** 最近开始的段（续播从这一段开头开始） */
+  segment: number;
   finished: boolean;
   at: number;
 }
 
-const RATES = [0.8, 1, 1.25, 1.5];
-
-function progressKey(courseId: string, unitId: string, lectureId: string) {
-  return `wb-progress:v1:${courseId}:${unitId}:${lectureId}`;
+interface LogMsg {
+  id: string;
+  kind: "say" | "user" | "ask" | "result" | "reward" | "note";
+  text: string;
+  label?: string;
+  ok?: boolean;
 }
 
+const RATES = [0.8, 1, 1.25, 1.5];
+const SUBTITLE_RESERVE = 120;
+const ASK_RESERVE = 300;
+
+function progressKey(courseId: string, unitId: string, lectureId: string) {
+  return `wb-progress:v2:${courseId}:${unitId}:${lectureId}`;
+}
 function loadProgress(key: string): SavedProgress | null {
   try {
     const raw = window.localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as SavedProgress) : null;
+    const p = raw ? (JSON.parse(raw) as SavedProgress) : null;
+    return p && typeof p.segment === "number" ? p : null;
   } catch {
     return null;
   }
 }
-
 function saveProgress(key: string, p: SavedProgress) {
   try {
     window.localStorage.setItem(key, JSON.stringify(p));
   } catch {
-    // 隐私模式 / 存储被禁：断点续播退化为从头开始
+    // 存储不可用：续播退化为从头开始
   }
-}
-
-interface ChatMsg {
-  id: string;
-  kind: "board" | "circle" | "image" | "animation" | "quiz" | "user" | "reward";
-  text: string;
-  detail?: string;
 }
 
 const EMPTY_STATE: BoardState = {
@@ -84,7 +89,42 @@ const EMPTY_STATE: BoardState = {
   pages: [{ id: "page-1", items: [], layout: null }],
 };
 
-export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, onExit, replay }: WhiteboardSessionProps) {
+/** 右侧浮动面板占去的宽度（含边距） */
+const PANEL_W = 340;
+const PANEL_GUTTER = 24;
+
+/**
+ * 相机：在可用宽度里尽量多看几列，但缩放不低于 0.66（实测 Hyperknow 宽屏约 0.7：17px 正文落到屏幕约 12px）；
+ * 窄屏只看 1 列、最多放大到 0.9。
+ */
+function viewFit(availW: number, step: number, gap: number) {
+  const margin = 60;
+  const n = Math.max(1, Math.floor((availW / 0.66 - margin + gap) / step));
+  const zoom = Math.max(0.6, Math.min(0.9, availW / (n * step - gap + margin)));
+  return { n, zoom };
+}
+
+/** 估算一张卡写出来的高度（场景坐标）：决定要不要换列 */
+function estimateCardHeight(content: string, colW: number) {
+  const perLine = Math.max(10, Math.floor(colW / 20));
+  let h = 20;
+  let inCode = false;
+  for (const raw of content.split("\n")) {
+    const line = raw.trim();
+    if (line.startsWith("```")) {
+      inCode = !inCode;
+      h += 6;
+      continue;
+    }
+    if (inCode) h += 24;
+    else h += Math.max(1, Math.ceil(line.length / perLine)) * 33;
+  }
+  return h;
+}
+
+const easeOut = (t: number) => 1 - Math.pow(1 - t, 3);
+
+export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, onExit, nextLecture, onNextLecture, replay }: WhiteboardSessionProps) {
   const isReplay = Boolean(replay);
   const [status, setStatus] = useState<Status>("ready");
   const [blocked, setBlocked] = useState<{ title: string; message: string } | null>(null);
@@ -93,16 +133,26 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
   const [saved, setSaved] = useState<SavedProgress | null>(null);
   const progKey = progressKey(courseId, unitId, lectureId);
   const [board, setBoard] = useState<BoardState>(EMPTY_STATE);
-  const [camera, setCamera] = useState<WhiteboardCamera>({ scrollX: 0, scrollY: 0, zoom: 1, vpW: 1440, vpH: 700 });
+  const [camera, setCamera] = useState<WhiteboardCamera>({ scrollX: 0, scrollY: 0, zoom: 1, vpW: 1200, vpH: 700 });
   const [caption, setCaption] = useState<{ text: string; reveal: number }>({ text: "", reveal: 0 });
   const [ask, setAsk] = useState<AskState | null>(null);
   const [reward, setReward] = useState<{ title: string; desc: string } | null>(null);
-  const [messages, setMessages] = useState<ChatMsg[]>([]);
+  const [log, setLog] = useState<LogMsg[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [retryNext, setRetryNext] = useState<null | (() => void)>(null);
   const [exitOpen, setExitOpen] = useState(false);
   const [voiceOn, setVoiceOn] = useState(true);
   const [input, setInput] = useState("");
   const [chatBusy, setChatBusy] = useState(false);
+  const [plan, setPlan] = useState<{ title: string; segments: { title: string }[] } | null>(null);
+  const [segIndex, setSegIndex] = useState(-1);
+  const [finalSeg, setFinalSeg] = useState(false);
+  // 沉浸优先：课堂记录默认收起，白板占满；用户打开过就记住
+  const [panelOpen, setPanelOpen] = useState(false);
+  // 讲课进行中鼠标静止一会儿，四周的按钮就淡出，只留板书和字幕
+  const [chromeIdle, setChromeIdle] = useState(false);
+  const [shareMsg, setShareMsg] = useState<string | null>(null);
+  const [sharing, setSharing] = useState(false);
 
   const apiRef = useRef<any>(null);
   const cameraRef = useRef(camera);
@@ -117,231 +167,230 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
   const cardHandles = useRef(new Map<string, CardHandle>());
   const cardWaiters = useRef(new Map<string, { resolve: () => void }>());
   const mediaWaiters = useRef(new Map<string, { resolve: () => void }>());
-  /** 媒体信箱：generated_* 先于占位卡到达时暂存（回放/缓存命中会瞬时到达），占位出现后立即回填 */
   const mediaStash = useRef(new Map<string, BoardAction>());
   const speechStopRef = useRef<(() => void) | null>(null);
   const exitedRef = useRef(false);
-  const uidCounter = useRef(0);
   const voiceRef = useRef(voiceOn);
   voiceRef.current = voiceOn;
   const pausedRef = useRef(false);
   const rateRef = useRef(1);
   rateRef.current = rate;
-  /** 当前正在播的音频（暂停 / 调速直接作用在它身上） */
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const lastSpeechRef = useRef("");
-  /** 课堂题：剧本停在这里，等学员作答（或跳过）后才继续 */
   const askWaiterRef = useRef<(() => void) | null>(null);
-  /** 断点续播：前 N 个剧本 group 快进（无动画、无语音、跳过题目与徽章） */
-  const fastForwardRef = useRef(0);
+  const askRef = useRef<AskState | null>(null);
+  askRef.current = ask;
+  /** 续播：段号小于它的都快进（无动画、无语音、跳过题目） */
+  const resumeSegRef = useRef(0);
+  const segRef = useRef(-1);
   const fastRef = useRef(false);
-  const scriptDoneRef = useRef(0);
-  /** 点评 / 追问的插队位置：同一次回应的多个 group 保持原顺序 */
   const replyInsertRef = useRef(0);
-  /** 媒体生成失败的占位 step：占位帧晚到时直接不建卡 */
   const failedMediaRef = useRef(new Set<number>());
+  /** 下一段正在生成 */
+  const waitingNextRef = useRef(false);
+  /** 收尾段的 done 已播完 */
+  const finishedRef = useRef(false);
+  /** 下一句讲话在课堂记录里的标签（板书 / 圈画 / 配图） */
+  const sayLabelRef = useRef<string | undefined>(undefined);
+  const tweenRef = useRef(0);
+  /** fetchNext 定义在 runAction 之后：经由 ref 调用 */
+  const fetchNextRef = useRef<((index: number, answer: Record<string, unknown>) => Promise<void>) | null>(null);
 
   useEffect(() => {
     if (!isReplay) setSaved(loadProgress(progKey));
+    try {
+      if (window.localStorage.getItem("wb-panel") === "open") setPanelOpen(true);
+    } catch {
+      // ignore
+    }
   }, [isReplay, progKey]);
-  const [shareMsg, setShareMsg] = useState<string | null>(null);
-  const [sharing, setSharing] = useState(false);
 
-  const layoutParams = useMemo(
-    () => computeLayoutParams(camera.vpW || 1440, camera.vpH || 700),
-    [camera.vpW, camera.vpH]
-  );
+  const layoutParams = useMemo(() => computeLayoutParams(camera.vpW || 1200, camera.vpH || 700), [camera.vpW, camera.vpH]);
   const lpRef = useRef(layoutParams);
   lpRef.current = layoutParams;
 
-  // ---- 页面工具 ----
   const activePage = useCallback((): BoardPage => {
     const st = boardRef.current;
     return st.pages.find((p) => p.id === st.activePageId) ?? st.pages[0];
   }, []);
 
-  const updatePage = useCallback((pageId: string, fn: (p: BoardPage) => BoardPage) => {
-    setBoard((st) => ({ ...st, revision: st.revision + 1, pages: st.pages.map((p) => (p.id === pageId ? fn(p) : p)) }));
+  const pushLog = useCallback((m: Omit<LogMsg, "id">) => {
+    setLog((l) => [...l, { ...m, id: `m-${Date.now()}-${Math.random().toString(36).slice(2, 6)}` }]);
   }, []);
 
-  const pushMsg = useCallback((kind: ChatMsg["kind"], text: string, detail?: string) => {
-    setMessages((m) => [...m, { id: `m-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, kind, text, detail }]);
-  }, []);
+  // ---------------- 相机 ----------------
 
-  // ---- 相机：跟随书写（列可见 + 底部可见） ----
-  const focusItem = useCallback((item: { x: number; y: number; w: number; h?: number }) => {
+  const panelOpenRef = useRef(true);
+  panelOpenRef.current = panelOpen;
+  /** 白板可用宽度：面板浮在右侧，被它挡住的部分不放板书 */
+  const availWidth = useCallback((vpW: number) => Math.max(320, vpW - (panelOpenRef.current ? PANEL_W + PANEL_GUTTER : 0)), []);
+  const fit = useCallback(
+    (vpW: number) => viewFit(availWidth(vpW), colWidth(lpRef.current) + COL_STEP_GAP, COL_STEP_GAP),
+    [availWidth]
+  );
+  const targetZoom = useCallback((vpW: number) => fit(vpW).zoom, [fit]);
+
+  /** 平滑移动相机（420ms 缓动）；连续调用时以最新目标为准 */
+  const moveCamera = useCallback((to: { scrollX: number; scrollY: number; zoom: number }, instant = false) => {
     const api = apiRef.current;
     if (!api) return;
-    const cam = cameraRef.current;
-    const vpW = cam.vpW || 1200;
-    const vpH = cam.vpH || 640;
-    const page = activePage();
-    let contentRight = 0;
-    for (const it of page.items) contentRight = Math.max(contentRight, it.x + it.w);
-    contentRight = Math.max(contentRight, item.x + item.w);
-    const zoom = Math.max(0.5, Math.min(1.05, vpW / (contentRight + item.w + 100)));
-    const colX = item.x;
-    const bottom = Math.max(...page.items.map((i) => i.y + Math.max(40, i.h)), item.y + (item.h ?? 90));
-    const scrollX = -(colX - 40);
-    const viewSceneH = vpH / zoom;
-    const top = lpRef.current.gridTop;
-    // 整屏装得下 → 顶部对齐；装不下 → 底边（最新板书）贴住视口下沿
-    const scrollY =
-      bottom - top + 140 <= viewSceneH ? -(top - 70) : -(bottom + 90 - viewSceneH);
-    try {
-      api.updateScene({ appState: { scrollX, scrollY, zoom: { value: zoom } } });
-    } catch {
-      // 画布未就绪
-    }
-  }, [activePage]);
-
-  const focusPage = useCallback((page: BoardPage) => {
-    const api = apiRef.current;
-    if (!api) return;
-    const cam = cameraRef.current;
-    const vpW = cam.vpW || 1200;
-    const vpH = cam.vpH || 640;
-    let right = 0;
-    let bottom = lpRef.current.gridTop;
-    for (const it of page.items) {
-      right = Math.max(right, it.x + it.w);
-      bottom = Math.max(bottom, it.y + Math.max(40, it.h));
-    }
-    const zoom = right > 0 ? Math.max(0.5, Math.min(1.05, vpW / (right + 140))) : 1;
-    const scrollX = -20;
-    const viewSceneH = vpH / zoom;
-    const top = lpRef.current.gridTop;
-    const scrollY = bottom - top + 140 <= viewSceneH ? -(top - 70) : -(bottom + 90 - viewSceneH);
-    try {
-      api.updateScene({ appState: { scrollX, scrollY, zoom: { value: zoom } } });
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  // ---- 回执（本地推进 + 留痕；服务端预生成模式下不需等待网络） ----
-  const ack = useCallback((stepId: number) => {
-    if (typeof window !== "undefined") {
-      const w = window as unknown as { __wbAcks?: number[] };
-      w.__wbAcks = w.__wbAcks || [];
-      w.__wbAcks.push(stepId);
-    }
-  }, []);
-
-  // ---- 语音：TTS + 卡拉OK（revealFrom 按播放进度推进） ----
-  const speak = useCallback(
-    async (text: string): Promise<void> => {
-      lastSpeechRef.current = text;
-      const estMs = Math.max(1200, text.length * 170 + 400);
-      return new Promise<void>((resolve) => {
-        let settled = false;
-        const finish = () => {
-          if (settled) return;
-          settled = true;
-          speechStopRef.current = null;
-          audioRef.current = null;
-          setCaption((c) => ({ ...c, reveal: text.length }));
-          resolve();
-        };
-        if (exitedRef.current) return finish();
-        // 无语音（静音 / 未配云端语音 / 合成失败）：按阅读节奏推进字幕卡拉OK；暂停时计时冻结，语速同步生效
-        const readAlong = () => {
-          let elapsed = 0;
-          let last = performance.now();
-          let raf = 0;
-          const tick = (now: number) => {
-            if (!pausedRef.current) elapsed += (now - last) * rateRef.current;
-            last = now;
-            const p = Math.min(1, elapsed / estMs);
-            setCaption({ text, reveal: Math.round(p * text.length) });
-            if (p < 1 && !exitedRef.current) raf = requestAnimationFrame(tick);
-            else finish();
-          };
-          raf = requestAnimationFrame(tick);
-          speechStopRef.current = () => {
-            cancelAnimationFrame(raf);
-            finish();
-          };
-        };
-        if (!voiceRef.current || ttsUnavailable()) return readAlong();
-        void (async () => {
-          const segs = await fetchTtsSegments(text);
-          if (settled) return;
-          if (!segs || segs.length === 0) return readAlong();
-          const audios = segs.map((u) => {
-            const a = new Audio(u);
-            a.preload = "auto";
-            a.playbackRate = rateRef.current;
-            return a;
-          });
-          // 先量时长（blob 本地，秒回）
-          const durations = await Promise.all(
-            audios.map(
-              (a) =>
-                new Promise<number>((res) => {
-                  if (a.duration && isFinite(a.duration)) return res(a.duration);
-                  const done = () => res(isFinite(a.duration) && a.duration > 0 ? a.duration : (text.length * 0.18) / segs.length);
-                  a.addEventListener("loadedmetadata", done, { once: true });
-                  a.addEventListener("error", done, { once: true });
-                  window.setTimeout(done, 800);
-                })
-            )
-          );
-          const totalDur = durations.reduce((s, d) => s + d, 0) || estMs / 1000;
-          let doneDur = 0;
-          let stopped = false;
-          for (let i = 0; i < audios.length; i++) {
-            if (stopped || settled) break;
-            const a = audios[i];
-            await new Promise<void>((next) => {
-              const onTime = () => {
-                const frac = a.duration > 0 ? Math.min(1, a.currentTime / a.duration) : 0;
-                const overall = Math.min(1, (doneDur + frac * durations[i]) / totalDur);
-                setCaption({ text, reveal: Math.round(overall * text.length) });
-              };
-              a.addEventListener("timeupdate", onTime);
-              a.addEventListener("ended", () => next(), { once: true });
-              a.addEventListener("error", () => next(), { once: true });
-              audioRef.current = a;
-              a.playbackRate = rateRef.current;
-              if (!pausedRef.current) void a.play().catch(() => next());
-              speechStopRef.current = () => {
-                stopped = true;
-                try {
-                  a.pause();
-                  a.src = "";
-                } catch {
-                  // ignore
-                }
-                next();
-              };
-            });
-            doneDur += durations[i];
-          }
-          finish();
-        })();
+    const from = cameraRef.current;
+    const id = ++tweenRef.current;
+    const apply = (s: { scrollX: number; scrollY: number; zoom: number }) => {
+      try {
+        api.updateScene({ appState: { scrollX: s.scrollX, scrollY: s.scrollY, zoom: { value: s.zoom } } });
+      } catch {
+        // 画布未就绪
+      }
+    };
+    if (instant || fastRef.current) return apply(to);
+    const t0 = performance.now();
+    const dur = 420;
+    const step = (now: number) => {
+      if (id !== tweenRef.current) return;
+      const k = easeOut(Math.min(1, (now - t0) / dur));
+      apply({
+        scrollX: from.scrollX + (to.scrollX - from.scrollX) * k,
+        scrollY: from.scrollY + (to.scrollY - from.scrollY) * k,
+        zoom: from.zoom + (to.zoom - from.zoom) * k,
       });
+      if (k < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }, []);
+
+  /** 跟随：当前列（及其左边能放下的列）可见；当前列写满一屏时让最新内容贴住视口下沿 */
+  const follow = useCallback(
+    (focus?: { columnIndex: number; bottom: number }, instant = false) => {
+      const cam = cameraRef.current;
+      const lp = lpRef.current;
+      const vpW = window.innerWidth || cam.vpW || 1200;
+      const vpH = window.innerHeight || cam.vpH || 700;
+      const page = activePage();
+      const active = focus?.columnIndex ?? page.layout?.activeIndex ?? 0;
+      const { zoom, n } = fit(vpW);
+      const start = Math.max(0, active - n + 1);
+      const scrollX = -(colX(lp, start) - lp.gridLeft);
+      let bottom = focus?.bottom ?? lp.gridTop;
+      for (const it of page.items) if (it.columnIndex === active) bottom = Math.max(bottom, it.y + Math.max(40, it.h));
+      const reserve = askRef.current ? ASK_RESERVE : SUBTITLE_RESERVE;
+      const viewH = (vpH - reserve) / zoom;
+      const top = lp.gridTop;
+      // 内容从顶部浮动按钮下方（屏幕 90px）开始；写满一屏后让最新内容贴住字幕上沿
+      const scrollY = bottom - top + 90 / zoom + 20 <= viewH ? -(top - 90 / zoom) : -(bottom + 28 - viewH);
+      moveCamera({ scrollX, scrollY, zoom }, instant);
     },
-    []
+    [activePage, fit, moveCamera]
   );
 
-  // ---- 卡片注册 / 完成等待 ----
+  // 视口变化（拉窗口 / 收起面板）：重新对准
+  useEffect(() => {
+    if (status === "ready" || status === "preparing") return;
+    const t = window.setTimeout(() => follow(undefined, true), 60);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [camera.vpW, camera.vpH, panelOpen]);
+
+  // ---------------- 语音：TTS + 字幕逐字 ----------------
+
+  const speak = useCallback(async (text: string): Promise<void> => {
+    lastSpeechRef.current = text;
+    const estMs = Math.max(1100, text.length * 165 + 350);
+    return new Promise<void>((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        speechStopRef.current = null;
+        audioRef.current = null;
+        setCaption((c) => ({ ...c, reveal: text.length }));
+        resolve();
+      };
+      if (exitedRef.current) return finish();
+      const readAlong = () => {
+        let elapsed = 0;
+        let last = performance.now();
+        let raf = 0;
+        const tick = (now: number) => {
+          if (!pausedRef.current) elapsed += (now - last) * rateRef.current;
+          last = now;
+          const p = Math.min(1, elapsed / estMs);
+          setCaption({ text, reveal: Math.round(p * text.length) });
+          if (p < 1 && !exitedRef.current) raf = requestAnimationFrame(tick);
+          else finish();
+        };
+        raf = requestAnimationFrame(tick);
+        speechStopRef.current = () => {
+          cancelAnimationFrame(raf);
+          finish();
+        };
+      };
+      if (!voiceRef.current || ttsUnavailable()) return readAlong();
+      void (async () => {
+        const segs = await fetchTtsSegments(text);
+        if (settled) return;
+        if (!segs || segs.length === 0) return readAlong();
+        const audios = segs.map((u) => {
+          const a = new Audio(u);
+          a.preload = "auto";
+          a.playbackRate = rateRef.current;
+          return a;
+        });
+        const durations = await Promise.all(
+          audios.map(
+            (a) =>
+              new Promise<number>((res) => {
+                if (a.duration && isFinite(a.duration)) return res(a.duration);
+                const done = () => res(isFinite(a.duration) && a.duration > 0 ? a.duration : (text.length * 0.18) / segs.length);
+                a.addEventListener("loadedmetadata", done, { once: true });
+                a.addEventListener("error", done, { once: true });
+                window.setTimeout(done, 800);
+              })
+          )
+        );
+        const totalDur = durations.reduce((s, d) => s + d, 0) || estMs / 1000;
+        let doneDur = 0;
+        let stopped = false;
+        for (let i = 0; i < audios.length; i++) {
+          if (stopped || settled) break;
+          const a = audios[i];
+          await new Promise<void>((next) => {
+            const onTime = () => {
+              const frac = a.duration > 0 ? Math.min(1, a.currentTime / a.duration) : 0;
+              const overall = Math.min(1, (doneDur + frac * durations[i]) / totalDur);
+              setCaption({ text, reveal: Math.round(overall * text.length) });
+            };
+            a.addEventListener("timeupdate", onTime);
+            a.addEventListener("ended", () => next(), { once: true });
+            a.addEventListener("error", () => next(), { once: true });
+            audioRef.current = a;
+            a.playbackRate = rateRef.current;
+            if (!pausedRef.current) void a.play().catch(() => next());
+            speechStopRef.current = () => {
+              stopped = true;
+              try {
+                a.pause();
+                a.src = "";
+              } catch {
+                // ignore
+              }
+              next();
+            };
+          });
+          doneDur += durations[i];
+        }
+        finish();
+      })();
+    });
+  }, []);
+
+  // ---------------- 卡片注册 / 等待 ----------------
+
   const registerCard = useCallback((id: string, h: CardHandle) => {
     cardHandles.current.set(id, h);
   }, []);
-
-  const waitCard = useCallback((id: string) => {
-    return new Promise<void>((resolve) => {
-      cardWaiters.current.set(id, { resolve });
-    });
-  }, []);
-
-  const waitMedia = useCallback((id: string) => {
-    return new Promise<void>((resolve) => {
-      mediaWaiters.current.set(id, { resolve });
-    });
-  }, []);
-
+  const waitCard = useCallback((id: string) => new Promise<void>((resolve) => cardWaiters.current.set(id, { resolve })), []);
+  const waitMedia = useCallback((id: string) => new Promise<void>((resolve) => mediaWaiters.current.set(id, { resolve })), []);
   const onTypingDone = useCallback((id: string) => {
     const w = cardWaiters.current.get(id);
     if (w) {
@@ -349,7 +398,6 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
       w.resolve();
     }
   }, []);
-
   const onMediaLoaded = useCallback((id: string) => {
     const w = mediaWaiters.current.get(id);
     if (w) {
@@ -357,61 +405,107 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
       w.resolve();
     }
   }, []);
-
-  const onHeight = useCallback(
-    (id: string, h: number) => {
-      setBoard((st) => {
-        const pages = st.pages.map((p) => {
-          const item = p.items.find((i) => i.id === id);
-          if (!item || Math.abs(item.h - h) < 1) return p;
-          let items = p.items.map((i) => (i.id === id ? ({ ...i, h } as BoardItem) : i));
-          const layout = p.layout ? { ...p.layout, columns: p.layout.columns.map((c) => ({ ...c })) } : null;
-          if (layout) {
-            items = reflowColumn(layout, items, item.columnIndex);
-          }
-          return { ...p, items, layout };
-        });
-        return { ...st, pages };
+  const onHeight = useCallback((id: string, h: number) => {
+    setBoard((st) => {
+      const pages = st.pages.map((p) => {
+        const item = p.items.find((i) => i.id === id);
+        if (!item || Math.abs(item.h - h) < 1) return p;
+        let items = p.items.map((i) => (i.id === id ? ({ ...i, h } as BoardItem) : i));
+        const layout = p.layout ? { ...p.layout, columns: p.layout.columns.map((c) => ({ ...c })) } : null;
+        if (layout) items = reflowColumn(layout, items, item.columnIndex);
+        return { ...p, items, layout };
       });
+      return { ...st, pages };
+    });
+  }, []);
+
+  /** 新卡落点：当前列放不下一屏就换列（列高按相机实际能看到的高度算） */
+  const placeNew = useCallback(
+    (estH: number) => {
+      const cur = activePage();
+      let layout = cur.layout ?? createPageLayout(lpRef.current);
+      const col = layout.columns[layout.activeIndex];
+      const cam = cameraRef.current;
+      const zoom = targetZoom(window.innerWidth || cam.vpW || 1200);
+      const maxColH = Math.max(380, ((window.innerHeight || cam.vpH || 700) - SUBTITLE_RESERVE - 90) / zoom - 30);
+      if (col && col.nextY > layout.lp.gridTop + 10 && col.nextY + estH > layout.lp.gridTop + maxColH) {
+        layout = addColumn(layout);
+      }
+      return { cur, layout, pos: placeItem(layout) };
     },
-    []
+    [activePage, targetZoom]
   );
 
-  // ---- 动作执行 ----
+  const addItem = useCallback((pageId: string, layout: BoardPage["layout"], item: BoardItem) => {
+    setBoard((st) => ({
+      ...st,
+      revision: st.revision + 1,
+      pages: st.pages.map((p) => (p.id === pageId ? { ...p, layout, items: [...p.items, item] } : p)),
+    }));
+  }, []);
+
+  // ---------------- 动作执行 ----------------
+
   const runAction = useCallback(
     async (item: SingleAction): Promise<void> => {
       const { action } = item;
-      const page = activePage();
-      const pageId = page.id;
       switch (action.type) {
         case "new_page": {
           const layout = createPageLayout(lpRef.current);
           const p: BoardPage = { id: action.page_id, title: action.title, items: [], layout };
           setBoard((st) => {
-            // 丢弃初始空占位页；同 id 旧页替换
-            const kept = st.pages.filter((x) => x.id !== action.page_id && !(x.id === "page-1" && x.items.length === 0));
-            const pages = [...kept, p];
-            return { ...st, revision: st.revision + 1, activePageId: p.id, pages };
+            const exists = st.pages.find((x) => x.id === action.page_id);
+            if (exists) return { ...st, activePageId: exists.id };
+            const kept = st.pages.filter((x) => !(x.id === "page-1" && x.items.length === 0));
+            return { ...st, revision: st.revision + 1, activePageId: p.id, pages: [...kept, p] };
           });
           await new Promise((r) => setTimeout(r, 60));
-          ack(action.step_id);
+          return;
+        }
+        case "segment_start": {
+          segRef.current = action.segment;
+          setSegIndex(action.segment);
+          setFinalSeg(Boolean(action.final));
+          fastRef.current = item.origin === "script" && action.segment < resumeSegRef.current;
+          // 上一段的题卡收起
+          if (askRef.current?.answered) setAsk(null);
+          // 新的一段另起一列（板面上一段一列，回看时一目了然）
+          const cur = activePage();
+          if (cur.layout) {
+            const col = cur.layout.columns[cur.layout.activeIndex];
+            if (col && col.nextY > cur.layout.lp.gridTop + 10) {
+              const layout = addColumn(cur.layout);
+              setBoard((st) => ({ ...st, revision: st.revision + 1, pages: st.pages.map((p) => (p.id === cur.id ? { ...p, layout } : p)) }));
+            }
+          }
+          if (!isReplay) {
+            const p = { segment: action.segment, finished: false, at: Date.now() };
+            saveProgress(progKey, p);
+          }
+          if (action.segment > 0 && !fastRef.current) {
+            pushLog({ kind: "note", text: action.final ? "收尾" : `第 ${action.segment + 1} 段 · ${action.title}` });
+          }
+          await new Promise((r) => setTimeout(r, fastRef.current ? 0 : 80));
           return;
         }
         case "new_column": {
+          const pageId = activePage().id;
           setBoard((st) => ({
             ...st,
             revision: st.revision + 1,
             pages: st.pages.map((p) => (p.id === pageId && p.layout ? { ...p, layout: addColumn(p.layout) } : p)),
           }));
           await new Promise((r) => setTimeout(r, 30));
-          ack(action.step_id);
           return;
         }
         case "board": {
-          const cur = activePage();
-          const layout = cur.layout ?? createPageLayout(lpRef.current);
-          const pos = placeItem(layout);
+          sayLabelRef.current = "板书";
+          const lp = lpRef.current;
+          const { cur, layout, pos } = placeNew(estimateCardHeight(action.board_content, colWidth(lp)));
           const id = `card-${action.board_uid}-${Date.now().toString(36)}`;
+          // 字跟着话写：整卡在配对那句讲解的约 85% 时长内写完（与字幕逐字推进同一套估时）
+          const paired = item.actions.find((a) => a.type === "speak") as { spoken_text: string } | undefined;
+          const revealMs = paired ? (Math.max(1100, paired.spoken_text.length * 165 + 350) / rateRef.current) * 0.85 : undefined;
           const card: NoteCardItem = {
             id,
             kind: "note_card",
@@ -426,86 +520,67 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
             decorations: [],
             animateReveal: !fastRef.current,
             revealGateStep: item.gateStep,
+            revealMs,
           };
-          setBoard((st) => ({
-            ...st,
-            revision: st.revision + 1,
-            pages: st.pages.map((p) =>
-              p.id === cur.id
-                ? { ...p, layout, items: [...p.items, card] }
-                : p
-            ),
-          }));
-          pushMsg("board", (action.title || "").trim() || action.board_content.replace(/[#*`$\\]/g, "").slice(0, 22), action.board_content);
+          addItem(cur.id, layout, card);
           await new Promise((r) => window.setTimeout(r, 50));
-          focusItem(pos);
+          follow({ columnIndex: pos.columnIndex, bottom: pos.y + estimateCardHeight(action.board_content, pos.w) });
           if (fastRef.current) {
-            await new Promise((r) => window.setTimeout(r, 40));
-            ack(action.step_id);
+            await new Promise((r) => window.setTimeout(r, 30));
             return;
           }
-          // 等落字完成（保险丝：4000 + 24ms/字，上限 30s）
-          const failSafe = new Promise<void>((r) => window.setTimeout(r, Math.min(30000, 4000 + 24 * action.board_content.length)));
+          // 保险丝：按期望书写时长留足余量（太短会把慢写的卡强行一次性显出）；暂停时由打字机自己停，不在这里计
+          const failSafe = new Promise<void>((r) =>
+            window.setTimeout(r, Math.min(45000, Math.max(4000 + 24 * action.board_content.length, (revealMs ?? 0) * 1.6 + 3000)))
+          );
           await Promise.race([waitCard(id), failSafe]);
           cardHandles.current.get(id)?.forceFinish();
-          // 用真实高度推进 nextY
           await new Promise((r) => window.setTimeout(r, 60));
-          ack(action.step_id);
+          follow({ columnIndex: pos.columnIndex, bottom: 0 });
           return;
         }
         case "speak": {
+          const label = sayLabelRef.current;
+          sayLabelRef.current = undefined;
           if (fastRef.current) {
             lastSpeechRef.current = action.spoken_text;
             for (const [, h] of cardHandles.current) h.openGate();
-            ack(action.step_id);
+            pushLog({ kind: "say", text: action.spoken_text, label });
             return;
           }
+          pushLog({ kind: "say", text: action.spoken_text, label });
           prefetchTts(action.spoken_text);
           await speak(action.spoken_text);
-          // 讲完：打开配对卡片的闸门
-          const gate = item.gateStep;
-          if (gate != null) {
-            for (const [, h] of cardHandles.current) h.openGate();
-          }
-          ack(action.step_id);
+          if (item.gateStep != null) for (const [, h] of cardHandles.current) h.openGate();
           return;
         }
         case "circle":
         case "highlight": {
-          const targetUid = action.target_board_id;
+          sayLabelRef.current = "圈画";
           const cur = activePage();
-          const target = cur.items.find((i) => i.kind === "note_card" && (i as NoteCardItem).boardUid === targetUid) as NoteCardItem | undefined;
+          const target = cur.items.find((i) => i.kind === "note_card" && (i as NoteCardItem).boardUid === action.target_board_id) as NoteCardItem | undefined;
           if (target) {
-            const deco = {
-              id: `deco-${Date.now().toString(36)}`,
-              kind: action.type as "circle" | "highlight",
-              snippet: action.snippet,
-            };
+            const deco = { id: `deco-${Date.now().toString(36)}`, kind: action.type as "circle" | "highlight", snippet: action.snippet };
             setBoard((st) => ({
               ...st,
               revision: st.revision + 1,
               pages: st.pages.map((p) =>
                 p.id === cur.id
-                  ? { ...p, items: p.items.map((i) => (i.id === target.id ? { ...(i as NoteCardItem), decorations: [...(((i as NoteCardItem).decorations) || []), deco] } : i)) }
+                  ? { ...p, items: p.items.map((i) => (i.id === target.id ? { ...(i as NoteCardItem), decorations: [...((i as NoteCardItem).decorations || []), deco] } : i)) }
                   : p
               ),
             }));
-            pushMsg("circle", action.type === "circle" ? "圈画重点" : "高亮重点", action.snippet);
           }
-          await new Promise((r) => setTimeout(r, fastRef.current ? 20 : action.type === "circle" ? 920 : 140));
-          ack(action.step_id);
+          await new Promise((r) => setTimeout(r, fastRef.current ? 10 : action.type === "circle" ? 900 : 140));
           return;
         }
         case "image_gen_pending": {
-          if (failedMediaRef.current.has(action.placement_step_id)) {
-            ack(action.placement_step_id);
-            return;
-          }
-          const cur = activePage();
-          const layout = cur.layout ?? createPageLayout(lpRef.current);
-          const pos = placeItem(layout);
+          if (failedMediaRef.current.has(action.placement_step_id)) return;
+          sayLabelRef.current = "配图";
+          const lp = lpRef.current;
+          const { cur, layout, pos } = placeNew(Math.round(colWidth(lp) * 0.9));
           const id = `img-${Date.now().toString(36)}`;
-          const card: BoardItem = {
+          addItem(cur.id, layout, {
             id,
             kind: "board_image",
             x: pos.x,
@@ -515,42 +590,23 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
             columnIndex: pos.columnIndex,
             placementStepId: action.placement_step_id,
             boardImage: { imageUrl: "", width: 512, height: 512, caption: action.caption, pending: true },
-          };
-          setBoard((st) => ({
-            ...st,
-            revision: st.revision + 1,
-            pages: st.pages.map((p) => (p.id === cur.id ? { ...p, layout, items: [...p.items, card] } : p)),
-          }));
-          pushMsg("image", "配图", action.caption || action.prompt_preview || "");
-          focusItem(pos);
-          // placement 步立即回执
-          ack(action.placement_step_id);
-          // 媒体先到（回放）：占位一出现就回填
-          {
-            const key = `image:${action.placement_step_id}`;
-            const stashed = mediaStash.current.get(key);
-            if (stashed) {
-              mediaStash.current.delete(key);
-              window.setTimeout(() => void runAction({ actions: [], action: stashed, origin: "script" }), 60);
-            }
+          });
+          follow({ columnIndex: pos.columnIndex, bottom: pos.y + Math.round(pos.w * 0.9) });
+          const key = `image:${action.placement_step_id}`;
+          const stashed = mediaStash.current.get(key);
+          if (stashed) {
+            mediaStash.current.delete(key);
+            window.setTimeout(() => void runAction({ actions: [], action: stashed, origin: "script" }), 60);
           }
           return;
         }
         case "generated_image": {
           const cur = activePage();
           const pending = (cur.items.find(
-            (i) =>
-              i.kind === "board_image" &&
-              i.boardImage.pending &&
-              (action.placement_step_id == null || i.placementStepId === action.placement_step_id)
-          ) ??
-            cur.items.find((i) => i.kind === "board_image" && i.boardImage.pending)) as
-            | (BoardItem & { kind: "board_image" })
-            | undefined;
+            (i) => i.kind === "board_image" && i.boardImage.pending && (action.placement_step_id == null || i.placementStepId === action.placement_step_id)
+          ) ?? cur.items.find((i) => i.kind === "board_image" && i.boardImage.pending)) as (BoardItem & { kind: "board_image" }) | undefined;
           if (!pending && action.placement_step_id != null) {
-            // 占位还没出现（回放瞬时到达）：先存进信箱，等占位帧处理时回填
             mediaStash.current.set(`image:${action.placement_step_id}`, action);
-            ack(action.step_id);
             return;
           }
           if (pending) {
@@ -572,20 +628,14 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
             }));
             await Promise.race([waitMedia(pending.id), new Promise((r) => setTimeout(r, 2800))]);
           }
-          ack(action.step_id);
           return;
         }
         case "animation_pending": {
-          if (failedMediaRef.current.has(action.placement_step_id)) {
-            ack(action.placement_step_id);
-            return;
-          }
-          const cur = activePage();
-          const layout = cur.layout ?? createPageLayout(lpRef.current);
-          const pos = placeItem(layout);
-          const id = `anim-${Date.now().toString(36)}`;
-          const card: BoardItem = {
-            id,
+          if (failedMediaRef.current.has(action.placement_step_id)) return;
+          const lp = lpRef.current;
+          const { cur, layout, pos } = placeNew(Math.round(colWidth(lp) * 1.4));
+          addItem(cur.id, layout, {
+            id: `anim-${Date.now().toString(36)}`,
             kind: "board_animation",
             x: pos.x,
             y: pos.y,
@@ -594,36 +644,23 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
             columnIndex: pos.columnIndex,
             placementStepId: action.placement_step_id,
             boardAnimation: { pending: true, task: action.task_preview },
-          };
-          setBoard((st) => ({
-            ...st,
-            revision: st.revision + 1,
-            pages: st.pages.map((p) => (p.id === cur.id ? { ...p, layout, items: [...p.items, card] } : p)),
-          }));
-          pushMsg("animation", "互动动画", action.task_preview || "");
-          focusItem(pos);
-          ack(action.placement_step_id);
-          {
-            const key = `anim:${action.placement_step_id}`;
-            const stashed = mediaStash.current.get(key);
-            if (stashed) {
-              mediaStash.current.delete(key);
-              window.setTimeout(() => void runAction({ actions: [], action: stashed, origin: "script" }), 60);
-            }
+          });
+          follow({ columnIndex: pos.columnIndex, bottom: pos.y + Math.round(pos.w * 1.4) });
+          const key = `anim:${action.placement_step_id}`;
+          const stashed = mediaStash.current.get(key);
+          if (stashed) {
+            mediaStash.current.delete(key);
+            window.setTimeout(() => void runAction({ actions: [], action: stashed, origin: "script" }), 60);
           }
           return;
         }
         case "generated_animation": {
           const cur = activePage();
-          const pending = (cur.items.find(
-            (i) =>
-              i.kind === "board_animation" &&
-              i.boardAnimation.pending &&
-              (action.placement_step_id == null || i.placementStepId === action.placement_step_id)
-          ) ?? cur.items.find((i) => i.kind === "board_animation" && i.boardAnimation.pending));
+          const pending = cur.items.find(
+            (i) => i.kind === "board_animation" && i.boardAnimation.pending && (action.placement_step_id == null || i.placementStepId === action.placement_step_id)
+          );
           if (!pending && action.placement_step_id != null) {
             mediaStash.current.set(`anim:${action.placement_step_id}`, action);
-            ack(action.step_id);
             return;
           }
           if (pending) {
@@ -632,133 +669,106 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
               revision: st.revision + 1,
               pages: st.pages.map((p) =>
                 p.id === cur.id
-                  ? {
-                      ...p,
-                      items: p.items.map((i) =>
-                        i.id === pending.id
-                          ? ({ ...i, boardAnimation: { html: action.html, task: action.task, pending: false } } as BoardItem)
-                          : i
-                      ),
-                    }
+                  ? { ...p, items: p.items.map((i) => (i.id === pending.id ? ({ ...i, boardAnimation: { html: action.html, task: action.task, pending: false } } as BoardItem) : i)) }
                   : p
               ),
             }));
             await Promise.race([waitMedia(pending.id), new Promise((r) => setTimeout(r, 3000))]);
           }
-          ack(action.step_id);
           return;
         }
         case "graph": {
-          const cur = activePage();
-          const layout = cur.layout ?? createPageLayout(lpRef.current);
-          const pos = placeItem(layout);
+          const { cur, layout, pos } = placeNew(220);
           const id = `graph-${Date.now().toString(36)}`;
-          const card: BoardItem = {
-            id,
-            kind: "mermaid_graph",
-            x: pos.x,
-            y: pos.y,
-            w: pos.w,
-            h: 220,
-            columnIndex: pos.columnIndex,
-            mermaidGraph: { source: action.mermaid },
-          };
-          setBoard((st) => ({
-            ...st,
-            revision: st.revision + 1,
-            pages: st.pages.map((p) => (p.id === cur.id ? { ...p, layout, items: [...p.items, card] } : p)),
-          }));
-          focusItem(pos);
+          addItem(cur.id, layout, { id, kind: "mermaid_graph", x: pos.x, y: pos.y, w: pos.w, h: 220, columnIndex: pos.columnIndex, mermaidGraph: { source: action.mermaid } });
+          follow({ columnIndex: pos.columnIndex, bottom: pos.y + 220 });
           await Promise.race([waitMedia(id), new Promise((r) => setTimeout(r, 800))]);
-          ack(action.step_id);
           return;
         }
         case "ask": {
-          ack(action.step_id);
           if (fastRef.current) return; // 续播快进：已经答过的题不再拦
-          setAsk({
+          const next: AskState = {
             stepId: action.step_id,
+            kind: action.kind ?? (action.options?.length ? "choice" : "open"),
+            segment: action.segment,
             question: action.question,
             options: action.options || [],
             correctIndex: action.correct_index,
             explanation: action.explanation,
-          });
-          pushMsg("quiz", "小测", action.question);
+            code: action.code,
+          };
+          setAsk(next);
+          askRef.current = next;
+          pushLog({ kind: "ask", text: action.question, label: "提问" });
           setStatus("ask");
-          // 剧本停在这里：学员作答（点评已插队到队首）或跳过后才继续
+          window.setTimeout(() => follow(undefined), 50);
           await new Promise<void>((resolve) => {
             askWaiterRef.current = resolve;
           });
           return;
         }
-        case "reward_user": {
-          if (fastRef.current) {
-            ack(action.step_id);
-            return;
+        case "segment_end": {
+          if (action.auto && !isReplay && !fastRef.current) {
+            void fetchNextRef.current?.(action.segment, { question: "（这一段没有检查题）", kind: "open", text: "（直接继续）" });
           }
+          return;
+        }
+        case "reward_user": {
           setReward({ title: action.master_concept_title, desc: action.master_concept_description });
-          pushMsg("reward", action.master_concept_title, action.master_concept_description);
-          await new Promise((r) => setTimeout(r, 120));
-          ack(action.step_id);
+          if (!fastRef.current) pushLog({ kind: "reward", text: action.master_concept_title, label: action.master_concept_description });
           return;
         }
         case "done": {
-          ack(action.step_id);
+          finishedRef.current = true;
+          if (!isReplay) {
+            const p = { segment: 0, finished: true, at: Date.now() };
+            saveProgress(progKey, p);
+            setSaved(p);
+          }
           return;
         }
         default:
           return;
       }
     },
-    [ack, activePage, focusItem, pushMsg, speak, waitCard, waitMedia]
+    [activePage, addItem, follow, isReplay, placeNew, progKey, pushLog, speak, waitCard, waitMedia]
   );
 
-  // ---- 队列泵：串行执行，逐拍回执 ----
+  // ---------------- 队列 ----------------
+
   const pump = useCallback(async () => {
     if (busyRef.current || exitedRef.current || pausedRef.current) return;
     const next = queueRef.current.shift();
     if (!next) {
-      setStatus((s) => (s === "ask" || s === "blocked" || s === "ready" ? s : "done"));
+      setStatus((s) => {
+        if (s === "ask" || s === "blocked" || s === "ready") return s;
+        if (finishedRef.current) return "done";
+        return waitingNextRef.current ? "thinking" : s === "preparing" ? s : "thinking";
+      });
       return;
     }
     busyRef.current = true;
-    if (replyInsertRef.current > 0) replyInsertRef.current -= 1;
-    const fast = next.origin === "script" && scriptDoneRef.current < fastForwardRef.current;
-    fastRef.current = fast;
+    if (next.origin === "reply" && replyInsertRef.current > 0) replyInsertRef.current -= 1;
     setStatus((s) => (s === "ask" ? s : "playing"));
     try {
-      // 组内并发：board 落字 + speak 讲解同时进行；组间串行（上一组全部完成才走下一组）
       await Promise.all(next.actions.map((action) => runAction({ ...next, action })));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       busyRef.current = false;
-      fastRef.current = false;
     }
-    if (next.origin === "script" && !isReplay) {
-      scriptDoneRef.current += 1;
-      const finished = next.actions.some((a) => a.type === "done");
-      const p = { done: finished ? 0 : scriptDoneRef.current, finished, at: Date.now() };
-      saveProgress(progKey, p);
-      if (finished) setSaved(p);
-    }
-    if (!exitedRef.current) window.setTimeout(() => void pump(), fast ? 0 : 60);
-  }, [isReplay, progKey, runAction]);
+    if (!exitedRef.current) window.setTimeout(() => void pump(), fastRef.current ? 0 : 60);
+  }, [runAction]);
 
   const enqueue = useCallback(
     (actions: BoardAction[], origin: QueueItem["origin"]) => {
-      // generated_* 是"回填空位"，必须到达即生效（不能排在几分钟的播放队列末尾）
       const immediate = actions.filter((a) => a.type === "generated_image" || a.type === "generated_animation");
       const queued = actions.filter((a) => a.type !== "generated_image" && a.type !== "generated_animation");
-      for (const a of immediate) {
-        void runAction({ actions: [], action: a, origin });
-      }
+      for (const a of immediate) void runAction({ actions: [], action: a, origin });
       if (queued.length > 0) {
-        // group 打包语义：同组的 speak 是 board 的闸门（board 完成时不早于讲完）
         const speakStep = queued.find((a) => a.type === "speak")?.step_id;
         const item: QueueItem = { actions: queued, gateStep: speakStep, origin };
         if (origin === "reply") {
-          // 点评 / 追问插队：当前这一拍讲完就接上，同一次回应内部保持顺序
           queueRef.current.splice(replyInsertRef.current, 0, item);
           replyInsertRef.current += 1;
         } else {
@@ -770,7 +780,6 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
     [pump, runAction]
   );
 
-  /** 媒体生成失败：撤掉占位卡并让同列后面的卡补位 */
   const dropMedia = useCallback(
     (placementStep: number) => {
       failedMediaRef.current.add(placementStep);
@@ -778,9 +787,7 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
         ...st,
         revision: st.revision + 1,
         pages: st.pages.map((p) => {
-          const victim = p.items.find(
-            (i) => (i.kind === "board_image" || i.kind === "board_animation") && i.placementStepId === placementStep
-          );
+          const victim = p.items.find((i) => (i.kind === "board_image" || i.kind === "board_animation") && i.placementStepId === placementStep);
           if (!victim) return p;
           let items = p.items.filter((i) => i.id !== victim.id);
           const layout = p.layout ? { ...p.layout, columns: p.layout.columns.map((c) => ({ ...c })) } : null;
@@ -793,46 +800,25 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
     [onMediaLoaded]
   );
 
-  /** SSE 事件分发：group 包 或 顶层动作帧都能吃（两种形态都在协议里） */
   const handleEvent = useCallback(
     (e: BoardEvent, origin: QueueItem["origin"]) => {
-      if (e.type === "group") {
-        enqueue(e.actions, origin);
-        return;
-      }
-      if (e.type === "media_failed") {
-        dropMedia(e.placement_step_id);
-        return;
-      }
-      const actionTypes = [
-        "board",
-        "speak",
-        "new_page",
-        "new_column",
-        "circle",
-        "highlight",
-        "ask",
-        "reward_user",
-        "image_gen_pending",
-        "generated_image",
-        "animation_pending",
-        "generated_animation",
-        "graph",
-        "done",
-      ];
-      if (actionTypes.includes(e.type)) {
-        enqueue([e as BoardAction], origin);
-      }
+      if (e.type === "group") return enqueue(e.actions, origin);
+      if (e.type === "media_failed") return dropMedia(e.placement_step_id);
+      if (e.type === "lesson_plan") return setPlan({ title: e.title, segments: e.segments });
+      const t = (e as { type: string }).type;
+      if (t === "session_ready" || t === "response_complete" || t === "error" || t === "auth_required" || t === "tts_segment") return;
+      enqueue([e as BoardAction], origin);
     },
     [dropMedia, enqueue]
   );
 
-  // ---- 开课：学员点"开始"后才拉剧本（也让首段语音满足浏览器自动播放策略） ----
+  // ---------------- 开课 / 下一段 ----------------
+
   const startLesson = useCallback(
     async (resumeFrom: number) => {
       exitedRef.current = false;
-      fastForwardRef.current = resumeFrom;
-      scriptDoneRef.current = 0;
+      finishedRef.current = false;
+      resumeSegRef.current = resumeFrom;
       setBlocked(null);
       setError(null);
       setStatus("preparing");
@@ -844,15 +830,14 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
         const res = await fetch("/api/board", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "start", courseId, unitId, lectureId }),
+          body: JSON.stringify({ action: "start", courseId, unitId, lectureId, resumeSegment: resumeFrom }),
         });
         if (!res.ok || !res.body) throw new Error(`请求失败 (${res.status})`);
         let started = false;
         await consumeSse<BoardEvent>(res, (e) => {
           if (exitedRef.current) return;
-          if (e.type === "session_ready") {
-            started = true;
-          } else if (e.type === "auth_required") {
+          if (e.type === "session_ready") started = true;
+          else if (e.type === "auth_required") {
             setBlocked({ title: "先登录再上课", message: e.message });
             setStatus("blocked");
           } else if (e.type === "error") {
@@ -861,9 +846,7 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
               setBlocked({ title: "这节课没能开讲", message: e.message });
               setStatus("blocked");
             }
-          } else if (e.type !== "response_complete") {
-            handleEvent(e, "script");
-          }
+          } else handleEvent(e, "script");
         });
       } catch (e) {
         setBlocked({ title: "网络出了点问题", message: e instanceof Error ? e.message : String(e) });
@@ -873,7 +856,138 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
     [courseId, handleEvent, lectureId, replay, unitId]
   );
 
-  /** 分享回放：把这节课的讲稿快照存成只读链接并复制到剪贴板 */
+  /** 学员答完第 index 段的检查 → 拉下一段（缓存命中秒回；否则讲师带着他的回答现写） */
+  const fetchNext = useCallback(
+    async (index: number, answer: Record<string, unknown>) => {
+      waitingNextRef.current = true;
+      setRetryNext(null);
+      setError(null);
+      try {
+        const res = await fetch("/api/board", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "next", courseId, unitId, lectureId, index, answer }),
+        });
+        if (!res.ok || !res.body) throw new Error(`请求失败 (${res.status})`);
+        let failed: string | null = null;
+        await consumeSse<BoardEvent>(res, (e) => {
+          if (exitedRef.current) return;
+          if (e.type === "error") failed = e.message;
+          else handleEvent(e, "script");
+        });
+        if (failed) throw new Error(failed);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+        setRetryNext(() => () => void fetchNext(index, answer));
+      } finally {
+        waitingNextRef.current = false;
+        void pump();
+      }
+    },
+    [courseId, handleEvent, lectureId, pump, unitId]
+  );
+
+  fetchNextRef.current = fetchNext;
+
+  const releaseAsk = useCallback(() => {
+    const release = askWaiterRef.current;
+    askWaiterRef.current = null;
+    setStatus("playing");
+    release?.();
+  }, []);
+
+  /** 作答：本地立判（选择 / 代码）+ 即时一句反馈 → 放行 → 讲师接着讲 */
+  const answerAsk = useCallback(
+    (a: AskSubmit) => {
+      const cur = askRef.current;
+      if (!cur || cur.answered) return;
+      const answered: AskState = { ...cur, answered: { text: a.text, correct: a.correct } };
+      setAsk(answered);
+      askRef.current = answered;
+      if (cur.kind !== "code") pushLog({ kind: "user", text: a.text });
+      else pushLog({ kind: "user", text: a.correct ? "提交了代码（运行通过）" : "提交了代码（还没通过）" });
+      if (a.correct != null) pushLog({ kind: "result", text: a.correct ? "答对了" : "不完全对", ok: a.correct });
+
+      // 即时反馈：先说一句，讲师那边同时在写下一段
+      let quick = "";
+      // 判词（对 / 不完全对）由讲师下一段第一拍说，这里只给一句不重复的过渡
+      if (cur.kind === "code") quick = a.correct ? "跑通了。" : "我们一起看看。";
+      else if (cur.kind === "choice" && a.correct != null) quick = a.correct ? "嗯。" : "我们来看看。";
+      else quick = "好，我看看你的想法。";
+      replyInsertRef.current = 0;
+      if (!fastRef.current) enqueue([{ type: "speak", step_id: -1, spoken_text: quick }], "reply");
+      releaseAsk();
+
+      if (replay) return; // 回放：后面的段已经在队列里
+      void fetchNext(cur.segment ?? segRef.current, {
+        question: cur.question,
+        kind: cur.kind,
+        options: cur.options,
+        text: a.text,
+        correct: a.correct,
+        code: a.code,
+        output: a.output,
+        explanation: cur.explanation,
+      });
+    },
+    [enqueue, fetchNext, pushLog, releaseAsk, replay]
+  );
+
+  const skipAsk = useCallback(() => {
+    const cur = askRef.current;
+    if (!cur) return;
+    setAsk(null);
+    askRef.current = null;
+    pushLog({ kind: "note", text: "跳过了这题" });
+    releaseAsk();
+    if (replay) return;
+    void fetchNext(cur.segment ?? segRef.current, { question: cur.question, kind: cur.kind, options: cur.options, text: "（跳过了这题）", explanation: cur.explanation });
+  }, [fetchNext, pushLog, releaseAsk, replay]);
+
+  /** 追问 / 没听懂：讲师接住后回到主线（插在当前这一拍之后） */
+  const followup = useCallback(
+    async (text: string, simpler = false) => {
+      const t = text.trim();
+      if (!t || chatBusy || replay) return;
+      setChatBusy(true);
+      pushLog({ kind: "user", text: t });
+      setInput("");
+      replyInsertRef.current = 0;
+      try {
+        const res = await fetch("/api/board", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "answer", courseId, unitId, lectureId, message: t, simpler, pageId: boardRef.current.activePageId }),
+        });
+        if (!res.ok || !res.body) throw new Error(`请求失败 (${res.status})`);
+        await consumeSse<BoardEvent>(res, (e) => {
+          if (exitedRef.current) return;
+          if (e.type === "error") setError(e.message);
+          else handleEvent(e, "reply");
+        });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setChatBusy(false);
+      }
+    },
+    [chatBusy, courseId, handleEvent, lectureId, pushLog, replay, unitId]
+  );
+
+  /** 输入框：有题待答 → 当作答案；否则 → 追问 */
+  const submitInput = useCallback(() => {
+    const t = input.trim();
+    if (!t) return;
+    const cur = askRef.current;
+    if (cur && !cur.answered && cur.kind !== "code") {
+      setInput("");
+      const idx = cur.options.findIndex((o) => o.trim() === t);
+      answerAsk({ text: t, correct: cur.kind === "choice" && idx >= 0 && cur.correctIndex != null ? idx === cur.correctIndex : undefined });
+      return;
+    }
+    void followup(t);
+  }, [answerAsk, followup, input]);
+
   const shareReplay = useCallback(async () => {
     if (sharing) return;
     setSharing(true);
@@ -905,15 +1019,18 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
       exitedRef.current = true;
       speechStopRef.current?.();
       askWaiterRef.current?.();
+      setTypewriterPaused(false);
       if ("speechSynthesis" in window) window.speechSynthesis.cancel();
     };
   }, []);
 
-  // ---- 播放控制 ----
+  // ---------------- 播放控制 ----------------
+
   const togglePause = useCallback(() => {
     const next = !pausedRef.current;
     pausedRef.current = next;
     setPaused(next);
+    setTypewriterPaused(next);
     const a = audioRef.current;
     if (next) a?.pause();
     else {
@@ -928,7 +1045,6 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
     if (audioRef.current) audioRef.current.playbackRate = r;
   }, []);
 
-  /** 重听：打断当前这句，把它插回队首再讲一遍 */
   const replayLast = useCallback(() => {
     const text = lastSpeechRef.current;
     if (!text) return;
@@ -938,102 +1054,59 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
     void pump();
   }, [pump, togglePause]);
 
-  // ---- 作答 / 追问 / 没听懂 ----
-  const submit = useCallback(
-    async (text: string, opts: { fromAsk?: AskState; simpler?: boolean } = {}) => {
-      const t = text.trim();
-      const { fromAsk, simpler } = opts;
-      if (!t || chatBusy) return;
-      if (replay) {
-        // 回放：本地判对错 + 解析，不请求讲师
-        if (!fromAsk) return;
-        const correct = fromAsk.correctIndex == null ? undefined : fromAsk.options[fromAsk.correctIndex] === t;
-        setAsk({ ...fromAsk, answered: { text: t, correct } });
-        pushMsg("user", t);
-        if (fromAsk.explanation) pushMsg("quiz", correct === false ? "解析" : "答对了", fromAsk.explanation);
-        window.setTimeout(() => {
-          setAsk(null);
-          setStatus("playing");
-          const release = askWaiterRef.current;
-          askWaiterRef.current = null;
-          release?.();
-        }, 1800);
-        return;
+  // 空格 = 暂停 / 继续（输入框里不拦）
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+      if (e.code === "Space" && (status === "playing" || status === "thinking")) {
+        e.preventDefault();
+        togglePause();
       }
-      setChatBusy(true);
-      pushMsg("user", t);
-      setInput("");
-      replyInsertRef.current = 0;
-      if (fromAsk) {
-        const correct = fromAsk.correctIndex == null ? undefined : fromAsk.options[fromAsk.correctIndex] === t;
-        setAsk({ ...fromAsk, answered: { text: t, correct } });
-      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [status, togglePause]);
+
+  // 沉浸：讲课进行中鼠标静止 2.5 秒，四周的按钮淡出；一动鼠标/按键就回来。暂停、作答、讲完时不藏
+  const immersive = (status === "playing" || status === "thinking") && !paused && !(ask && !ask.answered);
+  useEffect(() => {
+    if (!immersive) {
+      setChromeIdle(false);
+      return;
+    }
+    let t = window.setTimeout(() => setChromeIdle(true), 2500);
+    const wake = () => {
+      setChromeIdle(false);
+      window.clearTimeout(t);
+      t = window.setTimeout(() => setChromeIdle(true), 2500);
+    };
+    window.addEventListener("mousemove", wake);
+    window.addEventListener("keydown", wake);
+    window.addEventListener("touchstart", wake);
+    return () => {
+      window.clearTimeout(t);
+      window.removeEventListener("mousemove", wake);
+      window.removeEventListener("keydown", wake);
+      window.removeEventListener("touchstart", wake);
+    };
+  }, [immersive]);
+
+  const togglePanel = useCallback(() => {
+    setPanelOpen((v) => {
       try {
-        const res = await fetch("/api/board", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "answer",
-            courseId,
-            unitId,
-            lectureId,
-            message: t,
-            simpler,
-            // 点评追加在当前页（与 Hyperknow 一致：作答反馈不另开一页）
-            pageId: boardRef.current.activePageId,
-            ask: fromAsk ? { question: fromAsk.question, options: fromAsk.options, correct_index: fromAsk.correctIndex } : undefined,
-          }),
-        });
-        if (!res.ok || !res.body) throw new Error(`请求失败 (${res.status})`);
-        await consumeSse<BoardEvent>(res, (e) => {
-          if (exitedRef.current) return;
-          if (e.type === "error") setError(e.message);
-          else if (e.type !== "response_complete") handleEvent(e, "reply");
-        });
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
-      } finally {
-        setChatBusy(false);
-        if (fromAsk) {
-          // 点评已插到队首：放行停在课堂题上的剧本
-          setAsk(null);
-          setStatus("playing");
-          const release = askWaiterRef.current;
-          askWaiterRef.current = null;
-          release?.();
-        }
+        window.localStorage.setItem("wb-panel", v ? "closed" : "open");
+      } catch {
+        // ignore
       }
-    },
-    [chatBusy, courseId, handleEvent, lectureId, pushMsg, replay, unitId]
-  );
-
-  const skipAsk = useCallback(() => {
-    setAsk(null);
-    setStatus("playing");
-    const release = askWaiterRef.current;
-    askWaiterRef.current = null;
-    release?.();
+      return !v;
+    });
   }, []);
-
-  const pageIndex = board.pages.findIndex((p) => p.id === board.activePageId);
-
-  const gotoPage = useCallback(
-    (delta: number) => {
-      const st = boardRef.current;
-      const idx = st.pages.findIndex((p) => p.id === st.activePageId);
-      const next = st.pages[idx + delta];
-      if (!next) return;
-      setBoard((s) => ({ ...s, activePageId: next.id }));
-      window.setTimeout(() => focusPage(next), 30);
-    },
-    [focusPage]
-  );
 
   const zoomBy = useCallback((delta: number) => {
     const api = apiRef.current;
     if (!api) return;
-    const cam = cameraRef.current;
-    const z = Math.max(0.3, Math.min(2.2, cam.zoom + delta));
+    const z = Math.max(0.3, Math.min(2.2, cameraRef.current.zoom + delta));
     try {
       api.updateScene({ appState: { zoom: { value: z } } });
     } catch {
@@ -1041,41 +1114,92 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
     }
   }, []);
 
+  // 课堂记录自动滚到底
+  const logRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = logRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [log.length, chatBusy]);
+
+  const live = status === "playing" || status === "ask" || status === "thinking";
+  const totalSegs = plan?.segments.length ?? 0;
+  /** 浮在白板上的元素（字幕、题卡、控制条）只占面板左边那块 */
+  const rightInset = panelOpen ? PANEL_W + PANEL_GUTTER : 0;
+  const lastSayId = [...log].reverse().find((m) => m.kind === "say" || m.kind === "ask")?.id;
+  const pill = "bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.07),0_2px_10px_rgba(0,0,0,0.05)]";
+  /** 四周控件：沉浸时淡出（不占交互） */
+  const chromeFade = `transition-opacity duration-700 ${chromeIdle ? "pointer-events-none opacity-0" : "opacity-100"}`;
+
   return (
-    <div className="fixed inset-0 flex flex-col z-50 bg-[#fcfcfc]">
-      {/* 顶栏 */}
-      <div className="h-14 border-b border-[#e6e8eb] bg-white/80 backdrop-blur flex items-center justify-between gap-3 px-4 shrink-0">
-        <div className="flex items-center gap-3 min-w-0">
-          <button onClick={() => setExitOpen(true)} className="text-ink-soft hover:text-ink text-[18px] leading-none" aria-label="退出课堂">
-            ×
-          </button>
-          <div className="text-[14px] font-medium truncate max-w-md">{lectureTitle}</div>
-          <span className="hidden md:inline-block rounded-full bg-[#f3f4f6] px-2 py-0.5 text-[10px] text-ink-soft shrink-0">AI 生成</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center border border-[#e6e8eb] rounded-lg overflow-hidden">
-            <button onClick={() => zoomBy(-0.1)} className="px-2.5 py-1.5 text-ink-soft hover:bg-[#f3f4f6]" aria-label="缩小">−</button>
-            <button
-              onClick={() => apiRef.current?.updateScene({ appState: { zoom: { value: 1 } } })}
-              className="px-2 py-1.5 text-[11px] text-ink-soft hover:bg-[#f3f4f6] min-w-[3.1rem] text-center border-x border-[#e6e8eb]"
-              aria-label="缩放复位到 100%"
-              title="缩放复位到 100%"
-            >
-              {Math.round(camera.zoom * 100)}%
-            </button>
-            <button onClick={() => zoomBy(0.1)} className="px-2.5 py-1.5 text-ink-soft hover:bg-[#f3f4f6]" aria-label="放大">+</button>
-          </div>
-          <div className="flex items-center border border-[#e6e8eb] rounded-lg overflow-hidden">
-            <button onClick={() => gotoPage(-1)} disabled={pageIndex <= 0} className="px-2.5 py-1.5 text-ink-soft hover:bg-[#f3f4f6] disabled:opacity-35" aria-label="上一页">‹</button>
-            <span className="px-2 py-1.5 text-[11px] text-ink-soft min-w-[3rem] text-center border-x border-[#e6e8eb]">
-              {pageIndex + 1} / {board.pages.length}
+    <div className="fixed inset-0 z-50 bg-[#fcfcfc]">
+      {/* 白板（铺满） */}
+      <div className="absolute inset-0 overflow-hidden">
+        <Whiteboard
+          initialElements={[]}
+          onReady={(api) => {
+            apiRef.current = api;
+          }}
+          onCameraChange={(cam) => setCamera(cam)}
+          boardFont="handwriting"
+        />
+        <BoardLayer
+          state={board}
+          camera={camera}
+          register={registerCard}
+          onHeight={onHeight}
+          onTypingDone={onTypingDone}
+          onMediaLoaded={onMediaLoaded}
+          thinking={status === "thinking" && !paused && !error}
+          onCardClick={(_id, text) => {
+            if (isReplay) return;
+            setInput(`白板上「${text.slice(0, 30)}」这条，能再展开讲讲吗？`);
+            setPanelOpen(true);
+          }}
+        />
+      </div>
+
+      {/* 左上：退出 + 课题胶囊（含分段进度） */}
+      <div className={`absolute left-5 top-5 z-[40] flex items-center gap-3 ${chromeFade}`}>
+        <button
+          onClick={() => setExitOpen(true)}
+          className={`flex h-10 w-10 items-center justify-center rounded-full text-[18px] text-[#737373] hover:text-ink ${pill}`}
+          aria-label="退出课堂"
+        >
+          ×
+        </button>
+        <div className={`flex h-10 max-w-[min(520px,calc(100vw-760px))] min-w-[180px] items-center gap-3 rounded-full pl-[18px] pr-3.5 ${pill}`}>
+          <span className="truncate text-[14px] font-semibold text-[#262626]">{lectureTitle}</span>
+          {totalSegs > 0 && (
+            <span className="flex shrink-0 items-center gap-1" aria-label={`第 ${Math.min(segIndex + 1, totalSegs)} 段，共 ${totalSegs} 段`}>
+              {plan!.segments.map((s, i) => (
+                <span
+                  key={i}
+                  title={s.title}
+                  className={`h-1.5 rounded-full transition-all ${i < segIndex || finalSeg ? "w-3 bg-[#262626]/45" : i === segIndex ? "w-5 bg-[#262626]" : "w-3 bg-[#e5e5e5]"}`}
+                />
+              ))}
             </span>
-            <button onClick={() => gotoPage(1)} disabled={pageIndex >= board.pages.length - 1} className="px-2.5 py-1.5 text-ink-soft hover:bg-[#f3f4f6] disabled:opacity-35" aria-label="下一页">›</button>
-          </div>
+          )}
+        </div>
+      </div>
+
+      {/* 右上（面板左侧）：缩放 · 语速 · 声音 · 分享 · 课堂记录 */}
+      <div className={`absolute top-5 z-[40] flex justify-end ${chromeFade}`} style={{ right: rightInset + 20 }}>
+        <div className={`flex h-10 items-center rounded-full px-1.5 text-[13px] text-[#525252] ${pill}`}>
+          <button onClick={() => zoomBy(-0.1)} className="h-8 rounded-full px-2.5 hover:bg-[#f5f5f5]" aria-label="缩小">
+            −
+          </button>
+          <button onClick={() => follow(undefined)} className="h-8 min-w-[3.2rem] rounded-full px-1 tabular-nums hover:bg-[#f5f5f5]" title="回到讲师正在写的地方">
+            {Math.round(camera.zoom * 100)}%
+          </button>
+          <button onClick={() => zoomBy(0.1)} className="h-8 rounded-full px-2.5 hover:bg-[#f5f5f5]" aria-label="放大">
+            +
+          </button>
+          <span className="mx-1 h-4 w-px bg-[#e5e5e5]" />
           <select
             value={rate}
             onChange={(e) => changeRate(Number(e.target.value))}
-            className="rounded-lg border border-[#e6e8eb] bg-white px-2 py-1.5 text-[12px] text-ink-soft"
+            className="h-8 cursor-pointer rounded-full bg-transparent px-2 text-[12.5px] outline-none hover:bg-[#f5f5f5]"
             aria-label="讲解语速"
             title="讲解语速"
           >
@@ -1087,269 +1211,272 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
           </select>
           <button
             onClick={() => setVoiceOn((v) => !v)}
-            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12px] ${voiceOn ? "border-accent text-accent" : "border-[#e6e8eb] text-ink-soft"}`}
-            title={voiceOn ? "关闭语音" : "开启语音"}
+            className={`flex h-8 items-center rounded-full px-2.5 hover:bg-[#f5f5f5] ${voiceOn ? "" : "text-[#a3a3a3]"}`}
+            title={voiceOn ? "关闭语音（只看字幕）" : "开启语音"}
             aria-label={voiceOn ? "关闭语音" : "开启语音"}
           >
             <Icon name={voiceOn ? "voice" : "voice-off"} />
-            {voiceOn ? "语音" : "静音"}
           </button>
           {!isReplay && (
             <button
               onClick={() => void shareReplay()}
-              disabled={sharing || status === "ready" || status === "preparing" || status === "blocked"}
-              className="flex items-center gap-1.5 rounded-lg border border-[#e6e8eb] px-3 py-1.5 text-[12px] text-ink-soft hover:border-accent hover:text-accent disabled:opacity-40"
-              title="生成这节课的只读回放链接，发给朋友"
+              disabled={sharing || !finishedRef.current}
+              className="flex h-8 items-center rounded-full px-2.5 hover:bg-[#f5f5f5] disabled:opacity-35"
+              title={finishedRef.current ? "生成这节课的只读回放链接" : "讲完后可以分享回放"}
               aria-label="分享回放链接"
             >
               <Icon name="link" />
-              {sharing ? "生成中…" : "分享回放"}
             </button>
+          )}
+          {!panelOpen && (
+            <>
+              <span className="mx-1 h-4 w-px bg-[#e5e5e5]" />
+              <button onClick={togglePanel} className="h-8 rounded-full px-3 hover:bg-[#f5f5f5]" aria-label="展开课堂记录">
+                课堂记录
+              </button>
+            </>
           )}
         </div>
       </div>
       {shareMsg && (
-        <div className="absolute left-1/2 top-16 z-[90] -translate-x-1/2 rounded-lg bg-[#16181c] px-4 py-2 text-[12.5px] text-white shadow-lg">
-          {shareMsg}
+        <div className="absolute top-[72px] z-[90] flex justify-center" style={{ left: 0, right: rightInset }}>
+          <div className="rounded-lg bg-[#16181c] px-4 py-2 text-[12.5px] text-white shadow-lg">{shareMsg}</div>
         </div>
       )}
 
-      <div className="flex-1 flex min-h-0">
-        {/* 白板主体 */}
-        <div className="flex-1 flex flex-col min-w-0 relative">
-          <div className="flex-1 relative min-h-0 overflow-hidden">
-            <Whiteboard
-              initialElements={[]}
-              onReady={(api) => {
-                apiRef.current = api;
-                // 等 Excalidraw 挂载提交完成再动相机（同步 updateScene 会触发渲染循环）
-                window.setTimeout(() => focusPage(activePage()), 80);
-              }}
-              onCameraChange={(cam) => setCamera(cam)}
-              boardFont="handwriting"
-            />
-            <BoardLayer
-              state={board}
-              camera={camera}
-              register={registerCard}
-              onHeight={onHeight}
-              onTypingDone={onTypingDone}
-              onMediaLoaded={onMediaLoaded}
-              onCardClick={(id, text) => {
-                setInput(`请把白板上「${text}」这条展开讲一讲`);
-              }}
-            />
-            {status === "preparing" && (
-              <div className="absolute inset-0 flex items-center justify-center bg-[#fcfcfc]/85">
-                <div className="text-[13px] text-ink-soft">
-                  {fastForwardRef.current > 0 ? "正在回到你上次停下的地方…" : "AI 讲师正在备课，第一次开讲大约需要 10-20 秒…"}
+      {/* 备课中 */}
+      {status === "preparing" && (
+        <div className="absolute inset-0 z-[30] flex items-center justify-center bg-[#fcfcfc]/80" style={{ right: rightInset }}>
+          <div className="text-center">
+            <span className="stage-spinner inline-block" style={{ width: 18, height: 18 }} />
+            <div className="mt-3 text-[13px] text-ink-soft">{resumeSegRef.current > 0 ? "正在回到你上次停下的地方…" : "讲师正在备课，第一次开讲大约 15 秒…"}</div>
+          </div>
+        </div>
+      )}
+
+      {/* 课前 / 受阻 */}
+      {(status === "ready" || status === "blocked") && (
+        <div className="absolute inset-0 z-[60] flex items-center justify-center bg-[#fcfcfc]/92 px-4">
+          <div className="w-[440px] max-w-full rounded-3xl bg-white p-7 shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_20px_50px_rgba(0,0,0,0.08)]">
+            {status === "blocked" && blocked ? (
+              <>
+                <div className="mb-2 text-[18px] font-bold">{blocked.title}</div>
+                <div className="mb-5 text-[13px] leading-relaxed text-ink-soft">{blocked.message}</div>
+                <div className="flex justify-end gap-2.5">
+                  <button onClick={() => onExit?.()} className="rounded-full border border-[#e6e8eb] px-4 py-2 text-[12.5px] text-ink-soft hover:text-ink">
+                    回到课程页
+                  </button>
+                  <button onClick={() => void startLesson(0)} className="rounded-full bg-[#262626] px-4 py-2 text-[12.5px] text-white hover:opacity-90">
+                    重试
+                  </button>
                 </div>
-              </div>
-            )}
-            {(status === "ready" || status === "blocked") && (
-              <div className="absolute inset-0 z-[60] flex items-center justify-center bg-[#fcfcfc]/92 px-4">
-                <div className="w-[440px] max-w-full rounded-3xl border border-[#e6e8eb] bg-white shadow-xl p-7">
-                  {status === "blocked" && blocked ? (
+              </>
+            ) : (
+              <>
+                <div className="mb-1 text-[11px] font-semibold tracking-[.1em] text-[#a3a3a3]">{isReplay ? "课堂回放" : "本节课"}</div>
+                <div className="mb-2 text-[19px] font-bold leading-snug text-[#262626]">{lectureTitle}</div>
+                <div className="mb-6 text-[13px] text-[#8a8a8a]">
+                  {isReplay && replay?.courseTitle ? `《${replay.courseTitle}》 · ` : ""}
+                  {plan ? `${plan.segments.length} 小段` : "边讲边写"}，每段停下来问你一句
+                </div>
+                <div className="flex flex-col gap-2">
+                  {saved && !saved.finished && saved.segment > 0 ? (
                     <>
-                      <div className="text-[18px] font-bold mb-2">{blocked.title}</div>
-                      <div className="text-[13px] text-ink-soft leading-relaxed mb-5">{blocked.message}</div>
-                      <div className="flex gap-2.5 justify-end">
-                        <button onClick={() => onExit?.()} className="rounded-lg border border-[#e6e8eb] px-4 py-2 text-[12.5px] text-ink-soft hover:border-accent hover:text-accent">
-                          回到课程页
-                        </button>
-                        <button onClick={() => void startLesson(0)} className="rounded-lg bg-accent px-4 py-2 text-[12.5px] text-white hover:opacity-90">
-                          重试
-                        </button>
-                      </div>
+                      <button onClick={() => void startLesson(saved.segment)} className="rounded-full bg-[#262626] px-4 py-2.5 text-[13.5px] font-medium text-white hover:opacity-90">
+                        从第 {saved.segment + 1} 段继续
+                      </button>
+                      <button onClick={() => void startLesson(0)} className="rounded-full border border-[#e6e8eb] px-4 py-2 text-[12.5px] text-ink-soft hover:text-ink">
+                        从头开始
+                      </button>
                     </>
                   ) : (
-                    <>
-                      <div className="text-[11px] text-accent font-semibold tracking-[.1em] mb-1">{isReplay ? "课堂回放" : "本节课"}</div>
-                      <div className="text-[19px] font-bold leading-snug mb-2">{lectureTitle}</div>
-                      <div className="text-[12.5px] text-ink-soft leading-relaxed mb-4">
-                        {isReplay
-                          ? `${replay?.courseTitle ? `来自课程《${replay.courseTitle}》。` : ""}AI 讲师边讲边写板书，中途有一道小题等你作答。`
-                          : "讲师边讲边写板书，中途会停下来考你一题。听不懂随时按「没听懂」，讲师会换个说法再讲。"}
-                      </div>
-                      <div className="flex gap-2 mb-5" role="radiogroup" aria-label="上课方式">
-                        {[
-                          { on: true, label: "听讲解", desc: "语音 + 板书" },
-                          { on: false, label: "静音阅读", desc: "只看字幕与板书" },
-                        ].map((m) => (
-                          <button
-                            key={m.label}
-                            role="radio"
-                            aria-checked={voiceOn === m.on}
-                            onClick={() => setVoiceOn(m.on)}
-                            className={`flex-1 rounded-xl border px-3 py-2.5 text-left ${voiceOn === m.on ? "border-accent bg-accent/5" : "border-[#e6e8eb]"}`}
-                          >
-                            <div className="text-[13px] font-medium">{m.label}</div>
-                            <div className="text-[11px] text-ink-soft">{m.desc}</div>
-                          </button>
-                        ))}
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        {saved && !saved.finished && saved.done > 0 ? (
-                          <>
-                            <button onClick={() => void startLesson(saved.done)} className="rounded-xl bg-accent px-4 py-2.5 text-[13.5px] font-medium text-white hover:opacity-90">
-                              ▶ 从上次停下的地方继续
-                            </button>
-                            <button onClick={() => void startLesson(0)} className="rounded-xl border border-[#e6e8eb] px-4 py-2 text-[12.5px] text-ink-soft hover:border-accent hover:text-accent">
-                              从头开始
-                            </button>
-                          </>
-                        ) : (
-                          <button onClick={() => void startLesson(0)} className="rounded-xl bg-accent px-4 py-2.5 text-[13.5px] font-medium text-white hover:opacity-90">
-                            {isReplay ? "▶ 播放回放" : saved?.finished ? "▶ 再听一遍" : "▶ 开始上课"}
-                          </button>
-                        )}
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* 底部：字幕 + 小测 */}
-          <div className="pointer-events-none absolute bottom-0 left-0 right-0 flex flex-col items-center gap-2 pb-3 px-4">
-            {ask && (
-              <div className="pointer-events-auto w-full max-w-2xl rounded-2xl border border-[#e6e8eb] bg-white shadow-lg px-4 py-3">
-                <div className="flex items-center justify-between mb-1">
-                  <div className="text-[12px] text-accent">小测 · 答完讲师继续</div>
-                  {!ask.answered && (
-                    <button onClick={skipAsk} disabled={chatBusy} className="text-[11.5px] text-ink-faint hover:text-ink-soft disabled:opacity-50">
-                      跳过这题
+                    <button onClick={() => void startLesson(0)} className="rounded-full bg-[#262626] px-4 py-2.5 text-[13.5px] font-medium text-white hover:opacity-90">
+                      {isReplay ? "播放回放" : saved?.finished ? "再上一遍" : "开始上课"}
                     </button>
                   )}
+                  <div className="mt-1 text-center text-[11px] text-[#b5b5b5]">空格暂停</div>
                 </div>
-                <div className="text-[14px] font-medium mb-2">{ask.question}</div>
-                {ask.answered ? (
-                  <div className="text-[12.5px] text-ink-soft">
-                    你选了「{ask.answered.text}」
-                    {ask.answered.correct != null ? (ask.answered.correct ? "（正确）" : "（再想想）") : ""}
-                    {chatBusy ? " · 讲师正在点评…" : ""}
-                  </div>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {ask.options.map((o) => (
-                      <button
-                        key={o}
-                        onClick={() => void submit(o, { fromAsk: ask })}
-                        disabled={chatBusy}
-                        className="rounded-lg border border-[#e6e8eb] px-3 py-1.5 text-[12.5px] hover:border-accent hover:text-accent disabled:opacity-50"
-                      >
-                        {o}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-            {caption.text && (
-              <div className="w-full max-w-3xl rounded-xl bg-[#16181c]/85 px-4 py-2 text-[13px] leading-relaxed text-white">
-                {caption.text.slice(0, caption.reveal)}
-                <span className="text-[#ffd9a8]">{caption.text.slice(caption.reveal)}</span>
-              </div>
-            )}
-            {(status === "playing" || status === "ask" || status === "done") && (
-              <div className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-[#e6e8eb] bg-white/95 px-2 py-1 shadow-sm">
-                {status === "done" && !paused ? (
-                  <span className="px-2 text-[12px] text-ink-soft">
-                    {isReplay ? "回放播完了 · 想自己上一门课？去首页一句话生成" : "本节讲完了 · 有问题直接在右侧问讲师"}
-                  </span>
-                ) : (
-                  <button onClick={togglePause} className="rounded-full px-3 py-1 text-[12px] text-ink hover:bg-[#f3f4f6]" aria-label={paused ? "继续讲解" : "暂停讲解"}>
-                    {paused ? "▶ 继续" : "❚❚ 暂停"}
-                  </button>
-                )}
-                <button onClick={replayLast} disabled={!lastSpeechRef.current} className="rounded-full px-3 py-1 text-[12px] text-ink hover:bg-[#f3f4f6] disabled:opacity-40" aria-label="重听上一句">
-                  ↻ 重听
-                </button>
-                {!isReplay && (
-                  <button
-                    onClick={() => void submit("刚才这段我没听懂，能换个说法、举个具体例子再讲一遍吗？", { simpler: true })}
-                    disabled={chatBusy}
-                    className="rounded-full px-3 py-1 text-[12px] text-ink hover:bg-[#f3f4f6] disabled:opacity-40"
-                    aria-label="没听懂，请讲师换个说法再讲"
-                  >
-                    🤔 没听懂
-                  </button>
-                )}
-              </div>
+              </>
             )}
           </div>
         </div>
+      )}
 
-        {/* 右栏：对话记录 */}
-        <div className="w-80 border-l border-[#e6e8eb] bg-white flex flex-col shrink-0">
-          <div className="p-3 border-b border-[#e6e8eb] text-[13px] font-medium">对话记录</div>
-          <div className="flex-1 overflow-y-auto p-3 space-y-2">
-            {messages.map((m) => (
-              <div key={m.id} className={`rounded-xl px-3 py-2 text-[12.5px] leading-relaxed ${m.kind === "user" ? "bg-accent text-white ml-6" : "bg-[#f7f7f6] text-ink mr-4"}`}>
-                {m.kind !== "user" && (
-                  <div className="text-[10.5px] text-ink-faint mb-0.5">
-                    {m.kind === "board" ? "板书" : m.kind === "circle" ? "圈画" : m.kind === "image" ? "配图" : m.kind === "animation" ? "互动动画" : m.kind === "quiz" ? "小测" : m.kind === "reward" ? "徽章" : ""}
-                  </div>
-                )}
-                <div className="line-clamp-3">{m.text}</div>
-              </div>
-            ))}
-            {chatBusy && <div className="text-[12px] text-ink-soft px-2">讲师正在回应…</div>}
-            {error && <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700">{error}</div>}
-          </div>
-          <div className={`p-3 border-t border-[#e6e8eb] ${isReplay ? "hidden" : ""}`}>
-            <div className="flex gap-2">
-              <textarea
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                    e.preventDefault();
-                    void submit(input);
-                  }
-                }}
-                placeholder="向讲师提问 / 作答…"
-                aria-label="向讲师提问"
-                rows={1}
-                className="flex-1 resize-none rounded-lg border border-[#e6e8eb] px-3 py-2 text-[13px] outline-none focus:border-accent"
-              />
-              <button
-                onClick={() => void submit(input)}
-                disabled={!input.trim() || chatBusy}
-                className="rounded-lg bg-accent px-4 py-2 text-[13px] text-white font-medium hover:opacity-90 disabled:opacity-40"
-              >
-                发送
+      {/* 底部（面板左侧区域）：题卡 + 字幕 + 状态 */}
+      <div className="pointer-events-none absolute bottom-0 left-0 z-[35] flex flex-col items-center gap-3 px-6 pb-6" style={{ right: rightInset }}>
+        {status === "done" && (
+          <div className={`pointer-events-auto w-[460px] max-w-full rounded-2xl p-5 ${pill}`}>
+            <div className="text-[11px] font-semibold tracking-[.1em] text-[#a3a3a3]">{isReplay ? "回放播完了" : "本节完成"}</div>
+            {reward ? (
+              <>
+                <div className="mt-1 text-[18px] font-bold leading-snug text-[#262626]">{reward.title}</div>
+                <div className="mt-1 text-[13px] leading-relaxed text-ink-soft">{reward.desc}</div>
+              </>
+            ) : (
+              <div className="mt-1 text-[16px] font-bold">{lectureTitle}</div>
+            )}
+            <div className="mt-4 flex flex-wrap gap-2">
+              {nextLecture && onNextLecture && !isReplay && (
+                <button onClick={onNextLecture} className="rounded-full bg-[#262626] px-4 py-2 text-[13px] font-medium text-white hover:opacity-90">
+                  下一讲：{nextLecture.title.length > 16 ? `${nextLecture.title.slice(0, 16)}…` : nextLecture.title} →
+                </button>
+              )}
+              <button onClick={() => onExit?.()} className="rounded-full border border-[#e6e8eb] px-4 py-2 text-[13px] text-ink-soft hover:text-ink">
+                回课程页
               </button>
             </div>
           </div>
-        </div>
+        )}
+        {ask && <AskCard key={ask.stepId} ask={ask} busy={chatBusy} onSubmit={answerAsk} onSkip={skipAsk} />}
+        {caption.text && status !== "done" && !(ask && !ask.answered) && (
+          <div className="max-w-[800px] px-4 text-center">
+            <span className="inline rounded-[14px] bg-[rgba(250,250,250,0.82)] px-3.5 py-1.5 text-[16px] font-medium leading-[1.7] [box-decoration-break:clone] [-webkit-box-decoration-break:clone]">
+              <span className="text-[#1f1f1f]">{caption.text.slice(0, caption.reveal)}</span>
+              <span className="text-[#c4c4c4]">{caption.text.slice(caption.reveal)}</span>
+            </span>
+          </div>
+        )}
+        {/* 等下一句：不放转圈和文字，笔停在板上要落笔的地方轻点（见 BoardLayer thinking） */}
+        {paused && live && (
+          <div className="rounded-full bg-[rgba(250,250,250,0.86)] px-3.5 py-1 text-[13px] text-[#8a8a8a]">已暂停 · 空格继续</div>
+        )}
+        {error && (
+          <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-red-200 bg-red-50 px-4 py-1.5 text-[12.5px] text-red-700">
+            {error}
+            {retryNext && (
+              <button onClick={retryNext} className="font-medium underline underline-offset-2">
+                重试
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* 徽章 */}
-      {reward && (
-        <div className="absolute inset-0 z-[70] flex items-center justify-center bg-[#16181c]/45">
-          <div className="w-[420px] max-w-[88%] rounded-3xl border border-[#e6e8eb] bg-white shadow-2xl p-7">
-            <div className="text-[11px] text-accent font-semibold tracking-[.1em] mb-1">课堂成就</div>
-            <div className="text-[20px] font-bold leading-snug mb-1.5">{reward.title}</div>
-            <div className="text-[12.5px] text-ink-soft leading-relaxed mb-4">{reward.desc}</div>
-            <button onClick={() => setReward(null)} className="rounded-lg bg-accent px-5 py-2 text-[12.5px] text-white hover:opacity-90">
-              知道了
+      {/* 左下：暂停 · 重听 · 没听懂（面板收起时；展开时这组按钮在面板输入框上方） */}
+      {live && !panelOpen && (
+        <div className={`absolute bottom-6 left-5 z-[36] flex h-10 items-center gap-0.5 rounded-full px-1.5 text-[12.5px] text-[#404040] ${pill} ${chromeFade}`}>
+          <button onClick={togglePause} className="h-8 rounded-full px-3 hover:bg-[#f5f5f5]" aria-label={paused ? "继续讲解" : "暂停讲解"} title="空格键">
+            {paused ? "▶ 继续" : "❚❚ 暂停"}
+          </button>
+          <button onClick={replayLast} className="h-8 rounded-full px-3 hover:bg-[#f5f5f5]" aria-label="重听上一句">
+            重听
+          </button>
+          {!isReplay && (
+            <button
+              onClick={() => void followup("刚才这段我没听懂，能换个说法、举个具体例子再讲一遍吗？", true)}
+              disabled={chatBusy}
+              className="h-8 rounded-full px-3 hover:bg-[#f5f5f5] disabled:opacity-40"
+              aria-label="没听懂，请讲师换个说法再讲"
+            >
+              没听懂
+            </button>
+          )}
+          {!isReplay && (
+            <button onClick={togglePanel} className="h-8 rounded-full px-3 hover:bg-[#f5f5f5]" aria-label="打开课堂记录，打字提问">
+              提问
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* 右侧浮动面板：课堂记录（讲师的每一句 + 你的回答），底部随时提问 / 作答 */}
+      {panelOpen && (
+        <div className="absolute bottom-4 right-3 top-4 z-[45] flex flex-col overflow-hidden rounded-[18px] bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.07),0_8px_30px_rgba(0,0,0,0.06)]" style={{ width: PANEL_W }}>
+          <div className="flex h-12 shrink-0 items-center justify-between border-b border-[#f0f0f0] px-4">
+            <span className="text-[14px] font-semibold text-[#262626]">课堂记录</span>
+            <button onClick={togglePanel} className="text-[18px] leading-none text-[#a3a3a3] hover:text-ink" aria-label="收起课堂记录">
+              ×
             </button>
           </div>
+          <div ref={logRef} className="flex-1 space-y-3.5 overflow-y-auto px-4 py-4">
+            {log.length === 0 && <div className="pt-6 text-center text-[12.5px] text-[#b5b5b5]">讲过的话会留在这里</div>}
+            {log.map((m) =>
+              m.kind === "user" ? (
+                <div key={m.id} className="flex justify-end">
+                  <div className="max-w-[85%] rounded-[14px_14px_3px_14px] bg-[#f0f0f0] px-3.5 py-2 text-[13.5px] leading-[1.55] text-[#333]">{m.text}</div>
+                </div>
+              ) : m.kind === "note" ? (
+                <div key={m.id} className="pt-1 text-center text-[11px] text-[#b5b5b5]">— {m.text} —</div>
+              ) : m.kind === "result" ? (
+                <div key={m.id} className={`text-[12px] ${m.ok ? "text-emerald-600" : "text-amber-600"}`}>
+                  {m.ok ? "✓" : "✗"} {m.text}
+                </div>
+              ) : m.kind === "reward" ? (
+                <div key={m.id} className="rounded-xl bg-[#fafafa] px-3.5 py-2.5">
+                  <div className="text-[11px] text-[#a3a3a3]">本节成就</div>
+                  <div className="text-[13.5px] font-semibold text-[#262626]">{m.text}</div>
+                  {m.label && <div className="text-[12px] text-[#737373]">{m.label}</div>}
+                </div>
+              ) : (
+                <div key={m.id}>
+                  {m.kind === "ask" && <div className="mb-0.5 text-[11px] text-[#b5b5b5]">提问</div>}
+                  <div className={`text-[13.5px] leading-[1.55] ${m.id === lastSayId ? "font-medium text-[#1f1f1f]" : "text-[#7a7a7a]"}`}>{m.text}</div>
+                </div>
+              )
+            )}
+            {chatBusy && <div className="text-[12px] text-[#a3a3a3]">讲师在想怎么回答你…</div>}
+          </div>
+          {live && (
+            <div className="flex items-center gap-1 px-3 pt-2 text-[12px] text-[#525252]">
+              <button onClick={togglePause} className="rounded-full px-2.5 py-1 hover:bg-[#f5f5f5]" aria-label={paused ? "继续讲解" : "暂停讲解"} title="空格键">
+                {paused ? "▶ 继续" : "❚❚ 暂停"}
+              </button>
+              <button onClick={replayLast} className="rounded-full px-2.5 py-1 hover:bg-[#f5f5f5]" aria-label="重听上一句">
+                重听
+              </button>
+              {!isReplay && (
+                <button
+                  onClick={() => void followup("刚才这段我没听懂，能换个说法、举个具体例子再讲一遍吗？", true)}
+                  disabled={chatBusy}
+                  className="rounded-full px-2.5 py-1 hover:bg-[#f5f5f5] disabled:opacity-40"
+                  aria-label="没听懂，请讲师换个说法再讲"
+                >
+                  没听懂
+                </button>
+              )}
+            </div>
+          )}
+          {!isReplay && (
+            <div className="p-3 pt-1.5">
+              <div className="flex items-end gap-2 rounded-[14px] border border-[#ececec] bg-[#fafafa] px-3 py-2 focus-within:border-[#d4d4d4] focus-within:bg-white">
+                <textarea
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                      e.preventDefault();
+                      submitInput();
+                    }
+                  }}
+                  placeholder={ask && !ask.answered && ask.kind !== "code" ? "在这里输入你的答案…" : "输入问题…"}
+                  aria-label="向讲师提问或作答"
+                  rows={1}
+                  className="max-h-28 min-h-[22px] flex-1 resize-none bg-transparent text-[13.5px] outline-none placeholder:text-[#a3a3a3]"
+                />
+                <button
+                  onClick={submitInput}
+                  disabled={!input.trim() || chatBusy}
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#262626] text-white disabled:opacity-20"
+                  aria-label="发送"
+                >
+                  ↑
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       {/* 退出确认 */}
       {exitOpen && (
-        <div className="absolute inset-0 z-[80] flex items-center justify-center bg-[#16181c]/45">
-          <div className="w-[360px] max-w-[86%] rounded-3xl border border-[#e6e8eb] bg-white shadow-2xl p-6">
-            <div className="text-[17px] font-bold mb-1.5">{isReplay ? "退出回放？" : "退出这节课？"}</div>
-            <div className="text-[13px] text-ink-soft leading-relaxed mb-5">
-              {isReplay ? "回放链接随时可以再打开。" : "进度已自动保存在这台设备上，下次进来可以从停下的地方继续。"}
+        <div className="absolute inset-0 z-[80] flex items-center justify-center bg-[#16181c]/40">
+          <div className="w-[360px] max-w-[86%] rounded-3xl bg-white p-6 shadow-2xl">
+            <div className="mb-1.5 text-[17px] font-bold">{isReplay ? "退出回放？" : "退出这节课？"}</div>
+            <div className="mb-5 text-[13px] leading-relaxed text-ink-soft">
+              {isReplay ? "回放链接随时可以再打开。" : "进度已自动保存，下次进来可以从这一段继续。"}
             </div>
-            <div className="flex gap-2.5 justify-end">
-              <button onClick={() => setExitOpen(false)} className="rounded-lg border border-[#e6e8eb] px-4 py-2 text-[12.5px] text-ink-soft hover:border-accent hover:text-accent">
+            <div className="flex justify-end gap-2.5">
+              <button onClick={() => setExitOpen(false)} className="rounded-full border border-[#e6e8eb] px-4 py-2 text-[12.5px] text-ink-soft hover:text-ink">
                 继续上课
               </button>
               <button
@@ -1358,7 +1485,7 @@ export function WhiteboardSession({ courseId, unitId, lectureId, lectureTitle, o
                   speechStopRef.current?.();
                   onExit?.();
                 }}
-                className="rounded-lg bg-accent px-4 py-2 text-[12.5px] text-white hover:opacity-90"
+                className="rounded-full bg-[#262626] px-4 py-2 text-[12.5px] text-white hover:opacity-90"
               >
                 退出课堂
               </button>
